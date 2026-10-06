@@ -118,11 +118,16 @@ def _employee_view(emp: Employee, request: Request) -> dict:
 
 @router.get("", response_model=list[EmployeeResponse])
 def list_employees(
-    request: Request, active_only: bool = False, db: Session = Depends(get_db)
+    request: Request,
+    active_only: bool = False,
+    inactive_only: bool = False,
+    db: Session = Depends(get_db),
 ):
     q = db.query(Employee)
     if active_only:
         q = q.filter(Employee.is_active == True)  # noqa: E712
+    if inactive_only:  # the list page's Inactive view (#210)
+        q = q.filter(Employee.is_active == False)  # noqa: E712
     rows = q.order_by(Employee.last_name, Employee.first_name).all()
     return [_employee_view(e, request) for e in rows]
 

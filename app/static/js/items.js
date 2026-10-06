@@ -4,14 +4,18 @@
  */
 const ItemsPage = {
     async render() {
-        const items = await API.get('/items');
+        const items = await API.get(`/items${ActiveLists.query('items')}`);
+        ActiveLists.remember('items', items);
         let html = `
             <div class="page-header">
                 <h2>Items & Services</h2>
                 <button class="btn btn-primary" onclick="ItemsPage.showForm()">+ New Item</button>
-            </div>`;
+            </div>
+            <div class="toolbar">${ActiveLists.pickerHtml('items')}</div>`;
 
-        if (items.length === 0) {
+        if (items.length === 0 && ActiveLists.emptyText('items')) {
+            html += `<div class="empty-state"><p>${ActiveLists.emptyText('items')}</p></div>`;
+        } else if (items.length === 0) {
             html += `<div class="empty-state">
                 <p>No items yet.</p>
                 <button class="btn btn-primary" onclick="ItemsPage.showForm()" style="margin-top:10px;">+ Create your first item</button>
@@ -43,6 +47,7 @@ const ItemsPage = {
                     <td class="amount">${qtyCell}</td>
                     <td class="actions">
                         <button class="btn btn-sm btn-secondary" onclick="ItemsPage.showForm(${item.id})">Edit</button>
+                        ${ActiveLists.buttonHtml('items', item)}
                         ${adjustBtn}
                     </td>
                 </tr>`;

@@ -73,13 +73,16 @@ def _check_name_clash(db: Session, customer_id: int, name: str, exclude_id=None)
 def list_jobs(
     customer_id: Optional[int] = None,
     include_inactive: bool = False,
+    inactive_only: bool = False,
     status: Optional[str] = None,
     db: Session = Depends(get_db),
 ):
     q = db.query(Job).options(joinedload(Job.customer)).join(Customer)
     if customer_id is not None:
         q = q.filter(Job.customer_id == customer_id)
-    if not include_inactive:
+    if inactive_only:  # the list page's Inactive view (#210)
+        q = q.filter(Job.is_active.is_(False))
+    elif not include_inactive:
         q = q.filter(Job.is_active.is_(True))
     if status:
         q = q.filter(Job.status == status)

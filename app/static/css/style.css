@@ -1151,6 +1151,13 @@ a:hover { text-decoration: underline; }
     box-shadow: inset 1px 1px 2px rgba(0,0,0,0.08);
 }
 
+/* Show: Active / Inactive / All on a list page (#210) */
+.toolbar .list-show-label {
+    font-size: 11px;
+    font-weight: 700;
+    color: var(--text-secondary);
+}
+
 /* Clickable row */
 tr.clickable { cursor: pointer; }
 

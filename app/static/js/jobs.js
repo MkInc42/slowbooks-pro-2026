@@ -45,6 +45,7 @@ const JobsPage = {
             API.get('/jobs/budget-vs-actual?include_inactive=true').catch(() => []),
         ]);
         JobsPage._jobs = jobs;
+        ActiveLists.remember('jobs', jobs);
         JobsPage._bva = {};
         for (const r of bva) JobsPage._bva[r.job_id] = r;
 
@@ -70,7 +71,8 @@ const JobsPage = {
                 <select id="job-filter-customer" aria-label="${Terms.text('Customer')}" onchange="JobsPage.setFilter('customer_id', this.value)">
                     <option value="">${Terms.text('All customers')}</option>${custOpts}</select>
                 <select id="job-filter-status" aria-label="Status" onchange="JobsPage.setFilter('status', this.value)">
-                    <option value="">Active jobs</option>${statusOpts}<option value="__inactive__">Inactive</option></select>
+                    <option value="">All statuses</option>${statusOpts}</select>
+                ${ActiveLists.pickerHtml('jobs')}
                 <span style="font-size:11px; color:var(--gray-500);">${Terms.text('Job-to-date figures from posted lines. Click a job to drill down.')}</span>
             </div>
             <div id="jobs-table">${JobsPage._tableHtml()}</div>`;
@@ -86,11 +88,9 @@ const JobsPage = {
         const f = JobsPage._filter;
         const q = (f.q || '').toLowerCase();
         return JobsPage._jobs.filter(j => {
-            if (f.status === '__inactive__') { if (j.is_active) return false; }
-            else {
-                if (!j.is_active) return false;
-                if (f.status && j.status !== f.status) return false;
-            }
+            // Show: Active / Inactive / All (#210); Status is the job's own
+            if (!ActiveLists.shows('jobs', j)) return false;
+            if (f.status && j.status !== f.status) return false;
             if (f.customer_id && String(j.customer_id) !== String(f.customer_id)) return false;
             if (q && !(`${j.customer_name} ${j.name} ${j.job_number || ''}`.toLowerCase().includes(q))) return false;
             return true;
@@ -120,7 +120,8 @@ const JobsPage = {
                 <td class="amount" style="font-weight:700; ${JobsPage.varColor(b)}">${JobsPage.money(b.variance)}</td>
                 <td class="amount">${JobsPage.pct(b.pct_used)}</td>
                 <td class="amount">${JobsPage.money(b.act_revenue)}</td>
-                <td class="actions"><button class="btn btn-sm btn-secondary" onclick="event.stopPropagation(); JobsPage.showForm(${j.id})">Edit</button></td>
+                <td class="actions"><button class="btn btn-sm btn-secondary" onclick="event.stopPropagation(); JobsPage.showForm(${j.id})">Edit</button>
+                    ${ActiveLists.buttonHtml('jobs', j)}</td>
             </tr>`;
         }).join('');
         return `<div class="table-container"><table>

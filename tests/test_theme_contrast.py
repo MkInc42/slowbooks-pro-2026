@@ -931,6 +931,11 @@ def _open(browser, client, served=None):
     )
     page.goto(f"{ORIGIN}/")
     page.wait_for_function("window.App && document.readyState === 'complete'")
+    # The lists open on Show: Active since #210. The sweeps look at them on
+    # Show: All, so the inactive vendor and item set aside above (dimmed,
+    # badged) are still measured.
+    page.evaluate("""() => ['customers', 'vendors', 'items', 'employees', 'jobs']
+            .forEach(k => localStorage.setItem('slowbooks-show-' + k, 'all'))""")
     return page, handled
 
 

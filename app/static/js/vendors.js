@@ -4,14 +4,18 @@
  */
 const VendorsPage = {
     async render() {
-        const vendors = await API.get('/vendors');
+        const vendors = await API.get(`/vendors${ActiveLists.query('vendors')}`);
+        ActiveLists.remember('vendors', vendors);
         let html = `
             <div class="page-header">
                 <h2>Vendors</h2>
                 <button class="btn btn-primary" onclick="VendorsPage.showForm()">+ New Vendor</button>
-            </div>`;
+            </div>
+            <div class="toolbar">${ActiveLists.pickerHtml('vendors')}</div>`;
 
-        if (vendors.length === 0) {
+        if (vendors.length === 0 && ActiveLists.emptyText('vendors')) {
+            html += `<div class="empty-state"><p>${ActiveLists.emptyText('vendors')}</p></div>`;
+        } else if (vendors.length === 0) {
             html += `<div class="empty-state">
                 <p>No vendors yet.</p>
                 <button class="btn btn-primary" onclick="VendorsPage.showForm()" style="margin-top:10px;">+ Create your first vendor</button>
@@ -32,6 +36,7 @@ const VendorsPage = {
                     <td class="amount">${formatCurrency(v.balance)}</td>
                     <td class="actions">
                         <button class="btn btn-sm btn-secondary" onclick="VendorsPage.showForm(${v.id})">Edit</button>
+                        ${ActiveLists.buttonHtml('vendors', v)}
                     </td>
                 </tr>`;
             }

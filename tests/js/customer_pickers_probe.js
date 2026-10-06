@@ -51,7 +51,9 @@ const ctx = {
   },
 };
 vm.createContext(ctx);
-for (const f of ['jobs.js', 'reseller_permits.js']) {
+// active_lists.js: the Jobs page's Show picker (#210); no localStorage here,
+// so it shows Active
+for (const f of ['active_lists.js', 'jobs.js', 'reseller_permits.js']) {
   vm.runInContext(fs.readFileSync(`app/static/js/${f}`, 'utf8'), ctx, { filename: f });
 }
 vm.runInContext('this.JobsPage = JobsPage; this.ResellerPermitsPage = ResellerPermitsPage;', ctx);

@@ -6,14 +6,18 @@ const EmployeesPage = {
     _states: [],
     _stateHint(code) { const st = EmployeesPage._states.find(x => x.code === (code || '').toUpperCase()); return st ? `${st.name}: ${st.summary}${st.uses_local_rate ? ' · needs a local rate' : ''}${st.uses_rate_election ? ' · elected rate' : ''}` : 'Type a 2-letter code; every state + DC is supported'; },
     async render() {
-        const emps = await API.get('/employees');
+        const emps = await API.get(`/employees${ActiveLists.query('employees')}`);
+        ActiveLists.remember('employees', emps);
         let html = `
             <div class="page-header">
                 <h2>Employees</h2>
                 <button class="btn btn-primary" onclick="EmployeesPage.showForm()">+ Add Employee</button>
-            </div>`;
+            </div>
+            <div class="toolbar">${ActiveLists.pickerHtml('employees')}</div>`;
 
-        if (emps.length === 0) {
+        if (emps.length === 0 && ActiveLists.emptyText('employees')) {
+            html += `<div class="empty-state"><p>${ActiveLists.emptyText('employees')}</p></div>`;
+        } else if (emps.length === 0) {
             html += '<div class="empty-state"><p>No employees added yet</p></div>';
         } else {
             html += `<div class="table-container"><table>
@@ -28,6 +32,7 @@ const EmployeesPage = {
                     <td class="actions">
                         <button class="btn btn-sm btn-secondary" onclick="EmployeesPage.showForm(${e.id})">Edit</button>
                         <button class="btn btn-sm btn-secondary" onclick="EmployeesPage.viewDetails(${e.id})">Details</button>
+                        ${ActiveLists.buttonHtml('employees', e)}
                     </td>
                 </tr>`;
             }

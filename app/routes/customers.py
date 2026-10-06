@@ -30,11 +30,16 @@ def _response(db: Session, customer: Customer) -> CustomerResponse:
 
 @router.get("", response_model=list[CustomerResponse])
 def list_customers(
-    active_only: bool = False, search: str = None, db: Session = Depends(get_db)
+    active_only: bool = False,
+    inactive_only: bool = False,
+    search: str = None,
+    db: Session = Depends(get_db),
 ):
     q = db.query(Customer)
     if active_only:
         q = q.filter(Customer.is_active)
+    if inactive_only:  # the list page's Inactive view (#210)
+        q = q.filter(Customer.is_active.is_(False))
     if search:
         q = q.filter(Customer.name.ilike(f"%{search}%"))
     return _responses(db, q.order_by(Customer.name).all())

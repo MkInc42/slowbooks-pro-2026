@@ -6,7 +6,8 @@
  */
 const CustomersPage = {
     async render() {
-        const customers = await API.get('/customers');
+        const customers = await API.get(`/customers${ActiveLists.query('customers')}`);
+        ActiveLists.remember('customers', customers);
         let html = `
             <div class="page-header">
                 <h2>${T('Customers')}</h2>
@@ -15,9 +16,12 @@ const CustomersPage = {
             <div class="toolbar">
                 <input type="text" placeholder="${Terms.text('Search customers...')}" id="customer-search"
                     oninput="CustomersPage.filter(this.value)">
+                ${ActiveLists.pickerHtml('customers')}
             </div>`;
 
-        if (customers.length === 0) {
+        if (customers.length === 0 && ActiveLists.emptyText('customers')) {
+            html += `<div class="empty-state"><p>${ActiveLists.emptyText('customers')}</p></div>`;
+        } else if (customers.length === 0) {
             html += `<div class="empty-state">
                 <p>${Terms.text('No customers yet.')}</p>
                 <button class="btn btn-primary" onclick="CustomersPage.showForm()" style="margin-top:10px;">+ ${Terms.text('Create your first customer')}</button>
@@ -30,14 +34,18 @@ const CustomersPage = {
                 </tr></thead>
                 <tbody id="customer-tbody">`;
             for (const c of customers) {
-                html += `<tr class="clickable customer-row" data-name="${escapeHtml(c.name).toLowerCase()}" onclick="CustomersPage.showDetails(${c.id})"${c.is_active === false ? ' style="color:var(--gray-400);"' : ''}>
-                    <td><strong>${escapeHtml(c.name)}</strong>${c.is_active === false ? ' <span style="font-size:11px;">(inactive)</span>' : ''}</td>
+                // in the All view an inactive customer is dimmed and marked,
+                // as on the other lists (text-muted keeps AA contrast)
+                const inactive = c.is_active === false;
+                html += `<tr class="clickable customer-row${inactive ? ' row--dim' : ''}" data-name="${escapeHtml(c.name).toLowerCase()}" onclick="CustomersPage.showDetails(${c.id})">
+                    <td><strong>${escapeHtml(c.name)}</strong>${inactive ? ' <span class="badge badge-draft">inactive</span>' : ''}</td>
                     <td>${escapeHtml(c.company) || ''}</td>
                     <td>${escapeHtml(c.phone) || ''}</td>
                     <td>${escapeHtml(c.email) || ''}</td>
                     <td class="amount">${formatCurrency(c.balance)}</td>
                     <td class="actions">
                         <button class="btn btn-sm btn-secondary" onclick="event.stopPropagation(); CustomersPage.showForm(${c.id})">Edit</button>
+                        ${ActiveLists.buttonHtml('customers', c)}
                     </td>
                 </tr>`;
             }
