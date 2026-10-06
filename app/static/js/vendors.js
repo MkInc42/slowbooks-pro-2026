@@ -94,7 +94,7 @@ const VendorsPage = {
                         <input name="tax_id" value="${escapeHtml(v.tax_id || '')}"></div>
                     <div class="form-group"><label>Account #</label>
                         <input name="account_number" value="${escapeHtml(v.account_number || '')}"></div>
-                    <div class="form-group"><label>Default Expense Account</label>
+                    <div class="form-group"><label>Default Expense or COGS Account</label>
                         <select name="default_expense_account_id"><option value="">-- None --</option>${acctOpts}</select></div>
                     ${id ? `<div class="form-group"><label>Status</label>
                         <select name="is_active" title="An inactive vendor keeps its history but leaves the pickers on bills, expenses and orders">
@@ -213,10 +213,21 @@ const PurchaseAccounts = {
             ((a.account_type === 'expense' || a.account_type === 'cogs') && a.is_active !== false)
             || (keepId && a.id == keepId));
     },
+    // Grouped, cost of goods first, so the COGS accounts read as a set and
+    // not as a few odd expenses (#214); anything else the record already
+    // uses comes last.
     options(accounts, selectedId) {
-        return accounts.map(a =>
-            `<option value="${a.id}" ${selectedId && a.id == selectedId ? 'selected' : ''}>${escapeHtml(a.account_number || '')} - ${escapeHtml(a.name)}</option>`
-        ).join('');
+        const opt = a => `<option value="${a.id}" ${selectedId && a.id == selectedId ? 'selected' : ''}>`
+            + `${a.account_number ? escapeHtml(a.account_number) + ' - ' : ''}${escapeHtml(a.name)}</option>`;
+        const groups = [['cogs', 'Cost of Goods Sold'], ['expense', 'Expenses']];
+        let html = '';
+        for (const [type, label] of groups) {
+            const these = accounts.filter(a => a.account_type === type);
+            if (these.length) html += `<optgroup label="${label}">${these.map(opt).join('')}</optgroup>`;
+        }
+        const rest = accounts.filter(a => !groups.some(([type]) => type === a.account_type));
+        if (rest.length) html += `<optgroup label="Other">${rest.map(opt).join('')}</optgroup>`;
+        return html;
     },
 };
 

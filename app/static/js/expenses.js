@@ -80,7 +80,7 @@ const ExpensesPage = {
                     <div class="form-group"><label>Date *</label>
                         <input name="date" type="date" required value="${todayISO()}"></div>
                     <div class="form-group"><label>Expense Account *</label>
-                        <select name="expense_account_id" required><option value="">Select...</option>${expenseAccts.map(acctOpt).join('')}</select></div>
+                        <select name="expense_account_id" required><option value="">Select...</option>${PurchaseAccounts.options(expenseAccts)}</select></div>
                     <div class="form-group"><label>Paid From *</label>
                         <select name="paid_from_account_id" required>${paidFrom.map(acctOpt).join('')}</select></div>
                     <div class="form-group"><label>Amount *</label>

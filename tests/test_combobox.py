@@ -100,12 +100,20 @@ def test_a_bill_line_finds_its_account_by_number(browser, company, books):
         box = page.get_by_role("combobox", name="Account, line 1", exact=True)
         box.click()
         page.keyboard.type("6500")
-        shown = page.evaluate(SHOWN)
+        # each match with the group it's in: the account lists are grouped,
+        # cost of goods apart from expenses (#214)
+        shown = page.evaluate(
+            """() => [...document.querySelectorAll('#cbx-listbox [role=option]')].map(li => {
+                const c = li.cloneNode(true), g = c.querySelector('.cbx-in');
+                if (g) g.remove();
+                return [c.textContent.trim(), g ? g.textContent.trim() : ''];
+            })"""
+        )
         # the list hangs from the window: the table's overflow doesn't clip it
         reachable = page.evaluate(
             """() => { const li = document.querySelector('#cbx-listbox [role=option]');
                 const r = li.getBoundingClientRect();
-                return document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2) === li
+                return li.contains(document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2))
                     && li.closest('.cbx-popup').parentElement === document.body; }"""
         )
         page.keyboard.press("Tab")  # Tab takes it too, and moves on
@@ -117,7 +125,7 @@ def test_a_bill_line_finds_its_account_by_number(browser, company, books):
         )
     finally:
         page.close()
-    assert shown == ["6500 - Rent or Lease"] and reachable
+    assert shown == [["6500 - Rent or Lease", "Expenses"]] and reachable
     assert chosen == ["6500 - Rent or Lease", "6500 - Rent or Lease", True]
 
 
