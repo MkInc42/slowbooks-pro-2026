@@ -14,8 +14,11 @@ browser checks are in tests/test_active_lists_browser.py.
 """
 
 import json
+import shutil
 import subprocess
 from pathlib import Path
+
+import pytest
 
 ROOT = Path(__file__).resolve().parents[1]
 JS = ROOT / "app/static/js"
@@ -167,6 +170,7 @@ def _run(script):
     return json.loads(out.stdout)
 
 
+@pytest.mark.skipif(shutil.which("node") is None, reason="node is not installed")
 def test_the_show_choice_is_remembered_per_list():
     helper = (JS / "active_lists.js").read_text(encoding="utf-8")
     script = (
@@ -197,6 +201,7 @@ def test_the_show_choice_is_remembered_per_list():
     assert out["shows"] == [True, False]
 
 
+@pytest.mark.skipif(shutil.which("node") is None, reason="node is not installed")
 def test_storage_that_throws_falls_back_to_active():
     helper = (JS / "active_lists.js").read_text(encoding="utf-8")
     script = (
