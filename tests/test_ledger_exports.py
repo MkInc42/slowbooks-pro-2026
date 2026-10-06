@@ -89,19 +89,22 @@ def test_general_ledger_carries_every_line_and_ties_to_the_trial_balance(client,
     assert sales["closing_balance"] == 1700.0
 
     rows = rows_of(client.get(f"/api/reports/general-ledger/csv?{PERIOD}").text)
-    assert rows[0][:3] == ["Date", "Reference", "Description"] and rows[0][-2:] == [
+    assert rows[0][:3] == ["Date", "Reference", "Description"] and rows[0][-3:] == [
         "Running balance",
         "Source type",
+        "Class",  # last, so a sheet reading by position still lines up (#213)
     ]
-    lines = [r for r in rows[1:] if r[-1] not in ("opening", "total")]
+    kind = rows[0].index("Source type")
+    lines = [r for r in rows[1:] if r[kind] not in ("opening", "total")]
     assert (
         len(lines) == 6
     )  # three in-period entries, two lines each; PRIOR-1 is not in the period
-    for r in (r for r in rows[1:] if r[-1] == "total"):
+    assert all(r[-1] == "Uncategorized" for r in lines)  # nothing here has a class
+    for r in (r for r in rows[1:] if r[kind] == "total"):
         num, dr, cr = r[3], Decimal(r[5]), Decimal(r[6])
         assert dr - cr == tb_net[num], num  # the period net equals the TB's Net
-    opening = {r[3]: Decimal(r[7]) for r in rows[1:] if r[-1] == "opening"}
-    closing = {r[3]: Decimal(r[7]) for r in rows[1:] if r[-1] == "total"}
+    opening = {r[3]: Decimal(r[7]) for r in rows[1:] if r[kind] == "opening"}
+    closing = {r[3]: Decimal(r[7]) for r in rows[1:] if r[kind] == "total"}
     sign = {
         a["account_number"]: 1 if a["normal_balance"] == "debit" else -1
         for a in gl["accounts"]

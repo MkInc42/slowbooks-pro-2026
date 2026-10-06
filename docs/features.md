@@ -552,14 +552,15 @@ All payroll, HR, tax-form, and self-service portal endpoints are documented with
 ### Reports & Tax
 | Endpoint | Methods | Description |
 |----------|---------|-------------|
-| `/api/reports/profit-loss` (+`/pdf`, `/csv`) | GET | P&L report |
+| `/api/reports/profit-loss` (+`/pdf`, `/csv`) | GET | P&L report; `class_id` gives one class's P&L |
+| `/api/reports/profit-loss-by-class` | GET | Every P&L account with a column per class (`accounts`), and each class's totals (`classes`) |
 | `/api/reports/balance-sheet` (+`/pdf`, `/csv`) | GET | Balance sheet |
 | `/api/reports/trial-balance` (+`/pdf`, `/csv`) | GET | Trial balance, debit and credit columns with totals |
 | `/api/reports/ar-aging` | GET | Accounts receivable aging |
 | `/api/reports/ap-aging` | GET | Accounts payable aging |
 | `/api/reports/sales-tax` | GET | Sales tax collected |
 | `/api/reports/sales-tax/pay` | POST | Record sales tax payment to government |
-| `/api/reports/general-ledger` (+`/pdf`, `/csv`) | GET | Every posted line by account: balance brought forward, running balance, source, period total |
+| `/api/reports/general-ledger` (+`/pdf`, `/csv`) | GET | Every posted line by account: balance brought forward, running balance, source, class, period total |
 | `/api/reports/income-by-customer` | GET | Sales totals per customer |
 | `/api/tax/schedule-c` | GET | Schedule C data from P&L |
 | `/api/tax/schedule-c/csv` | GET | Schedule C CSV export |
@@ -637,7 +638,7 @@ All payroll, HR, tax-form, and self-service portal endpoints are documented with
 ### Drill-Down & Saved Reports
 | Endpoint | Methods | Description |
 |----------|---------|-------------|
-| `/api/reports/account-transactions` | GET | Every journal line hitting an account, with source-doc links |
+| `/api/reports/account-transactions` | GET | Every journal line hitting an account, with source-doc links; `class_id` keeps one class's lines |
 | `/api/customers/check-duplicate` | GET | Pre-submit duplicate-name check (fuzzy) |
 | `/api/vendors/check-duplicate` | GET | Pre-submit duplicate-name check (fuzzy) |
 | `/api/saved-reports` | GET, POST | List/create named report parameter sets |
