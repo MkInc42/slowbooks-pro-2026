@@ -5,7 +5,10 @@ test_invoice_edit.py does for the invoice form. The server side of each
 item is in test_purchase_postings.py.
 """
 
+import shutil
 from pathlib import Path
+
+import pytest
 
 JS = Path(__file__).resolve().parents[1] / "app/static/js"
 
@@ -188,6 +191,7 @@ def test_the_labels_say_cost_of_goods_too():
     assert "PurchaseAccounts.options(expenseAccts)" in _js("expenses.js")
 
 
+@pytest.mark.skipif(shutil.which("node") is None, reason="node is not installed")
 def test_the_purchase_accounts_are_grouped_cost_of_goods_first():
     # #214: COGS accounts in a group of their own, ahead of the expenses;
     # an account of another type that the record already uses comes last.
