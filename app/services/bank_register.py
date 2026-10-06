@@ -219,15 +219,26 @@ def account_register(
     account: Account,
     start: date | None = None,
     end: date | None = None,
+    class_id: int | None = None,
 ) -> dict:
     """Every ledger line on `account`, natural-balance running balance,
     period totals, and — when a start date is given — the balance carried
-    in from before it. No dates = everything."""
+    in from before it. No dates = everything. With `class_id`, only the
+    lines of that class (the line's own, else its transaction's, else
+    Uncategorized), the opening balance included (#213)."""
     debit_normal = is_debit_normal(account)
+    in_class = None
+    if class_id is not None:
+        from app.services.classes_service import (
+            class_attribution,
+            uncategorized_class_id,
+        )
+
+        in_class = class_attribution(uncategorized_class_id(db)) == class_id
 
     opening = ZERO
     if start:
-        dr, cr = (
+        before = (
             db.query(
                 func.coalesce(func.sum(TransactionLine.debit), 0),
                 func.coalesce(func.sum(TransactionLine.credit), 0),
@@ -235,8 +246,10 @@ def account_register(
             .join(Transaction, TransactionLine.transaction_id == Transaction.id)
             .filter(TransactionLine.account_id == account.id)
             .filter(Transaction.date < start)
-            .one()
         )
+        if in_class is not None:
+            before = before.filter(in_class)
+        dr, cr = before.one()
         dr, cr = Decimal(str(dr)), Decimal(str(cr))
         opening = (dr - cr) if debit_normal else (cr - dr)
 
@@ -245,6 +258,8 @@ def account_register(
         .join(Transaction, TransactionLine.transaction_id == Transaction.id)
         .filter(TransactionLine.account_id == account.id)
     )
+    if in_class is not None:
+        q = q.filter(in_class)
     if start:
         q = q.filter(Transaction.date >= start)
     if end:

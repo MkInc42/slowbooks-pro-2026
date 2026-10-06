@@ -1,5 +1,6 @@
 from datetime import date
 from decimal import Decimal
+from typing import Annotated, Optional
 
 from fastapi import Depends, HTTPException, Query, Request
 from sqlalchemy.orm import Session
@@ -16,7 +17,22 @@ from app.services.terminology import Terms, terms_from_db
 from app.services.bank_register import DEBIT_NORMAL as _DEBIT_NORMAL  # noqa: E402
 
 
-def _totals_by_account(db, acct_type, date_start=None, date_end=None):
+def _in_class(db, class_id):
+    """The class `class_id` (404 if there's none) and the SQL test for a
+    posted line belonging to it: the line's own class, else its
+    transaction's, else Uncategorized, as P&L by Class groups them (#213)."""
+    from app.models.classes import TxnClass
+    from app.services.classes_service import class_attribution, uncategorized_class_id
+
+    cls = db.get(TxnClass, class_id)
+    if cls is None:
+        raise HTTPException(status_code=404, detail="Class not found")
+    uncat_id = uncategorized_class_id(db)
+    db.commit()
+    return cls, class_attribution(uncat_id) == class_id
+
+
+def _totals_by_account(db, acct_type, date_start=None, date_end=None, in_class=None):
     """Return a list of {account_id, account_name, account_number, amount}
     rows where amount is signed by the account type's natural balance
     (always positive for a normal-balance ledger).
@@ -40,6 +56,8 @@ def _totals_by_account(db, acct_type, date_start=None, date_end=None):
         q = q.filter(Transaction.date >= date_start)
     if date_end is not None:
         q = q.filter(Transaction.date <= date_end)
+    if in_class is not None:
+        q = q.filter(in_class)
     q = q.group_by(Account.id, Account.name, Account.account_number)
 
     rows = []
@@ -61,15 +79,23 @@ def profit_loss(
     start_date: date = Query(default=None),
     end_date: date = Query(default=None),
     db: Session = Depends(get_db),
+    # after db, and a plain None by default: other routes call this
+    # directly, with db as the third argument
+    class_id: Annotated[
+        Optional[int], Query(description="Only this class's lines (#213); omit for all")
+    ] = None,
 ):
     if not start_date:
         start_date = date(date.today().year, 1, 1)
     if not end_date:
         end_date = date.today()
+    cls, in_class = _in_class(db, class_id) if class_id is not None else (None, None)
 
-    income = _totals_by_account(db, AccountType.INCOME, start_date, end_date)
-    cogs = _totals_by_account(db, AccountType.COGS, start_date, end_date)
-    expenses = _totals_by_account(db, AccountType.EXPENSE, start_date, end_date)
+    income = _totals_by_account(db, AccountType.INCOME, start_date, end_date, in_class)
+    cogs = _totals_by_account(db, AccountType.COGS, start_date, end_date, in_class)
+    expenses = _totals_by_account(
+        db, AccountType.EXPENSE, start_date, end_date, in_class
+    )
 
     total_income = sum(i["amount"] for i in income)
     total_cogs = sum(c["amount"] for c in cogs)
@@ -78,6 +104,8 @@ def profit_loss(
     return {
         "start_date": start_date.isoformat(),
         "end_date": end_date.isoformat(),
+        "class_id": cls.id if cls else None,
+        "class_name": cls.name if cls else None,
         "income": income,
         "cogs": cogs,
         "expenses": expenses,
@@ -195,6 +223,16 @@ def general_ledger(
     def _sign(acct):
         return 1 if acct.account_type in _DEBIT_NORMAL else -1
 
+    # each line's class, as P&L by Class attributes it (#213): its own,
+    # else its transaction's, else the system's Uncategorized
+    from app.models.classes import TxnClass
+
+    all_classes = db.query(TxnClass).all()
+    class_names = {c.id: c.name for c in all_classes}
+    uncat_name = next(
+        (c.name for c in all_classes if c.is_system_default), "Uncategorized"
+    )
+
     entries_by_account = {}
     for tl, txn, acct in results:
         key = acct.id
@@ -222,6 +260,8 @@ def general_ledger(
                 "credit": float(tl.credit),
                 "running_balance": float(a["_running"]),
                 "source_type": txn.source_type or "journal",
+                "class_name": class_names.get(tl.class_id or txn.class_id)
+                or uncat_name,
             }
         )
         a["total_debit"] += tl.debit
@@ -247,6 +287,11 @@ def account_transactions(
     start_date: date = Query(default=None),
     end_date: date = Query(default=None),
     db: Session = Depends(get_db),
+    # after db, and a plain None by default: other routes call this
+    # directly, with db as the third argument
+    class_id: Annotated[
+        Optional[int], Query(description="Only this class's lines (#213); omit for all")
+    ] = None,
 ):
     """Phase 11: drill-down support. Every journal entry line hitting a
     given account in the date range, with source document linkage so the
@@ -262,9 +307,12 @@ def account_transactions(
         start_date = date(date.today().year, 1, 1)
     if not end_date:
         end_date = date.today()
-    out = account_register(db, acct, start_date, end_date)
+    cls = _in_class(db, class_id)[0] if class_id is not None else None
+    out = account_register(db, acct, start_date, end_date, class_id=class_id)
     out["start_date"] = start_date.isoformat()
     out["end_date"] = end_date.isoformat()
+    out["class_id"] = cls.id if cls else None
+    out["class_name"] = cls.name if cls else None
     return out
 
 
@@ -382,6 +430,9 @@ def profit_loss_by_class(
     rows = (
         db.query(
             class_attribution(uncat_id).label("cls"),
+            Account.id,
+            Account.account_number,
+            Account.name,
             Account.account_type,
             sqlfunc.coalesce(sqlfunc.sum(TransactionLine.debit), 0),
             sqlfunc.coalesce(sqlfunc.sum(TransactionLine.credit), 0),
@@ -394,13 +445,33 @@ def profit_loss_by_class(
             Transaction.date >= start_date,
             Transaction.date <= end_date,
         )
-        .group_by("cls", Account.account_type)
+        .group_by(
+            "cls",
+            Account.id,
+            Account.account_number,
+            Account.name,
+            Account.account_type,
+        )
         .all()
     )
 
     class_names = {c.id: c.name for c in db.query(TxnClass).all()}
     by_class: dict[int, dict] = {}
-    for cls_id, acct_type, dr, cr in rows:
+    # each account's amount in each class: the rows of the report (#213)
+    by_account: dict[int, dict] = {}
+    for cls_id, acct_id, number, name, acct_type, dr, cr in rows:
+        acct = by_account.setdefault(
+            acct_id,
+            {
+                "id": acct_id,
+                "number": number,
+                "name": name,
+                "type": acct_type,
+                "by": {},
+            },
+        )
+        natural = (cr - dr) if acct_type == AccountType.INCOME else (dr - cr)
+        acct["by"][cls_id] = acct["by"].get(cls_id, Decimal("0")) + natural
         bucket = by_class.setdefault(
             cls_id,
             {
@@ -436,11 +507,40 @@ def profit_loss_by_class(
             }
         )
 
+    # Accounts down the side, an amount per class in the order of `classes`
+    # and the account's total, by section; an account that nets to nothing
+    # in every class is left out.
+    order = [c["class_id"] for c in columns]
+    section_of = {
+        AccountType.INCOME: "income",
+        AccountType.COGS: "cogs",
+        AccountType.EXPENSE: "expenses",
+    }
+    accounts: dict[str, list] = {"income": [], "cogs": [], "expenses": []}
+    for a in sorted(
+        by_account.values(), key=lambda a: (a["number"] or "", a["name"].lower())
+    ):
+        amounts = [a["by"].get(cid, Decimal("0")) for cid in order]
+        if not any(amounts):
+            continue
+        accounts[section_of[a["type"]]].append(
+            {
+                "account_id": a["id"],
+                "account_number": a["number"],
+                "account_name": a["name"],
+                "amounts": [float(x) for x in amounts],
+                "total": float(sum(amounts, Decimal("0"))),
+            }
+        )
+
     return {
         "start_date": start_date.isoformat(),
         "end_date": end_date.isoformat(),
         "classes": columns,
+        "accounts": accounts,
         "total_income": sum(c["income"] for c in columns),
+        "total_cogs": sum(c["cogs"] for c in columns),
+        "total_gross_profit": sum(c["gross_profit"] for c in columns),
         "total_expenses": sum(c["expenses"] for c in columns),
         "total_net_income": sum(c["net_income"] for c in columns),
     }

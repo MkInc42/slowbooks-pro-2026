@@ -199,16 +199,20 @@ const ReportsPage = {
     // range and shows the journal entries that rolled up into the row the
     // user clicked. Each entry's source_link routes to the originating
     // invoice / bill / payment / journal entry.
-    async openDrillDown(accountId, accountName, startDate, endDate) {
+    // With `classId`, only that class's lines (#213), and a way back to
+    // P&L by Class for the same dates.
+    async openDrillDown(accountId, accountName, startDate, endDate, classId = null, className = null) {
         if (!accountId) { toast('No account_id on this row', 'error'); return; }
         const params = new URLSearchParams();
         params.set('account_id', accountId);
         if (startDate) params.set('start_date', startDate);
         if (endDate) params.set('end_date', endDate);
+        if (classId) params.set('class_id', classId);
 
-        openModal(`Drill-down — ${accountName}`, `
+        openModal(`Drill-down — ${accountName}${className ? ` · ${className}` : ''}`, `
             <div id="drilldown-body" style="font-size:11px; color:var(--gray-500);">Loading…</div>
             <div class="form-actions">
+                ${classId ? ReportsPage._backToByClass(startDate, endDate) : ''}
                 <button class="btn btn-secondary" onclick="closeModal()">Close</button>
             </div>
         `);
@@ -233,6 +237,7 @@ const ReportsPage = {
             $('#drilldown-body').innerHTML = `
                 <p style="margin-bottom:8px; color:var(--gray-500); font-size:12px;">
                     ${escapeHtml(data.account.number || '')} · ${escapeHtml(data.account.name)}
+                    ${data.class_name ? `&middot; ${T('Class')}: <strong>${escapeHtml(data.class_name)}</strong>` : ''}
                     &middot; ${formatDate(data.start_date)} → ${formatDate(data.end_date)}
                     &middot; Net: <strong>${formatCurrency(data.period_net)}</strong>
                 </p>
@@ -883,34 +888,100 @@ const ReportsPage = {
 };
 
 // Class tracking: Profit & Loss split by the class dimension.
-ReportsPage.profitLossByClass = async function () {
+ReportsPage.profitLossByClass = async function (prefill) {
     await ReportsPage.openPeriodModal(T("P&L by Class"), "this_year_to_date", async (_period, range) => {
         const data = await API.get(`/reports/profit-loss-by-class?start_date=${range.start}&end_date=${range.end}`);
-        const rows = data.classes.map(c => `<tr>
-            <td>${escapeHtml(c.class_name)}</td>
-            <td class="amount">${formatCurrency(c.income)}</td>
-            <td class="amount">${formatCurrency(c.cogs)}</td>
-            <td class="amount">${formatCurrency(c.gross_profit)}</td>
-            <td class="amount">${formatCurrency(c.expenses)}</td>
-            <td class="amount" style="font-weight:700;">${formatCurrency(c.net_income)}</td>
-        </tr>`).join('');
+        const classes = data.classes;
+        if (!classes.length) {
+            return `<div class="empty-state"><p>No activity in this period</p></div>`;
+        }
+        // Accounts down the side and a column per class, as QuickBooks
+        // lays it out; an amount opens the transactions behind it, and a
+        // class's heading opens its own P&L (#213).
+        const width = classes.length + 2;
+        const args = (...xs) => xs.map(x => JSON.stringify(x)).join(',');
+        const label = a => `${a.account_number ? escapeHtml(a.account_number) + ' - ' : ''}${escapeHtml(a.account_name)}`;
+        const cell = (a, i) => {
+            const amount = a.amounts[i];
+            if (!amount) return '<td class="amount"></td>';
+            const c = classes[i];
+            const call = escapeHtml(`ReportsPage.openDrillDown(${args(a.account_id, a.account_name, range.start, range.end, c.class_id, c.class_name)})`);
+            return `<td class="amount"><a href="javascript:void(0)" style="color:var(--text-link); text-decoration:none;" onclick="${call}">${formatCurrency(amount)}</a></td>`;
+        };
+        const section = (title, rows) => `<tr><td colspan="${width}"><strong>${title}</strong></td></tr>`
+            + (rows.length
+                ? rows.map(a => `<tr><td style="padding-left:24px;">${label(a)}</td>${classes.map((_, i) => cell(a, i)).join('')}<td class="amount">${formatCurrency(a.total)}</td></tr>`).join('')
+                : `<tr><td colspan="${width}" style="color:var(--gray-400);">None</td></tr>`);
+        const sum = (title, key, total, style) => `<tr style="${style}"><td>${title}</td>${classes.map(c => `<td class="amount">${formatCurrency(c[key])}</td>`).join('')}<td class="amount">${formatCurrency(total)}</td></tr>`;
+        const subtotal = 'font-weight:600; background:var(--gray-50);';
+        const heads = classes.map(c => {
+            const call = escapeHtml(`ReportsPage.profitLossOfClass(${args(c.class_id, c.class_name, range.start, range.end)})`);
+            return `<th scope="col" class="amount"><a href="javascript:void(0)" style="color:var(--text-link); text-decoration:none;" onclick="${call}">${escapeHtml(c.class_name)}</a></th>`;
+        }).join('');
         return `
             <div style="font-size:11px; color:var(--gray-500); margin-bottom:8px;">
-                ${escapeHtml(data.start_date)} — ${escapeHtml(data.end_date)}
+                ${escapeHtml(data.start_date)} — ${escapeHtml(data.end_date)}. Click an amount for the transactions behind it, or a heading for that column's own report.
             </div>
             <div class="table-container"><table>
-                <thead><tr><th scope="col">${T('Class')}</th><th scope="col" class="amount">${T('Income')}</th><th scope="col" class="amount">COGS</th>
-                <th scope="col" class="amount">Gross Profit</th><th scope="col" class="amount">Expenses</th><th scope="col" class="amount">${T('Net Income')}</th></tr></thead>
-                <tbody>${rows.length ? rows : '<tr><td colspan="6">No activity in this period</td></tr>'}</tbody>
-                <tfoot><tr style="font-weight:700; background:var(--gray-50);">
-                    <td>Total</td>
-                    <td class="amount">${formatCurrency(data.total_income)}</td>
-                    <td></td><td></td>
-                    <td class="amount">${formatCurrency(data.total_expenses)}</td>
-                    <td class="amount">${formatCurrency(data.total_net_income)}</td>
-                </tr></tfoot>
+                <thead><tr><th scope="col">Account</th>${heads}<th scope="col" class="amount">Total</th></tr></thead>
+                <tbody>
+                    ${section(T('Income'), data.accounts.income)}
+                    ${sum(T('Total Income'), 'income', data.total_income, subtotal)}
+                    ${section('Cost of Goods Sold', data.accounts.cogs)}
+                    ${sum('Gross Profit', 'gross_profit', data.total_gross_profit, subtotal)}
+                    ${section('Expenses', data.accounts.expenses)}
+                    ${sum('Total Expenses', 'expenses', data.total_expenses, subtotal)}
+                    ${sum(T('Net Income'), 'net_income', data.total_net_income, 'font-weight:700; background:var(--primary-light);')}
+                </tbody>
             </table></div>`;
-    });
+    }, "Dates", false, { prefill });
+};
+
+// One class's own P&L (#213): the P&L by Class column, account by account,
+// each opening its transactions for that class.
+ReportsPage.profitLossOfClass = async function (classId, className, startDate, endDate) {
+    openModal(`${T('Profit & Loss')} — ${className}`, `
+        <div id="class-pl-body" style="font-size:11px; color:var(--gray-500);">Loading…</div>
+        <div class="form-actions">
+            ${ReportsPage._backToByClass(startDate, endDate)}
+            <button class="btn btn-secondary" onclick="closeModal()">Close</button>
+        </div>`);
+    try {
+        const data = await API.get(`/reports/profit-loss?start_date=${startDate}&end_date=${endDate}&class_id=${classId}`);
+        const args = (...xs) => xs.map(x => JSON.stringify(x)).join(',');
+        const section = items => items.length
+            ? items.map(i => {
+                const call = escapeHtml(`ReportsPage.openDrillDown(${args(i.account_id, i.account_name, startDate, endDate, classId, className)})`);
+                return `<tr><td style="padding-left:24px;"><a href="javascript:void(0)" style="color:var(--text-link); text-decoration:none;" onclick="${call}">${escapeHtml(i.account_name)}</a></td><td class="amount">${formatCurrency(i.amount)}</td></tr>`;
+            }).join('')
+            : '<tr><td colspan="2" style="color:var(--gray-400);">None</td></tr>';
+        const subtotal = (title, amount) => `<tr style="font-weight:600; background:var(--gray-50);"><td>${title}</td><td class="amount">${formatCurrency(amount)}</td></tr>`;
+        $('#class-pl-body').innerHTML = `
+            <p style="margin-bottom:12px; color:var(--gray-500); font-size:12px;">${T('Class')}: <strong>${escapeHtml(data.class_name)}</strong> &middot; ${formatDate(data.start_date)} &mdash; ${formatDate(data.end_date)}</p>
+            <div class="table-container"><table>
+                <thead><tr><th scope="col">Account</th><th scope="col" class="amount">Amount</th></tr></thead>
+                <tbody>
+                    <tr><td><strong>${T('Income')}</strong></td><td></td></tr>
+                    ${section(data.income)}
+                    ${subtotal(T('Total Income'), data.total_income)}
+                    <tr><td><strong>Cost of Goods Sold</strong></td><td></td></tr>
+                    ${section(data.cogs)}
+                    ${subtotal('Gross Profit', data.gross_profit)}
+                    <tr><td><strong>Expenses</strong></td><td></td></tr>
+                    ${section(data.expenses)}
+                    ${subtotal('Total Expenses', data.total_expenses)}
+                    <tr style="font-weight:700; font-size:15px; background:var(--primary-light);"><td>${T('Net Income')}</td><td class="amount">${formatCurrency(data.net_income)}</td></tr>
+                </tbody>
+            </table></div>`;
+    } catch (err) {
+        $('#class-pl-body').innerHTML = `<div class="empty-state"><p>${escapeHtml(err.message || 'Failed to load the report')}</p></div>`;
+    }
+};
+
+// Back to P&L by Class, on the dates it was opened with.
+ReportsPage._backToByClass = function (startDate, endDate) {
+    const call = escapeHtml(`ReportsPage.profitLossByClass({period: 'custom', start_date: ${JSON.stringify(startDate)}, end_date: ${JSON.stringify(endDate)}})`);
+    return `<button class="btn btn-secondary" onclick="${call}">Back to ${T('P&L by Class')}</button>`;
 };
 
 // Fixed assets: register totals per type for GL reconciliation.

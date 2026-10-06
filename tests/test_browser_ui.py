@@ -29,7 +29,7 @@ or its Chromium is not installed.
 
 import json
 from pathlib import Path
-from urllib.parse import urlsplit
+from urllib.parse import parse_qs, urlsplit
 
 import pytest
 
@@ -521,5 +521,182 @@ def test_a_report_csv_import_with_errors_says_so(browser):
             "Imported 0 records, 1 error: see the list below",
             "QuickBooks Interop — Import finished with errors",
         ]
+    finally:
+        page.close()
+
+
+# ── #213: P&L by Class, account by account, and the way in ───────────────
+
+BY_CLASS = {
+    "start_date": "2026-07-01",
+    "end_date": "2026-07-31",
+    "classes": [
+        {
+            "class_id": 1,
+            "class_name": "Uncategorized",
+            "income": 50,
+            "cogs": 0,
+            "gross_profit": 50,
+            "expenses": 50,
+            "net_income": 0,
+        },
+        {
+            "class_id": 7,
+            "class_name": "Side Gig",
+            "income": 300,
+            "cogs": 100,
+            "gross_profit": 200,
+            "expenses": 300,
+            "net_income": -100,
+        },
+    ],
+    "accounts": {
+        "income": [
+            {
+                "account_id": 40,
+                "account_number": "4000",
+                "account_name": "Service Income",
+                "amounts": [50, 300],
+                "total": 350,
+            }
+        ],
+        "cogs": [
+            {
+                "account_id": 53,
+                "account_number": "5300",
+                "account_name": "Subcontractor Costs",
+                "amounts": [0, 100],
+                "total": 100,
+            }
+        ],
+        "expenses": [
+            {
+                "account_id": 60,
+                "account_number": "6000",
+                "account_name": "Advertising",
+                "amounts": [50, 300],
+                "total": 350,
+            }
+        ],
+    },
+    "total_income": 350,
+    "total_cogs": 100,
+    "total_gross_profit": 250,
+    "total_expenses": 350,
+    "total_net_income": -100,
+}
+
+DRILL = {
+    "account": {"id": 40, "number": "4000", "name": "Service Income", "type": "income"},
+    "class_id": 7,
+    "class_name": "Side Gig",
+    "start_date": "2026-07-01",
+    "end_date": "2026-07-31",
+    "opening_balance": 0,
+    "period_debit": 0,
+    "period_credit": 300,
+    "period_net": 300,
+    "entries": [
+        {
+            "date": "2026-07-10",
+            "reference": "",
+            "description": "side gig",
+            "source_type": "journal",
+            "source_id": 1,
+            "source_link": None,
+            "debit": 0,
+            "credit": 300,
+            "running_balance": 300,
+        }
+    ],
+}
+
+CLASS_PL = {
+    "start_date": "2026-07-01",
+    "end_date": "2026-07-31",
+    "class_id": 7,
+    "class_name": "Side Gig",
+    "income": [
+        {
+            "account_id": 40,
+            "account_name": "Service Income",
+            "account_number": "4000",
+            "amount": 300,
+        }
+    ],
+    "cogs": [
+        {
+            "account_id": 53,
+            "account_name": "Subcontractor Costs",
+            "account_number": "5300",
+            "amount": 100,
+        }
+    ],
+    "expenses": [
+        {
+            "account_id": 60,
+            "account_name": "Advertising",
+            "account_number": "6000",
+            "amount": 300,
+        }
+    ],
+    "total_income": 300,
+    "total_cogs": 100,
+    "gross_profit": 200,
+    "total_expenses": 300,
+    "net_income": -100,
+}
+
+
+def test_p_and_l_by_class_opens_the_transactions_behind_an_amount(browser):
+    asked = []
+
+    def _record(body):
+        def handler(route):
+            asked.append(route.request.url)
+            route.fulfill(json=body)
+
+        return handler
+
+    page = _open(browser, 1280, 800, "#/reports")
+    try:
+        page.route("**/api/reports/profit-loss-by-class*", _answer(BY_CLASS))
+        page.route("**/api/reports/account-transactions*", _record(DRILL))
+        page.route("**/api/reports/profit-loss?*", _record(CLASS_PL))
+        _open_dialog(page, "ReportsPage.profitLossByClass()", "#report-content table")
+
+        heads = page.eval_on_selector_all(
+            "#report-content thead th", "els => els.map(e => e.textContent.trim())"
+        )
+        assert heads == ["Account", "Uncategorized", "Side Gig", "Total"]
+        assert "4000 - Service Income" in page.inner_text("#report-content tbody")
+        # an empty cell is not a link; a filled one is
+        assert (
+            page.locator("#report-content tbody tr:has-text('Subcontractor') a").count()
+            == 1
+        )
+
+        page.click(
+            "#report-content tbody tr:has-text('Service Income') a:has-text('$300.00')"
+        )
+        page.wait_for_selector("#drilldown-body table")
+        assert "class_id=7" in asked[-1] and "account_id=40" in asked[-1]
+        assert "Side Gig" in page.inner_text("#modal-title")
+        assert "side gig" in page.inner_text("#drilldown-body")
+
+        # back to the report, on the dates the drill-down was opened with
+        start = parse_qs(urlsplit(asked[-1]).query)["start_date"][0]
+        page.click("#modal button:has-text('Back to P&L by Class')")
+        page.wait_for_selector("#report-content table")
+        assert page.input_value("#report-period-select") == "custom"
+        assert page.input_value("#report-custom-start") == start
+
+        page.click("#report-content thead a:has-text('Side Gig')")
+        page.wait_for_selector("#class-pl-body table")
+        assert "class_id=7" in asked[-1]
+        assert "Side Gig" in page.inner_text("#modal-title")
+        page.click("#class-pl-body a:has-text('Service Income')")
+        page.wait_for_selector("#drilldown-body table")
+        assert "class_id=7" in asked[-1]
     finally:
         page.close()

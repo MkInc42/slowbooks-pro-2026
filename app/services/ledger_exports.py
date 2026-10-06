@@ -69,7 +69,8 @@ def trial_balance_csv(data: dict, company: str) -> str:
 def general_ledger_csv(data: dict, company: str) -> str:
     """One row per journal line, grouped by account as the screen is:
     Date | Reference | Description | Account number | Account name | Debit |
-    Credit | Running balance | Source type. Each account opens with its
+    Credit | Running balance | Source type | Class (#213, last so a sheet
+    that reads the columns by position still lines up). Each account opens with its
     balance brought forward from before the period and closes with a
     period-total row; the period total's net equals that account's Net on
     the trial balance for the same dates."""
@@ -89,6 +90,7 @@ def general_ledger_csv(data: dict, company: str) -> str:
             "Credit",
             "Running balance",
             "Source type",
+            "Class",
         ]
     )
     for a in data["accounts"]:
@@ -104,6 +106,7 @@ def general_ledger_csv(data: dict, company: str) -> str:
                 "",
                 _money(a["opening_balance"]),
                 "opening",
+                "",
             ]
         )
         for e in a["entries"]:
@@ -118,6 +121,7 @@ def general_ledger_csv(data: dict, company: str) -> str:
                     _money(e["credit"]) if e["credit"] else "",
                     _money(e["running_balance"]),
                     e["source_type"],
+                    e.get("class_name", ""),
                 ]
             )
         w.writerow(
@@ -131,6 +135,7 @@ def general_ledger_csv(data: dict, company: str) -> str:
                 _money(a["total_credit"]),
                 _money(a["closing_balance"]),
                 "total",
+                "",
             ]
         )
     return out.getvalue()
