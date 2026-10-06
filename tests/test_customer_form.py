@@ -125,6 +125,8 @@ def test_a_customer_can_be_made_inactive_and_leaves_the_pick_lists(
         "recurring.js",
     ):
         assert "/customers?active_only=true" in _read(name), name
-    # and the Customer Center marks the inactive ones
+    # and the Customer Center marks the inactive ones (shown under Show:
+    # Inactive or All, #210), dimmed and badged as the other lists are
     center = _read("customers.js")
-    assert "c.is_active === false ? ' <span" in center
+    assert "const inactive = c.is_active === false;" in center
+    assert """inactive ? ' <span class="badge badge-draft">inactive</span>'""" in center

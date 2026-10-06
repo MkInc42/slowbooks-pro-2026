@@ -59,6 +59,7 @@ def _refuse_duplicate_name(db: Session, name, exclude_id=None) -> None:
 @router.get("", response_model=list[ItemResponse])
 def list_items(
     active_only: bool = False,
+    inactive_only: bool = False,
     item_type: str = None,
     search: str = None,
     db: Session = Depends(get_db),
@@ -66,6 +67,8 @@ def list_items(
     q = db.query(Item)
     if active_only:
         q = q.filter(Item.is_active)
+    if inactive_only:  # the list page's Inactive view (#210)
+        q = q.filter(Item.is_active.is_(False))
     if item_type:
         q = q.filter(Item.item_type == item_type)
     if search:

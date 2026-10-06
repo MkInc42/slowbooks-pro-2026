@@ -30,11 +30,16 @@ def _response(db: Session, vendor: Vendor) -> VendorResponse:
 
 @router.get("", response_model=list[VendorResponse])
 def list_vendors(
-    active_only: bool = False, search: str = None, db: Session = Depends(get_db)
+    active_only: bool = False,
+    inactive_only: bool = False,
+    search: str = None,
+    db: Session = Depends(get_db),
 ):
     q = db.query(Vendor)
     if active_only:
         q = q.filter(Vendor.is_active)
+    if inactive_only:  # the list page's Inactive view (#210)
+        q = q.filter(Vendor.is_active.is_(False))
     if search:
         q = q.filter(Vendor.name.ilike(f"%{search}%"))
     return _responses(db, q.order_by(Vendor.name).all())
