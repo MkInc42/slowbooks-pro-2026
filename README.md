@@ -54,6 +54,12 @@ Details, known gaps and how to report a barrier:
 
 ## What's New
 
+**v2.20 — Tidy lists, classes in detail.** Customers, Vendors, Items,
+Employees and Jobs show active records by default, with Inactive and All a
+click away and Make Inactive on every row (#210, asked for by Ryan of
+Cimarron Site Services). P&L by Class lists every account with a column per
+class, and any amount opens the transactions behind it (#213).
+
 **v2.19 — Type to find it.** The pickers search as you type, as QuickBooks'
 do: a customer, vendor, item, account, employee, job or class picker, or any
 long list, narrows to what matches ("6500" finds 6500 Rent or Lease), and

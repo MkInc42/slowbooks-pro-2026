@@ -7,6 +7,40 @@ on what the software does, not on what sprint shipped what.
 
 ## [Unreleased]
 
+### v2.20.0 — Tidy lists, classes in detail
+
+**Inactive records out of the way** (#210, asked for by Ryan of Cimarron Site
+Services). Customers, Vendors, Items & Services, Employees and Jobs showed
+every record, inactive ones dimmed, so a list was just as long after a
+cleanup, and making a record inactive meant Edit, untick, Save.
+- Each list has **Show: Active / Inactive / All**, Active by default, and
+  remembers the choice.
+- **Make Inactive / Make Active** sits beside Edit on every row. An inactive
+  record keeps its history and leaves the pickers, as before.
+- It asks first where hiding could hide money: a customer or vendor with an
+  open balance (it names the amount), or an employee, who isn't included
+  in new pay runs while inactive.
+- A read-only sign-in doesn't get the buttons; the employee ones are the
+  administrator's. On Jobs, Status now covers job status only.
+- API: `inactive_only=true` on the five list endpoints.
+
+**P&L by Class in detail** (#213). It was one row per class with five
+totals, and you couldn't see what made them up.
+- It now lists every income, COGS and expense account down the side with a
+  column per class and a total, and still ties to the plain P&L.
+- Click an amount for the transactions behind it, in that class; click a
+  class's heading for its own Profit & Loss. Both have a way back.
+- API: `class_id` on the P&L and on the account drill-down; P&L by Class
+  adds `accounts`. The General Ledger carries each line's class, and its CSV
+  gains a Class column, last.
+
+**Expense or COGS** (#214, from D#212). The vendor's "Default Expense
+Account" read as expense-only, though it has taken cost of goods accounts
+since 2.18.0. The vendor's and item's fields now say "Expense or COGS", and
+every purchase account list groups Cost of Goods Sold first, then Expenses.
+
+No schema change. 545 operations.
+
 ### v2.19.0 — Type to find it
 
 **The pickers search as you type**, as QuickBooks' do. Type part of a name

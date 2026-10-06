@@ -37,7 +37,7 @@ pass, and the per-integration setup guides ([Stripe](setup-stripe.md),
 - **Purchase Orders** — Non-posting documents to vendors with auto-numbering, live line amounts and totals, View, Save PDF and Print, and a To Bill step that asks for an account on each line that has none. A new PO starts at no tax
 - **Bills** — Enter vendor bills (AP mirror of invoices). Track payables with status progression (draft/unpaid/partial/paid/void). Each line posts to the account on the line, else the item's expense account, else the vendor's default — a line none of them names is refused (it used to fall back to 6000). Enter Bill has an Account column, fills a picked item's cost and account, takes the vendor's terms and due date, shows a running total and refuses $0.00. Save PDF and Print. Scan a vendor receipt to pre-fill the form (see Receipt scanning under Sales Receipts)
 - **Tax on a purchase** — Sales tax a supplier charges is part of what the purchase cost: spread over the lines to the cent and posted with them (expense, cost of goods or inventory, in the item's unit cost). It never touches 2200 Sales Tax Payable. The Sales Tax report names purchase tax an older release posted there and gives the correcting entry
-- **Vendor list** — Balances worked out from open bills and unapplied credits; a vendor can be made inactive; cost-of-goods accounts can be a vendor's default
+- **Vendor list** — Balances worked out from open bills and unapplied credits; a vendor can be made inactive; cost-of-goods accounts can be a vendor's default ("Default Expense or COGS Account")
 - **Bill Payments** — Pay vendor bills with allocation. Journal: DR AP, CR Bank. Pay Bills makes one payment per vendor and asks for one vendor at a time when a check number is entered; a payment pays only its own vendor's bills. A bill lists its payments, each with View, Print Check and Void (refused once the check is reconciled). Paying from a bank account that would go below zero asks first
 - **AP Aging Report** — Outstanding payables grouped by vendor with 30/60/90 day buckets past due, in home currency, with vendor credits and bill-payment money not yet applied netted, so the total equals account 2000. A bill with no due date ages from its date and terms
 
@@ -73,6 +73,7 @@ The register is the ledger account (v2.10, issue #114). Full guide: [docs/bankin
 - **Register links** — every register line opens its document: invoice, payment, bill, bill payment, deposit, expense, card charge, transfer, or its journal entry
 
 ## Reports & Tax
+- **P&L by Class** (v2.20.0) — every income, COGS and expense account down the side with a column per class and a total, tying to the plain P&L; click an amount for the transactions behind it in that class, or a class for its own Profit & Loss
 - **QuickBooks-style period selector** — All reports support preset periods (This Month, This Quarter, This/Last Year, Year to Date, Custom Date) with live refresh
 - **Profit & Loss** — Income vs expenses for any date range
 - **Balance Sheet** — Assets, liabilities, and equity as of any date
@@ -330,6 +331,7 @@ Canonical list of security measures lives in [SECURITY.md](../SECURITY.md); engi
 - Windows XP-era toolbar, sidebar navigator with icons, status bar
 - **Type-ahead pickers** (v2.19.0) — customer, vendor, item, account, employee, job and class pickers, and any list of 15 or more, search as you type; "+ New Customer" opens its quick add with the typed name
 - Keyboard shortcuts: `Alt+N` (new invoice), `Alt+P` (payment), `Alt+Q` (quick entry), `Alt+H` (home), `Alt+D` (dark mode), `Ctrl+S` (save modal form), `Ctrl+K` (search), `Escape` (close modal)
+- **Active / Inactive / All** (v2.20.0) — Customers, Vendors, Items, Employees and Jobs show active records by default, with Make Inactive / Make Active on every row; an open balance or an employee asks first
 - No frameworks — vanilla HTML/CSS/JS single-page app
 - 35+ SPA routes, 34 sidebar nav links
 

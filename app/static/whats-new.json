@@ -1,4 +1,12 @@
 {
+  "2.20.0": {
+    "title": "Tidy lists, classes in detail",
+    "items": [
+      "Customers, Vendors, Items, Employees and Jobs show active records by default, with Inactive and All a click away, and Make Inactive or Make Active on every row; an open balance or an employee asks first (#210)",
+      "P&L by Class lists every account with a column per class; click an amount for the transactions behind it, or a class for its own Profit & Loss (#213)",
+      "The vendor's and item's account fields say Expense or COGS, and the account lists group cost of goods first (#214)"
+    ]
+  },
   "2.19.0": {
     "title": "Type to find it",
     "items": [
