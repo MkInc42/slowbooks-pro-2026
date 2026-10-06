@@ -173,6 +173,64 @@ def test_purchase_account_pickers_offer_cost_of_goods_sold():
     assert "PurchaseAccounts.filter(allAccounts)" in card_form
 
 
+def test_the_labels_say_cost_of_goods_too():
+    # #214: "Default Expense Account" read as expense-only, so a service
+    # company thought its subcontractor costs couldn't go to COGS (D#212).
+    vendor_form = _method(_js("vendors.js"), "async showForm(id = null)")
+    assert "<label>Default Expense or COGS Account</label>" in vendor_form
+    item_form = _js("items.js")
+    assert "<label>Expense or COGS Account</label>" in item_form
+    assert "<label>Expense Account</label>" not in item_form
+    # the item and expense forms use the same grouped list as the others
+    assert (
+        "PurchaseAccounts.options(expenseAccts, item.expense_account_id)" in item_form
+    )
+    assert "PurchaseAccounts.options(expenseAccts)" in _js("expenses.js")
+
+
+def test_the_purchase_accounts_are_grouped_cost_of_goods_first():
+    # #214: COGS accounts in a group of their own, ahead of the expenses;
+    # an account of another type that the record already uses comes last.
+    import json
+    import subprocess
+
+    js = _js("vendors.js")
+    helper = js[js.index("const PurchaseAccounts = {") :]
+    helper = helper[: helper.index("\n};") + 3]
+    accounts = [
+        {
+            "id": 1,
+            "account_number": "6500",
+            "name": "Rent or Lease",
+            "account_type": "expense",
+        },
+        {
+            "id": 2,
+            "account_number": "5300",
+            "name": "Subcontractor Costs",
+            "account_type": "cogs",
+        },
+        {"id": 3, "account_number": "", "name": "Old Asset", "account_type": "asset"},
+    ]
+    script = (
+        "const escapeHtml = s => String(s);\n" + helper + "\n"
+        f"process.stdout.write(PurchaseAccounts.options({json.dumps(accounts)}, 2));"
+    )
+    out = subprocess.run(
+        ["node", "-e", script], capture_output=True, text=True, timeout=30
+    )
+    assert out.returncode == 0, out.stderr
+    html = out.stdout
+    assert (
+        html.index('<optgroup label="Cost of Goods Sold">')
+        < html.index('<optgroup label="Expenses">')
+        < html.index('<optgroup label="Other">')
+    )
+    assert '<option value="2" selected>5300 - Subcontractor Costs</option>' in html
+    # an account with no number has no stray dash
+    assert '<option value="3" >Old Asset</option>' in html
+
+
 # ── B16: a vendor can be made inactive ───────────────────────────────────
 
 

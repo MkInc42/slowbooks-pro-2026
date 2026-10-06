@@ -95,10 +95,10 @@ const ItemsPage = {
                             <option value="">-- None --</option>
                             ${incomeAccts.map(a => `<option value="${a.id}" ${item.income_account_id==a.id?'selected':''}>${acctLabel(a)}</option>`).join('')}
                         </select></div>
-                    <div class="form-group"><label>Expense Account</label>
+                    <div class="form-group"><label>Expense or COGS Account</label>
                         <select name="expense_account_id">
                             <option value="">-- None --</option>
-                            ${expenseAccts.map(a => `<option value="${a.id}" ${item.expense_account_id==a.id?'selected':''}>${acctLabel(a)}</option>`).join('')}
+                            ${PurchaseAccounts.options(expenseAccts, item.expense_account_id)}
                         </select></div>
                     <div class="form-group"><label>
                         <input type="checkbox" name="is_taxable" ${item.is_taxable?'checked':''}>
