@@ -772,3 +772,94 @@ def test_the_splash_opens_once_per_version(browser):
         assert _splash_state(page)["seen"] == "9.9.10"
     finally:
         page.close()
+
+
+# ── #224: an account in the General Ledger opens its register ────────────
+
+GENERAL_LEDGER = {
+    "start_date": "2026-07-01",
+    "end_date": "2026-07-31",
+    "accounts": [
+        {
+            "account_id": 40,
+            "account_number": "4000",
+            "account_name": "Service Income",
+            "account_type": "income",
+            "normal_balance": "credit",
+            "opening_balance": 0,
+            "entries": [
+                {
+                    "date": "2026-07-10",
+                    "description": "side gig",
+                    "reference": "",
+                    "debit": 0,
+                    "credit": 300,
+                    "running_balance": 300,
+                    "source_type": "journal",
+                    "class_name": "Side Gig",
+                },
+            ],
+            "total_debit": 0,
+            "total_credit": 300,
+            "closing_balance": 300,
+        },
+        {
+            "account_id": 60,
+            "account_number": "6000",
+            "account_name": "Advertising",
+            "account_type": "expense",
+            "normal_balance": "debit",
+            "opening_balance": 0,
+            "entries": [],
+            "total_debit": 0,
+            "total_credit": 0,
+            "closing_balance": 0,
+        },
+    ],
+}
+
+
+def test_a_general_ledger_account_opens_its_register(browser):
+    # #224: the headings were plain text; the P&L's names were links.
+    asked = []
+
+    def _record(body):
+        def handler(route):
+            asked.append(route.request.url)
+            route.fulfill(json=body)
+
+        return handler
+
+    page = _open(browser, 1280, 800, "#/reports")
+    try:
+        page.route("**/api/reports/general-ledger?*", _answer(GENERAL_LEDGER))
+        page.route(
+            "**/api/reports/account-transactions*",
+            _record({**DRILL, "class_id": None, "class_name": None}),
+        )
+        _open_dialog(page, "ReportsPage.generalLedger()", "#report-content table")
+
+        links = page.locator("#report-content h3 a")
+        assert links.count() == 2
+        assert links.first.inner_text() == "Service Income"
+        assert "4000 — Service Income" in page.inner_text("#report-content h3 >> nth=0")
+        start = page.input_value("#report-custom-start")
+
+        links.first.click()
+        page.wait_for_selector("#drilldown-body table")
+        q = parse_qs(urlsplit(asked[-1]).query)
+        assert q["account_id"] == ["40"] and "class_id" not in q
+        assert q["start_date"] == [start]
+        assert "Service Income" in page.inner_text("#modal-title")
+        assert "side gig" in page.inner_text("#drilldown-body")
+        # opened from the ledger: the way back is to the ledger, not to P&L by Class
+        assert (
+            page.locator("#modal button:has-text('Back to P&L by Class')").count() == 0
+        )
+
+        page.click("#modal button:has-text('Back to General Ledger')")
+        page.wait_for_selector("#report-content h3 a")
+        assert page.input_value("#report-period-select") == "custom"
+        assert page.input_value("#report-custom-start") == start
+    finally:
+        page.close()

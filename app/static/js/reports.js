@@ -200,8 +200,10 @@ const ReportsPage = {
     // user clicked. Each entry's source_link routes to the originating
     // invoice / bill / payment / journal entry.
     // With `classId`, only that class's lines (#213), and a way back to
-    // P&L by Class for the same dates.
-    async openDrillDown(accountId, accountName, startDate, endDate, classId = null, className = null) {
+    // P&L by Class for the same dates. `from` = 'general-ledger' when an
+    // account heading in the General Ledger opened it (#224): the way back
+    // is to the ledger instead.
+    async openDrillDown(accountId, accountName, startDate, endDate, classId = null, className = null, from = null) {
         if (!accountId) { toast('No account_id on this row', 'error'); return; }
         const params = new URLSearchParams();
         params.set('account_id', accountId);
@@ -213,6 +215,7 @@ const ReportsPage = {
             <div id="drilldown-body" style="font-size:11px; color:var(--gray-500);">Loading…</div>
             <div class="form-actions">
                 ${classId ? ReportsPage._backToByClass(startDate, endDate) : ''}
+                ${from === 'general-ledger' ? ReportsPage._backToGeneralLedger(startDate, endDate) : ''}
                 <button class="btn btn-secondary" onclick="closeModal()">Close</button>
             </div>
         `);
@@ -567,8 +570,18 @@ const ReportsPage = {
             if (data.accounts.length === 0) {
                 html += `<div class="empty-state"><p>No journal entries found</p></div>`;
             } else {
+                // An account's name opens its register for these dates, as the
+                // P&L's and Balance Sheet's do (#224). The onclick payload is
+                // built outside the template and HTML-escaped, as profitLoss
+                // does, so JSON.stringify's quotes can't break the attribute.
+                const drillCall = (acct) => escapeHtml(
+                    `ReportsPage.openDrillDown(${acct.account_id},${JSON.stringify(acct.account_name)},${JSON.stringify(range.start)},${JSON.stringify(range.end)},null,null,'general-ledger')`
+                );
                 for (const acct of data.accounts) {
-                    html += `<h3 style="margin:12px 0 4px; font-size:12px; color:var(--qb-navy);">${escapeHtml(acct.account_number)} &mdash; ${escapeHtml(acct.account_name)}</h3>`;
+                    const name = acct.account_id
+                        ? `<a href="javascript:void(0)" style="color:var(--text-link); text-decoration:none;" onclick="${drillCall(acct)}">${escapeHtml(acct.account_name)}</a>`
+                        : escapeHtml(acct.account_name);
+                    html += `<h3 style="margin:12px 0 4px; font-size:12px; color:var(--qb-navy);">${escapeHtml(acct.account_number)} &mdash; ${name}</h3>`;
                     html += `<div class="table-container"><table>
                         <thead><tr><th scope="col">Date</th><th scope="col">Description</th><th scope="col">Reference</th><th scope="col">Source</th><th scope="col" class="amount">Debit</th><th scope="col" class="amount">Credit</th><th scope="col" class="amount">Balance</th></tr></thead><tbody>`;
                     html += `<tr style="color:var(--gray-500);"><td></td><td colspan="5">Balance brought forward</td><td class="amount">${formatCurrency(acct.opening_balance)}</td></tr>`;
@@ -982,6 +995,12 @@ ReportsPage.profitLossOfClass = async function (classId, className, startDate, e
 ReportsPage._backToByClass = function (startDate, endDate) {
     const call = escapeHtml(`ReportsPage.profitLossByClass({period: 'custom', start_date: ${JSON.stringify(startDate)}, end_date: ${JSON.stringify(endDate)}})`);
     return `<button class="btn btn-secondary" onclick="${call}">Back to ${T('P&L by Class')}</button>`;
+};
+
+// Back to the General Ledger, on the dates it was opened with (#224).
+ReportsPage._backToGeneralLedger = function (startDate, endDate) {
+    const call = escapeHtml(`ReportsPage.generalLedger({period: 'custom', start_date: ${JSON.stringify(startDate)}, end_date: ${JSON.stringify(endDate)}})`);
+    return `<button class="btn btn-secondary" onclick="${call}">Back to General Ledger</button>`;
 };
 
 // Fixed assets: register totals per type for GL reconciliation.
