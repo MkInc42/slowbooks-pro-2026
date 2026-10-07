@@ -69,8 +69,12 @@ def test_the_page_reads_what_exists_and_shows_the_whole_vendor():
     ):
         assert shown in details, shown
     # what a read-only sign-in can't do is marked, as on the customer page
-    assert 'data-write onclick="closeModal();BillsPage.showForm()"' in details
-    assert 'data-write onclick="closeModal();BillsPage.showPayForm()"' in details
+    # ...and they carry the vendor, as a customer's page carries its customer (NEW-21)
+    assert (
+        'data-write onclick="closeModal();BillsPage._startVendor=${id};BillsPage.showForm()"'
+        in details
+    )
+    assert 'data-write onclick="closeModal();BillsPage.showPayForm(${id})"' in details
     assert 'data-write aria-label="Notes"' in details
     # the notes save the way the customer's do
     notes = _method(VENDORS, "async _saveNotes(id, value)")
@@ -233,5 +237,53 @@ def test_the_page_s_edit_opens_the_form_and_the_notes_save(browser, company, boo
             timeout=5000,
         )
         assert page.input_value("#vendor-form [name=notes]") == "Delivers Tuesdays."
+    finally:
+        page.close()
+
+
+def test_the_page_s_enter_bill_and_pay_bills_carry_the_vendor(browser, company, books):
+    """NEW-21 (2.21.0 gate, macbase1): Enter Bill and Pay Bills on a vendor's
+    page opened for no vendor. Now Enter Bill starts on the vendor, with its
+    defaults applied, and Pay Bills lists only its open bills, with a way to
+    every vendor's."""
+    page, handled = _start(browser, company)
+    try:
+        _visit(page, handled, "#/vendors")
+        row = page.locator("#page-content tr.vendor-row", has_text="Cascade Flour Mill")
+        row.locator("td").first.click()
+        page.wait_for_function(OPEN, timeout=5000)
+        settle(page, handled)
+        vendor_id = page.evaluate(
+            """() => { const b = [...document.querySelectorAll('#modal-body button')].find(x => x.textContent.trim() === 'Pay Bills');
+                      return Number((b.getAttribute('onclick').match(/showPayForm\((\d+)\)/) || [])[1]); }"""
+        )
+        assert vendor_id > 0
+
+        page.click("#modal-body button:has-text('Enter Bill')")
+        page.wait_for_selector("#bill-form", timeout=5000)
+        settle(page, handled)
+        chosen = page.evaluate(
+            "() => { const s = document.getElementById('bill-vendor'); return [s.value, s.options[s.selectedIndex].textContent.trim()]; }"
+        )
+        assert chosen == [str(vendor_id), "Cascade Flour Mill"], chosen
+        page.evaluate("() => closeModal()")
+
+        _visit(page, handled, "#/vendors")
+        row = page.locator("#page-content tr.vendor-row", has_text="Cascade Flour Mill")
+        row.locator("td").first.click()
+        page.wait_for_function(OPEN, timeout=5000)
+        settle(page, handled)
+        page.click("#modal-body button:has-text('Pay Bills')")
+        page.wait_for_selector("#pay-only-vendor", timeout=5000)
+        settle(page, handled)
+        vendors_listed = page.evaluate(
+            "() => [...new Set([...document.querySelectorAll('#modal .pay-amount')].map(i => i.dataset.vendor))]"
+        )
+        assert vendors_listed == [str(vendor_id)], vendors_listed
+        note = page.inner_text("#pay-only-vendor")
+        assert "Cascade Flour Mill" in note and "every vendor" in note, note
+        page.click("#pay-only-vendor a")
+        settle(page, handled)
+        assert page.locator("#pay-only-vendor").count() == 0  # every vendor's again
     finally:
         page.close()

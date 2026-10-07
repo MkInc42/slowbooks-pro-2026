@@ -206,8 +206,13 @@ const BillsPage = {
 
     // Enter Bill, or with an id the same form filled from the bill, to
     // edit it (#225): a posted bill can be changed the way an invoice can,
-    // and the save re-posts its journal.
+    // and the save re-posts its journal. For a new bill, the vendor's own
+    // page sets `_startVendor` just before opening the form (#223, NEW-21);
+    // read once and cleared.
+    _startVendor: null,
     async showForm(id = null) {
+        const startVendor = id ? null : BillsPage._startVendor;
+        BillsPage._startVendor = null;
         const [vendors, items, accounts, bill] = await Promise.all([
             API.get('/vendors?active_only=true'),
             API.get('/items?active_only=true'),
@@ -275,6 +280,10 @@ const BillsPage = {
             BillsPage.recalc();
         } else {
             ScanHelper.wire(BillsPage._applyScan, BillsPage._applyScanField, BillsPage._scanFieldTarget);
+            if (startVendor) {
+                const sel = document.getElementById('bill-vendor');
+                if (sel) { sel.value = String(startVendor); BillsPage.vendorSelected(startVendor); }
+            }
         }
     },
 
@@ -527,14 +536,17 @@ const BillsPage = {
         } catch (err) { toast(err.message, 'error'); }
     },
 
-    async showPayForm() {
+    // `vendorId`: only that vendor's open bills, from the vendor's own page
+    // (#223, NEW-21); the list says so and offers every vendor's.
+    async showPayForm(vendorId = null) {
         const [vendors, bills, accounts] = await Promise.all([
             API.get('/vendors?active_only=true'),
             fetchAllPages('/bills?open_only=true'),
             API.get('/accounts?bank=1&active_only=true'),
         ]);
         // every unpaid or part-paid bill, not just the newest page (#191)
-        const openBills = bills;
+        const openBills = vendorId ? bills.filter(b => b.vendor_id == vendorId) : bills;
+        const onlyVendor = vendorId ? (vendors.find(v => v.id == vendorId) || {}).name : null;
 
         const vendorOpts = vendors.map(v => `<option value="${v.id}">${escapeHtml(v.name)}</option>`).join('');
         const acctOpts = accounts.map(a => `<option value="${a.id}">${escapeHtml(a.name)}</option>`).join('');
@@ -550,6 +562,9 @@ const BillsPage = {
             </tr>`).join('');
 
         if (!billRows) billRows = '<tr><td colspan="6" style="color:var(--text-muted);">No open bills</td></tr>';
+        const onlyNote = onlyVendor
+            ? `<p id="pay-only-vendor" style="margin:0 0 8px; font-size:12px; color:var(--text-muted);">${escapeHtml(onlyVendor)}'s open bills. <a href="javascript:void(0)" onclick="BillsPage.showPayForm()">Show every vendor's</a></p>`
+            : '';
 
         openModal('Pay Bills', `
             <form onsubmit="BillsPage.savePay(event)">
@@ -566,6 +581,7 @@ const BillsPage = {
                     <div class="form-group"><label>Check #</label>
                         <input name="check_number"></div>
                 </div>
+                ${onlyNote}
                 <div class="table-container" style="margin-top:12px;"><table>
                     <thead><tr><th scope="col" style="width:30px;"></th><th scope="col">Bill #</th><th scope="col">Vendor</th><th scope="col">Due</th>
                     <th scope="col" class="amount">Balance</th><th scope="col" class="amount">Payment</th></tr></thead>
