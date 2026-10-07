@@ -33,7 +33,9 @@ def test_the_general_ledger_heading_links_into_the_account_register():
         r"<h3 [^>]*>\$\{escapeHtml\(acct\.account_number\)\} &mdash; \$\{name\}</h3>",
         gl,
     )
-    assert 'acct.account_id\n                        ? `<a href="javascript:void(0)"' in gl
+    assert (
+        'acct.account_id\n                        ? `<a href="javascript:void(0)"' in gl
+    )
     assert "color:var(--text-link); text-decoration:none;" in gl
 
 
