@@ -54,6 +54,12 @@ Details, known gaps and how to report a barrier:
 
 ## What's New
 
+**v2.21 — Three things you'd reach for.** Click a vendor for its own
+page, with its bills, payments, credits and what's owed (#223). Edit a
+posted bill, the way an invoice is edited, with the ledger following and a
+bill never going below what's been paid (#225). An account in the General
+Ledger opens its register (#224).
+
 **v2.20 — Tidy lists, classes in detail.** Customers, Vendors, Items,
 Employees and Jobs show active records by default, with Inactive and All a
 click away and Make Inactive on every row (#210, asked for by Ryan of

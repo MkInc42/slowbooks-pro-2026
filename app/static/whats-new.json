@@ -1,4 +1,12 @@
 {
+  "2.21.0": {
+    "title": "Three things you'd reach for",
+    "items": [
+      "Vendors: click a vendor for its own page, with its bills, payments, credits, what's owed and its details, like a customer's (#223)",
+      "Bills: Edit a posted bill, on the row and in its view, the way an invoice is edited; a bill can't go below what's been paid, and the ledger follows (#225)",
+      "General Ledger: an account's name opens its register, as the P&L and Balance Sheet already did (#224)"
+    ]
+  },
   "2.20.1": {
     "title": "A quieter start",
     "items": [

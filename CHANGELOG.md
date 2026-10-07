@@ -7,6 +7,42 @@ on what the software does, not on what sprint shipped what.
 
 ## [Unreleased]
 
+### v2.21.0 — Three things you'd reach for
+
+A user who knows QuickBooks clicked a vendor, an account in the General
+Ledger and a past bill, and nothing happened. None of the three was broken;
+none of the three existed. Now they do.
+
+**A vendor's own page** (#223). Click a vendor in the Vendors list for the
+mirror of a customer's page: contact, terms, 1099 status, the default
+expense or COGS account, notes you can edit in place, what's owed, its bills
+with status and balance, its bill payments, and any credits not yet applied.
+A bill, payment or credit opens from it; Enter Bill, Pay Bills and Edit are
+on it. The row's own Edit and Make Inactive keep working. Nothing new on the
+server: the page reads what the API already served.
+
+**Edit a posted bill** (#225), the way an invoice is edited: the header
+(vendor, dates, terms, number, memo) and the lines (item, account,
+description, quantity, rate, job, class, cost code, billable). The journal
+keeps its identity and is re-posted, so Accounts Payable, the vendor's
+balance, the aging and the trial balance follow. The rules: a bill can't be
+edited below what's already been paid (void the payment first); a voided
+bill can't be edited; the closing date applies; a posting in a completed
+reconciliation takes words but not amounts. An inventory line's receipt is
+reversed at its original cost and the new quantity received, so stock on
+hand and average cost stay right. `PUT /api/bills/{id}` is the 546th
+operation. Edit is on the bill's row and in its view, not on voided bills.
+
+**The General Ledger drills down** (#224). An account's name in the report
+opens that account's register for the report's dates, as the P&L and
+Balance Sheet already did, with a way back to the ledger.
+
+**Also:** a contrast-sweep fixture dated a permit to 2026-10-06 so it would
+read "Expires soon"; from 2026-10-07 it read "Expired" and the sweep failed
+on main. The date is worked out from today now (#229).
+
+No schema change. 546 operations.
+
 ### v2.20.1 — A quieter start
 
 Both from @stevenmirabito.
