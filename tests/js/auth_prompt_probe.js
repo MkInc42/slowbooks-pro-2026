@@ -55,8 +55,8 @@ vm.runInContext(fs.readFileSync('app/static/js/auth.js', 'utf8'), ctx);
   const [a, b] = await Promise.all([auth.promptAuth(), auth.promptAuth()]);
   const overlays = body.children.filter(c => !c.removed);
   const html = overlays.length ? overlays[0].innerHTML : '';
-  const screen = html.includes('id="auth-switch-login"') ? 'setup'
-    : html.includes('id="auth-switch-setup"') ? 'login' : 'none';
+  const screen = html.includes('id="auth-password-confirm"') ? 'setup'
+    : html.includes('id="auth-title"') ? 'login' : 'none';
   const again = await auth.promptAuth();
   console.log(JSON.stringify({
     results: [a, b, again],

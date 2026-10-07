@@ -5,13 +5,12 @@
  * when /api/auth/status reports first-time setup is needed.
  *
  * Two views:
- *   - login: password only, with a "First time? Set up Slowbooks →" link
+ *   - login: password only
  *   - setup: full first-run wizard (company info, operator name/email,
- *            defaults, password) with a "Already set up? Sign in →" link
+ *            defaults, password)
  *
- * The initial view is decided by /api/auth/status; the user can flip
- * between them via the cross-links. Race-safe: a flurry of 401s from
- * parallel API calls can only ever paint one overlay.
+ * The initial view is decided by /api/auth/status. Race-safe: a flurry of
+ * 401s from parallel API calls can only ever paint one overlay.
  */
 (function () {
     "use strict";
@@ -252,9 +251,9 @@
     window.addEventListener("pywebviewready", function () {
         const overlay = document.getElementById(OVERLAY_ID);
         if (!overlay || !isDesktopShell() || overlay.querySelector("#auth-switch-company")) return;
-        const setupLink = overlay.querySelector("#auth-switch-setup"); // the sign-in view's
-        if (!setupLink) return;
-        setupLink.insertAdjacentHTML("afterend", switchCompanyHTML());
+        const linkRow = overlay.querySelector("#auth-link-row");
+        if (!linkRow) return;
+        linkRow.insertAdjacentHTML("beforeend", switchCompanyHTML());
         wireSwitchCompany(overlay);
     });
 
@@ -309,10 +308,7 @@
             '<div id="auth-error" style="' +
             errorBoxStyle() +
             '"></div>' +
-            '<div style="margin-top:16px;text-align:center;">' +
-            '<button type="button" id="auth-switch-setup" style="' +
-            linkButtonStyle() +
-            '">First time? Set up Slowbooks →</button>' +
+            '<div id="auth-link-row" style="margin-top:16px;text-align:center;">' +
             (offersPicker() ? switchCompanyHTML() : "") +
             "</div>" +
             "</form>"
@@ -326,13 +322,7 @@
         const userInput = overlay.querySelector("#auth-username");
         const errBox = overlay.querySelector("#auth-error");
         const btn = overlay.querySelector("#auth-submit");
-        const switchBtn = overlay.querySelector("#auth-switch-setup");
-
         (userInput || input).focus();
-
-        switchBtn.addEventListener("click", function () {
-            renderView("setup", onSuccess);
-        });
 
         form.addEventListener("submit", async function (e) {
             e.preventDefault();
@@ -427,11 +417,6 @@
             "You can add your address, phone, tax ID, payment defaults, " +
             "and integrations in Settings after you sign in." +
             "</p>" +
-            '<div style="margin-top:12px;text-align:center;">' +
-            '<button type="button" id="auth-switch-login" style="' +
-            linkButtonStyle() +
-            '">Already set up? Sign in →</button>' +
-            "</div>" +
             "</form>"
         );
     }
@@ -461,14 +446,9 @@
         const pw2 = overlay.querySelector("#auth-password-confirm");
         const errBox = overlay.querySelector("#auth-error");
         const btn = overlay.querySelector("#auth-submit");
-        const switchBtn = overlay.querySelector("#auth-switch-login");
         const firstField = overlay.querySelector("#operator_name");
 
         if (firstField) firstField.focus();
-
-        switchBtn.addEventListener("click", function () {
-            renderView("login", onSuccess);
-        });
 
         form.addEventListener("submit", async function (e) {
             e.preventDefault();
