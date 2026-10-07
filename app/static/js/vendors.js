@@ -28,14 +28,16 @@ const VendorsPage = {
                 </tr></thead><tbody>`;
             for (const v of vendors) {
                 const inactive = v.is_active === false;
-                html += `<tr${inactive ? ' class="row--dim"' : ''}>
+                // a row opens the vendor's page, as a customer's does (#223);
+                // the buttons on it keep to themselves
+                html += `<tr class="clickable vendor-row${inactive ? ' row--dim' : ''}" onclick="VendorsPage.showDetails(${v.id})">
                     <td><strong>${escapeHtml(v.name)}</strong>${inactive ? ' <span class="badge badge-draft">inactive</span>' : ''}</td>
                     <td>${escapeHtml(v.company) || ''}</td>
                     <td>${escapeHtml(v.phone) || ''}</td>
                     <td>${escapeHtml(v.email) || ''}</td>
                     <td class="amount">${formatCurrency(v.balance)}</td>
                     <td class="actions">
-                        <button class="btn btn-sm btn-secondary" onclick="VendorsPage.showForm(${v.id})">Edit</button>
+                        <button class="btn btn-sm btn-secondary" onclick="event.stopPropagation(); VendorsPage.showForm(${v.id})">Edit</button>
                         ${ActiveLists.buttonHtml('vendors', v)}
                     </td>
                 </tr>`;
@@ -43,6 +45,163 @@ const VendorsPage = {
             html += `</tbody></table></div>`;
         }
         return html;
+    },
+
+    // -- Vendor details modal (#223) ----------------------------------------
+    // Row-click destination, the mirror of CustomersPage.showDetails: what
+    // we know about the vendor on one screen — contact, address, terms, the
+    // default account, 1099, NOTES (editable inline), what's owed, the last
+    // 10 bills, the last 10 payments, and credits not applied yet.
+    async showDetails(id) {
+        let vendor, bills, payments, credits, accounts;
+        try {
+            [vendor, bills, payments, credits, accounts] = await Promise.all([
+                API.get(`/vendors/${id}`),
+                fetchAllPages(`/bills?vendor_id=${id}`).catch(() => []),
+                API.get(`/bill-payments?vendor_id=${id}`).catch(() => []),
+                API.get(`/vendor-credits?vendor_id=${id}`).catch(() => []),
+                API.get('/accounts').catch(() => []),
+            ]);
+        } catch (err) {
+            toast(err.message, 'error');
+            return;
+        }
+
+        const address = [
+            [vendor.address1, vendor.address2].filter(Boolean).join(', '),
+            [vendor.city, vendor.state, vendor.zip].filter(Boolean).join(' '),
+            vendor.country && vendor.country !== 'US' ? vendor.country : '',
+        ].filter(Boolean).join('\n');
+        const acct = accounts.find(a => a.id === vendor.default_expense_account_id);
+        const acctLabel = acct ? `${acct.account_number ? acct.account_number + ' - ' : ''}${acct.name}` : '';
+
+        // -- Bills + payments — last 10 each, newest first, click-through --
+        const billRows = bills.slice(0, 10).map(b =>
+            `<tr style="cursor:pointer" onclick="BillsPage.view(${b.id})">
+                <td>${escapeHtml(b.bill_number || '')}</td>
+                <td>${formatDate(b.date)}</td>
+                <td>${b.due_date ? formatDate(b.due_date) : ''}</td>
+                <td>${statusBadge(b.status)}</td>
+                <td class="amount">${formatCurrency(b.total)}</td>
+                <td class="amount">${formatCurrency(b.balance_due)}</td>
+            </tr>`).join('');
+        const payRows = payments.slice(0, 10).map(p =>
+            `<tr style="cursor:pointer" onclick="BillsPage.viewPayment(${p.id})">
+                <td>${formatDate(p.date)}</td>
+                <td>${escapeHtml(p.method || '')}${p.is_voided ? ' <span style="color:var(--text-danger)">(void)</span>' : ''}</td>
+                <td>${escapeHtml(p.check_number || '')}</td>
+                <td class="amount">${formatCurrency(p.amount)}</td>
+            </tr>`).join('');
+
+        // -- Credits the vendor owes us, not yet applied to a bill --
+        const open = credits.filter(c => c.status !== 'void' && parseFloat(c.balance_remaining) > 0);
+        const creditsHtml = open.length === 0 ? '' : `
+            <div style="margin-bottom:14px">
+                <h4 style="font-size:11px;text-transform:uppercase;color:var(--text-muted);margin:0 0 4px 0">Credits not applied yet (${formatCurrency(open.reduce((t, c) => t + parseFloat(c.balance_remaining), 0))})</h4>
+                <ul style="margin:0;padding-left:18px;font-size:13px">${open.map(c => `<li style="margin:2px 0">
+                    <a href="javascript:void(0)" onclick="VendorCreditsPage.view(${c.id})">${escapeHtml(c.credit_number)}</a> of ${formatDate(c.date)}: <strong>${formatCurrency(c.balance_remaining)}</strong> left of ${formatCurrency(c.total)}
+                </li>`).join('')}</ul>
+            </div>`;
+        const balance = parseFloat(vendor.balance) || 0;
+
+        const html = `
+            <!-- header: name + what's owed + quick actions -->
+            <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:12px;flex-wrap:wrap;gap:12px">
+                <div>
+                    <h3 style="margin:0;font-size:18px">${escapeHtml(vendor.name)}</h3>
+                    ${vendor.company && vendor.company !== vendor.name ? `<div style="color:var(--text-muted);font-size:13px">${escapeHtml(vendor.company)}</div>` : ''}
+                    <div style="margin-top:6px;font-size:12px;color:var(--text-muted)">
+                        ${vendor.is_active === false ? '<span style="color:var(--text-danger)">Inactive</span>' : '<span style="color:var(--text-success)">Active</span>'}
+                        &nbsp;·&nbsp; Terms: ${escapeHtml(vendor.terms || 'Net 30')}
+                        ${vendor.is_1099_vendor ? ` · <strong>1099${vendor.vendor_1099_type ? ' ' + escapeHtml(vendor.vendor_1099_type) : ''}</strong>` : ''}
+                        ${vendor.tax_id ? ` · Tax ID: <code>${escapeHtml(vendor.tax_id)}</code>` : ''}
+                        ${vendor.account_number ? ` · Account #: <code>${escapeHtml(vendor.account_number)}</code>` : ''}
+                    </div>
+                </div>
+                <div style="text-align:right">
+                    <div style="font-size:11px;color:var(--text-muted);text-transform:uppercase;letter-spacing:.05em">${balance < 0 ? 'Credit' : 'Balance owed'}</div>
+                    <div style="font-size:22px;font-weight:700;color:${balance > 0 ? 'var(--text-danger)' : (balance < 0 ? 'var(--text-success)' : 'var(--text-primary)')}">
+                        ${formatCurrency(Math.abs(balance))}
+                    </div>
+                    <div style="margin-top:8px">
+                        <button class="btn btn-sm btn-primary" data-write onclick="closeModal();BillsPage.showForm()">Enter Bill</button>
+                        <button class="btn btn-sm btn-secondary" data-write onclick="closeModal();BillsPage.showPayForm()">Pay Bills</button>
+                        <button class="btn btn-sm btn-secondary" onclick="VendorsPage.showForm(${id})">Edit</button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- contact + address + account in 3 columns -->
+            <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:14px;margin-bottom:14px">
+                <div>
+                    <h4 style="font-size:11px;text-transform:uppercase;color:var(--text-muted);margin:0 0 4px 0">Contact</h4>
+                    <div style="font-size:13px">
+                        ${vendor.email ? `<div>📧 ${escapeHtml(vendor.email)}</div>` : ''}
+                        ${vendor.phone ? `<div>☎ ${escapeHtml(vendor.phone)}</div>` : ''}
+                        ${vendor.fax ? `<div>📠 ${escapeHtml(vendor.fax)}</div>` : ''}
+                        ${vendor.website ? `<div>🌐 ${escapeHtml(vendor.website)}</div>` : ''}
+                        ${!vendor.email && !vendor.phone && !vendor.fax && !vendor.website ? '<span style="color:var(--text-muted)">No contact info</span>' : ''}
+                    </div>
+                </div>
+                <div>
+                    <h4 style="font-size:11px;text-transform:uppercase;color:var(--text-muted);margin:0 0 4px 0">Address</h4>
+                    <pre style="font-size:13px;font-family:inherit;white-space:pre-wrap;margin:0">${escapeHtml(address || '—')}</pre>
+                </div>
+                <div>
+                    <h4 style="font-size:11px;text-transform:uppercase;color:var(--text-muted);margin:0 0 4px 0">Default expense or COGS account</h4>
+                    <div style="font-size:13px">${acctLabel ? escapeHtml(acctLabel) : '<span style="color:var(--text-muted)">None — each bill line picks its own</span>'}</div>
+                </div>
+            </div>
+
+            <!-- notes (inline editable) -->
+            <div style="margin-bottom:14px">
+                <h4 style="font-size:11px;text-transform:uppercase;color:var(--text-muted);margin:0 0 4px 0;display:flex;justify-content:space-between">
+                    <span>Notes</span>
+                    <span id="vend-note-status-${id}" style="font-size:10px;color:var(--text-muted);text-transform:none;letter-spacing:0;font-weight:normal"></span>
+                </h4>
+                <textarea id="vend-notes-${id}" rows="3" data-write aria-label="Notes" style="width:100%;font-size:13px;font-family:inherit"
+                    placeholder="Internal notes about this vendor — visible to everyone with admin access."
+                    onblur="VendorsPage._saveNotes(${id}, this.value)">${escapeHtml(vendor.notes || '')}</textarea>
+            </div>
+
+            ${creditsHtml}
+
+            <!-- recent bills -->
+            <div style="margin-bottom:14px">
+                <h4 style="font-size:11px;text-transform:uppercase;color:var(--text-muted);margin:0 0 4px 0">Recent bills (${bills.length})</h4>
+                ${bills.length === 0 ? '<p style="color:var(--text-muted);font-size:13px;margin:0">No bills yet</p>' :
+                    `<table class="data-table" style="font-size:12px">
+                        <thead><tr><th scope="col">#</th><th scope="col">Date</th><th scope="col">Due</th><th scope="col">Status</th><th scope="col" class="amount">Total</th><th scope="col" class="amount">Balance</th></tr></thead>
+                        <tbody>${billRows}</tbody>
+                    </table>`}
+            </div>
+
+            <!-- recent payments -->
+            <div>
+                <h4 style="font-size:11px;text-transform:uppercase;color:var(--text-muted);margin:0 0 4px 0">Recent payments (${payments.length})</h4>
+                ${payments.length === 0 ? '<p style="color:var(--text-muted);font-size:13px;margin:0">No payments yet</p>' :
+                    `<table class="data-table" style="font-size:12px">
+                        <thead><tr><th scope="col">Date</th><th scope="col">Method</th><th scope="col">Check #</th><th scope="col" class="amount">Amount</th></tr></thead>
+                        <tbody>${payRows}</tbody>
+                    </table>`}
+            </div>`;
+
+        openModal(`Vendor — ${vendor.name}`, html);
+    },
+
+    async _saveNotes(id, value) {
+        const status = document.getElementById(`vend-note-status-${id}`);
+        if (status) status.textContent = 'saving…';
+        try {
+            await API.put(`/vendors/${id}`, { notes: value });
+            if (status) {
+                status.textContent = '✓ saved';
+                setTimeout(() => { if (status) status.textContent = ''; }, 1500);
+            }
+        } catch (err) {
+            if (status) status.textContent = '⚠ save failed';
+            toast(err.message, 'error');
+        }
     },
 
     async showForm(id = null) {
