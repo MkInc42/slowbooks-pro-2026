@@ -213,10 +213,11 @@ const VendorsPage = {
  * the record even when it is of another type or inactive.
  */
 const PurchaseAccounts = {
-    filter(accounts, keepId) {
+    filter(accounts, ...keepIds) {
+        const keep = new Set(keepIds.filter(Boolean).map(Number));
         return accounts.filter(a =>
             ((a.account_type === 'expense' || a.account_type === 'cogs') && a.is_active !== false)
-            || (keepId && a.id == keepId));
+            || keep.has(Number(a.id)));
     },
     // Grouped, cost of goods first, so the COGS accounts read as a set and
     // not as a few odd expenses (#214); anything else the record already

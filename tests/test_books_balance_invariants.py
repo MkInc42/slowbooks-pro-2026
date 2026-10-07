@@ -470,3 +470,102 @@ def test_nonprofit_net_assets_equal_balance_sheet_equity(
         - Decimal(str(sofp["total_liabilities"]))
         - Decimal(str(sofp["total_net_assets"]))
     ) < Decimal("0.01")
+
+
+# ── #225: the books still balance after bills are edited ─────────────────
+
+
+def test_the_books_balance_after_bills_are_edited(
+    client, db_session, seed_accounts, seed_customer
+):
+    """The scenario, then its unpaid bill grown and its paid bill cut to
+    exactly what was paid: every journal still balances, Σdebits = Σcredits,
+    assets = liabilities + equity, and the A/P aging equals the open bill
+    balances."""
+    from app.models.bills import Bill, BillStatus
+    from app.models.contacts import Vendor
+    from app.models.transactions import Transaction, TransactionLine
+
+    vendor = Vendor(name="Vendor X", is_active=True)
+    db_session.add(vendor)
+    db_session.commit()
+    ids = _build_scenario(client, seed_customer.id, vendor.id)
+
+    expense = seed_accounts["6000"].id
+    r = client.put(
+        f"/api/bills/{ids['bill_unpaid']}",
+        json={
+            "lines": [
+                {
+                    "description": "Materials",
+                    "account_id": expense,
+                    "quantity": 2,
+                    "rate": 320.00,
+                    "line_order": 0,
+                },
+                {
+                    "description": "Freight",
+                    "account_id": expense,
+                    "quantity": 1,
+                    "rate": 45.50,
+                    "line_order": 1,
+                },
+            ]
+        },
+    )
+    assert r.status_code == 200, r.text
+    assert Decimal(r.json()["total"]) == Decimal("685.50")
+    # the paid bill, cut to exactly what was paid: stays paid
+    r = client.put(
+        f"/api/bills/{ids['bill_paid']}",
+        json={
+            "lines": [
+                {
+                    "description": "Supplies",
+                    "account_id": expense,
+                    "quantity": 1,
+                    "rate": 175.00,
+                    "line_order": 0,
+                }
+            ]
+        },
+    )
+    assert r.status_code == 200, r.text
+    assert r.json()["status"] == "paid"
+
+    db_session.expire_all()
+    for txn in db_session.query(Transaction).all():
+        lines = db_session.query(TransactionLine).filter_by(transaction_id=txn.id).all()
+        dr = sum((Decimal(str(ln.debit or 0)) for ln in lines), Decimal("0"))
+        cr = sum((Decimal(str(ln.credit or 0)) for ln in lines), Decimal("0"))
+        assert (
+            dr == cr
+        ), f"JE {txn.id} ({txn.description!r}) unbalanced: dr={dr} cr={cr}"
+
+    tb = client.get(
+        "/api/reports/trial-balance",
+        params={"start_date": "2026-01-01", "end_date": "2026-12-31"},
+    ).json()
+    assert abs(
+        Decimal(str(tb["total_debit"])) - Decimal(str(tb["total_credit"]))
+    ) < Decimal("0.01")
+
+    bs = client.get(
+        "/api/reports/balance-sheet", params={"as_of_date": "2026-12-31"}
+    ).json()
+    assets = Decimal(str(bs["total_assets"]))
+    liab_eq = Decimal(str(bs["total_liabilities"])) + Decimal(str(bs["total_equity"]))
+    assert abs(assets - liab_eq) < Decimal("0.01"), f"A={assets} L+E={liab_eq}"
+
+    open_balance = sum(
+        (
+            Decimal(str(b.balance_due or 0))
+            for b in db_session.query(Bill).filter(
+                Bill.status.in_([BillStatus.UNPAID, BillStatus.PARTIAL])
+            )
+        ),
+        Decimal("0"),
+    )
+    aging = Decimal(str(client.get("/api/reports/ap-aging").json()["totals"]["total"]))
+    assert abs(aging - open_balance) < Decimal("0.01")
+    assert open_balance == Decimal("685.50")

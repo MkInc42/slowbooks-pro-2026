@@ -49,6 +49,7 @@ const BillsPage = {
                     <td class="amount">${formatCurrency(b.balance_due)}</td>
                     <td class="actions">
                         <button class="btn btn-sm btn-secondary" onclick="BillsPage.view(${b.id})">View</button>
+                        ${b.status !== 'void' ? `<button class="btn btn-sm btn-secondary" data-write onclick="BillsPage.showForm(${b.id})">Edit</button>` : ''}
                         ${b.status !== 'void' && b.status !== 'paid' ? `<button class="btn btn-sm btn-danger" onclick="BillsPage.void(${b.id})">Void</button>` : ''}
                     </td>
                 </tr>`,
@@ -94,6 +95,7 @@ const BillsPage = {
                 <button class="btn btn-sm btn-secondary" onclick="BillsPage.uploadAttachment(${bill.id})" style="margin-left:4px;">Upload</button>
             </div>
             <div class="form-actions">
+                ${bill.status !== 'void' ? `<button class="btn btn-primary" data-write onclick="BillsPage.showForm(${bill.id})">Edit</button>` : ''}
                 <button class="btn btn-secondary" onclick="window.open('/api/bills/${bill.id}/pdf','_blank')">Save PDF</button>
                 <button class="btn btn-secondary" onclick="window.open('/api/bills/${bill.id}/print-preview','_blank')">Print</button>
                 <button class="btn btn-secondary" onclick="closeModal()">Close</button>
@@ -202,75 +204,101 @@ const BillsPage = {
         }
     },
 
-    async showForm() {
-        const [vendors, items, accounts] = await Promise.all([
+    // Enter Bill, or with an id the same form filled from the bill, to
+    // edit it (#225): a posted bill can be changed the way an invoice can,
+    // and the save re-posts its journal.
+    async showForm(id = null) {
+        const [vendors, items, accounts, bill] = await Promise.all([
             API.get('/vendors?active_only=true'),
             API.get('/items?active_only=true'),
             API.get('/accounts'),
+            id ? API.get(`/bills/${id}`) : Promise.resolve(null),
         ]);
+        if (bill && bill.status === 'void') { toast('A voided bill cannot be edited', 'error'); return; }
+        // the bill's own vendor stays listed even if it has since gone inactive
+        if (bill && !vendors.some(v => v.id === bill.vendor_id)) {
+            vendors.push({ id: bill.vendor_id, name: bill.vendor_name || `Vendor #${bill.vendor_id}` });
+        }
         BillsPage._items = items;
-        BillsPage._accounts = PurchaseAccounts.filter(accounts);
+        BillsPage._accounts = PurchaseAccounts.filter(accounts, ...(bill ? bill.lines.map(l => l.account_id) : []));
         BillsPage._defaultExpenseAccountId = null;
         BillsPage.lineCount = 1;
-        const classGroup = await classFormGroupHtml();
-        const jobGroup = await jobFormGroupHtml(null);
+        const classGroup = await classFormGroupHtml(bill ? bill.class_id : undefined);
+        const jobGroup = await jobFormGroupHtml(bill ? bill.job_id : null);
         await CostCodes.load();
         await Nonprofit.loadFunds();
 
         BillsPage._vendors = vendors;
+        const terms = bill && bill.terms ? bill.terms : 'Net 30';
+        const termChoices = ['Net 15','Net 30','Net 45','Net 60','Due on Receipt'];
+        if (!termChoices.includes(terms)) termChoices.push(terms);
 
-        openModal('Enter Bill', `
-            <form id="bill-form" onsubmit="BillsPage.save(event)">
-                ${ScanHelper.scanRowHtml()}
+        openModal(bill ? `Edit Bill ${bill.bill_number}` : 'Enter Bill', `
+            <form id="bill-form" onsubmit="BillsPage.save(event, ${bill ? bill.id : 'null'})">
+                ${bill ? '' : ScanHelper.scanRowHtml()}
                 <div class="form-grid">
                     <div class="form-group"><label>Vendor *</label>
                         ${VendorQuickAdd.html(vendors, { id: 'bill-vendor', onchange: 'BillsPage.vendorSelected(this.value)' })}</div>
                     <div class="form-group"><label>Bill Number</label>
-                        <input name="bill_number" placeholder="from the receipt, or left blank"></div>
+                        <input name="bill_number" placeholder="from the receipt, or left blank" value="${bill ? escapeHtml(bill.bill_number || '') : ''}"></div>
                     <div class="form-group"><label>Date *</label>
-                        <input name="date" type="date" required value="${todayISO()}"></div>
+                        <input name="date" type="date" required value="${bill ? bill.date : todayISO()}"></div>
                     <div class="form-group"><label>Terms</label>
                         <select name="terms" title="The vendor's terms; the due date follows from them">
-                            ${['Net 15','Net 30','Net 45','Net 60','Due on Receipt'].map(t =>
-                                `<option ${t==='Net 30'?'selected':''}>${t}</option>`).join('')}
+                            ${termChoices.map(t =>
+                                `<option ${t===terms?'selected':''}>${escapeHtml(t)}</option>`).join('')}
                         </select></div>
                     ${classGroup}${jobGroup}
-                    ${currencyFormGroupsHtml()}
+                    ${currencyFormGroupsHtml(bill ? bill.currency : undefined, bill ? bill.exchange_rate : undefined)}
                 </div>
                 <h3 style="margin:12px 0 8px;font-size:14px;">Line Items</h3>
                 <table class="line-items-table">
                     <thead><tr><th scope="col">Item</th><th scope="col" title="Where the line is recorded">Account</th><th scope="col">Description</th>${CostCodes.headHtml()}${Nonprofit.headHtml()}<th scope="col" title="Billable to the job's customer">Bill?</th><th scope="col" class="col-qty">Qty</th><th scope="col" class="col-rate">Rate</th><th scope="col" class="col-amount">Amount</th></tr></thead>
-                    <tbody id="bill-lines">${BillsPage.lineHtml(0)}</tbody>
+                    <tbody id="bill-lines">${bill ? '' : BillsPage.lineHtml(0)}</tbody>
                 </table>
                 <button type="button" class="btn btn-sm btn-secondary" style="margin-top:8px;" onclick="BillsPage.addLine()">+ Add Line</button>
                 <div class="invoice-totals">
                     <div class="total-row grand-total"><span class="label">Total</span><span class="value" id="bill-total">$0.00</span></div>
                 </div>
                 <div class="form-group" style="margin-top:12px;"><label>Notes</label>
-                    <textarea name="notes"></textarea></div>
+                    <textarea name="notes">${bill ? escapeHtml(bill.notes || '') : ''}</textarea></div>
                 <div class="form-actions">
                     <button type="button" class="btn btn-secondary" onclick="ScanHelper.discard(); closeModal()">Cancel</button>
-                    <button type="submit" class="btn btn-primary">Save Bill</button>
+                    <button type="submit" class="btn btn-primary">${bill ? 'Save Changes' : 'Save Bill'}</button>
                 </div>
             </form>`);
-        ScanHelper.wire(BillsPage._applyScan, BillsPage._applyScanField, BillsPage._scanFieldTarget);
+        if (bill) {
+            const vendorSel = document.getElementById('bill-vendor');
+            if (vendorSel) vendorSel.value = bill.vendor_id;
+            BillsPage.lineCount = 0;
+            bill.lines.forEach(l => BillsPage.addLine(l));
+            BillsPage.recalc();
+        } else {
+            ScanHelper.wire(BillsPage._applyScan, BillsPage._applyScanField, BillsPage._scanFieldTarget);
+        }
     },
 
     // One line of Enter Bill. The Account cell says where the line is
     // recorded — the item's expense account or the vendor's default fill it
     // in; with neither, it waits to be chosen (a line with no account used
     // to land on 6000, Advertising & Marketing — W-H5, F8).
-    lineHtml(idx) {
-        const itemOpts = BillsPage._items.map(i => `<option value="${i.id}">${escapeHtml(i.name)}</option>`).join('');
-        const acctOpts = PurchaseAccounts.options(BillsPage._accounts, BillsPage._defaultExpenseAccountId);
+    // With `line`, a stored line drawn as the bill has it (an edit, #225):
+    // its item, account, words, cost code, fund, quantity and rate; a stock
+    // item's account is Inventory and not a choice, as when it's picked.
+    lineHtml(idx, line = null) {
+        const l = line || {};
+        const item = l.item_id ? BillsPage._items.find(i => i.id == l.item_id) : null;
+        const stock = !!(item && item.track_inventory);
+        const itemOpts = BillsPage._items.map(i => `<option value="${i.id}"${l.item_id == i.id ? ' selected' : ''}>${escapeHtml(i.name)}</option>`).join('');
+        const acctOpts = PurchaseAccounts.options(BillsPage._accounts, stock ? null : (l.account_id || BillsPage._defaultExpenseAccountId));
         return `<tr data-billline="${idx}">
                 <td><select class="line-item" onchange="BillsPage.itemSelected(this)"><option value="">--</option>${itemOpts}</select></td>
-                <td><select class="line-account"><option value="">Choose...</option>${acctOpts}</select></td>
-                <td><input class="line-desc"></td>
-                ${CostCodes.cellHtml('line-cost-code')}${Nonprofit.cellHtml('line-function')}
-                <td style="text-align:center;"><input type="checkbox" class="line-billable" title="Billable"></td>
-                <td><input class="line-qty" type="number" step="0.01" value="1" oninput="BillsPage.recalc()"></td>
-                <td><input class="line-rate" type="number" step="0.0001" value="0" oninput="BillsPage.recalc()"></td>
+                <td><select class="line-account"${stock ? ' disabled title="Stock items are recorded in Inventory"' : ''}><option value="">Choose...</option>${acctOpts}</select></td>
+                <td><input class="line-desc" value="${escapeHtml(l.description || '')}"></td>
+                ${CostCodes.cellHtml('line-cost-code', l.cost_code_id)}${Nonprofit.cellHtml('line-function', l.function, l.class_id)}
+                <td style="text-align:center;"><input type="checkbox" class="line-billable" title="Billable"${l.is_billable ? ' checked' : ''}></td>
+                <td><input class="line-qty" type="number" step="0.01" value="${line ? Number(l.quantity) : 1}" oninput="BillsPage.recalc()"></td>
+                <td><input class="line-rate" type="number" step="0.0001" value="${line ? Number(l.rate) : 0}" oninput="BillsPage.recalc()"></td>
                 <td class="col-amount line-amount">$0.00</td>
             </tr>`;
     },
@@ -424,12 +452,12 @@ const BillsPage = {
         BillsPage.recalc();
     },
 
-    addLine() {
+    addLine(line = null) {
         const idx = BillsPage.lineCount++;
-        $('#bill-lines').insertAdjacentHTML('beforeend', BillsPage.lineHtml(idx));
+        $('#bill-lines').insertAdjacentHTML('beforeend', BillsPage.lineHtml(idx, line));
     },
 
-    async save(e) {
+    async save(e, id = null) {
         e.preventDefault();
         const form = e.target;
         const lines = [];
@@ -466,7 +494,7 @@ const BillsPage = {
         }
         try {
             const vendorId = await VendorQuickAdd.ensure('bill-vendor');
-            const result = await API.post('/bills', {
+            const body = {
                 vendor_id: vendorId,
                 bill_number: form.bill_number.value.trim() || null,
                 date: form.date.value,
@@ -476,9 +504,15 @@ const BillsPage = {
                 job_id: jobIdFromForm(form),
                 ...currencyPayloadFromForm(form),
                 lines,
-            });
-            await ScanHelper.attachAfterSave('bill', result.id);
-            toast('Bill saved');
+            };
+            if (id) {
+                await API.put(`/bills/${id}`, body);
+                toast('Bill updated');
+            } else {
+                const result = await API.post('/bills', body);
+                await ScanHelper.attachAfterSave('bill', result.id);
+                toast('Bill saved');
+            }
             closeModal();
             App.navigate('#/bills');
         } catch (err) { toast(err.message, 'error'); }

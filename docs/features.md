@@ -35,7 +35,7 @@ pass, and the per-integration setup guides ([Stripe](setup-stripe.md),
 
 ## Accounts Payable
 - **Purchase Orders** — Non-posting documents to vendors with auto-numbering, live line amounts and totals, View, Save PDF and Print, and a To Bill step that asks for an account on each line that has none. A new PO starts at no tax
-- **Bills** — Enter vendor bills (AP mirror of invoices). Track payables with status progression (draft/unpaid/partial/paid/void). Each line posts to the account on the line, else the item's expense account, else the vendor's default — a line none of them names is refused (it used to fall back to 6000). Enter Bill has an Account column, fills a picked item's cost and account, takes the vendor's terms and due date, shows a running total and refuses $0.00. Save PDF and Print. Scan a vendor receipt to pre-fill the form (see Receipt scanning under Sales Receipts)
+- **Bills** — Enter vendor bills (AP mirror of invoices). A posted bill can be edited the way an invoice can (v2.21.0): the header or the lines, re-posting its journal; not below what has been paid, not when voided, not into a closed period. Track payables with status progression (draft/unpaid/partial/paid/void). Each line posts to the account on the line, else the item's expense account, else the vendor's default — a line none of them names is refused (it used to fall back to 6000). Enter Bill has an Account column, fills a picked item's cost and account, takes the vendor's terms and due date, shows a running total and refuses $0.00. Save PDF and Print. Scan a vendor receipt to pre-fill the form (see Receipt scanning under Sales Receipts)
 - **Tax on a purchase** — Sales tax a supplier charges is part of what the purchase cost: spread over the lines to the cent and posted with them (expense, cost of goods or inventory, in the item's unit cost). It never touches 2200 Sales Tax Payable. The Sales Tax report names purchase tax an older release posted there and gives the correcting entry
 - **Vendor list** — Balances worked out from open bills and unapplied credits; a vendor can be made inactive; cost-of-goods accounts can be a vendor's default ("Default Expense or COGS Account")
 - **Bill Payments** — Pay vendor bills with allocation. Journal: DR AP, CR Bank. Pay Bills makes one payment per vendor and asks for one vendor at a time when a check number is entered; a payment pays only its own vendor's bills. A bill lists its payments, each with View, Print Check and Void (refused once the check is reconciled). Paying from a bank account that would go below zero asks first
@@ -497,7 +497,7 @@ All endpoints under `/api/`. Swagger docs at `/docs`. 300+ routes across 50 rout
 | `/api/purchase-orders` | GET, POST, PUT | Purchase order CRUD |
 | `/api/purchase-orders/{id}/convert-to-bill` | POST | Convert PO to bill; optional body `lines: [{line_id, account_id}]` |
 | `/api/purchase-orders/{id}/pdf · /print-preview` | GET | Purchase order PDF / print page |
-| `/api/bills` | GET, POST, PUT | Bill CRUD with line items |
+| `/api/bills` | GET, POST, PUT | Bill CRUD with line items; PUT edits a posted bill (v2.21.0), re-posting its journal |
 | `/api/bills/{id}/void` | POST | Void bill |
 | `/api/bills/{id}/pdf · /print-preview` | GET | Bill PDF / print page |
 | `/api/bill-payments` | GET, POST | Pay vendor bills with allocation (a payment pays its own vendor's bills only); `?bill_id=` lists a bill's payments |
