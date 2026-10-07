@@ -42,6 +42,7 @@ module, where playwright or its Chromium is not installed.
 """
 
 import re
+from datetime import date, timedelta
 from urllib.parse import urlsplit
 
 import pytest
@@ -779,8 +780,12 @@ def seed_books(client, seed_accounts):
             },
         )["id"]
 
+    # "Expires soon" is within 30 days of today, so the date is worked out
+    # from today: a fixed one went from soon to expired on 2026-10-07 and
+    # the sweep lost the "Expires soon" badge it measures.
+    soon = (date.today() + timedelta(days=10)).isoformat()
     S["permit_expired"] = permit("603112457", "2026-08-01")
-    S["permit_soon"] = permit("603112458", "2026-10-06")
+    S["permit_soon"] = permit("603112458", soon)
     S["permit_active"] = permit("603112459", "2028-01-14")
     S["permit_inactive"] = permit("603112460", "2028-06-30", active=False)
     post(
