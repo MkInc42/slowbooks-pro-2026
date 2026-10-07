@@ -1,4 +1,11 @@
 {
+  "2.20.1": {
+    "title": "A quieter start",
+    "items": [
+      "The release notes show once per version, not on every start; About still shows them any time (#220, reported by @stevenmirabito)",
+      "The sign-in and setup screens no longer link to each other; each already hands you to the other when you belong there (#219, @stevenmirabito)"
+    ]
+  },
   "2.20.0": {
     "title": "Tidy lists, classes in detail",
     "items": [

@@ -7,15 +7,31 @@ on what the software does, not on what sprint shipped what.
 
 ## [Unreleased]
 
-### Fixed
+### v2.20.1 — A quieter start
 
-- The sign-in and setup screens no longer link to each other. The app already
-  opens the right one from the server's own status, and each link only led
-  somewhere that bounced straight back: the sign-in screen's "First time? Set
-  up Slowbooks" opened a wizard whose only possible answer was "Setup is
-  already complete on this server", and the wizard's "Already set up? Sign in"
-  wanted a password that does not exist yet. Each screen's 409 already hands
-  the reader over to the other when it turns out they belong there.
+Both from @stevenmirabito.
+
+**The release notes show once per version** (#220). The start-up splash
+opened on every page load: the licence terms recorded their acknowledgement,
+once per licence version per browser, but the what's-new panel never did, so
+the whole splash came back each time, with "OK" instead of "I understand".
+The notes now record the version they showed, the same way the terms do, and
+the splash opens at start only while something on it is new. With both seen
+it's hidden before first paint. About still shows the whole splash any time.
+Nothing moves to the server and the licence's acknowledgement is untouched.
+Steven reported it, reproduced it on Server Edition and mapped out the fix;
+this is his "keep localStorage, add a second key" alternative.
+
+**The sign-in and setup screens no longer link to each other** (#219, by
+Steven). The app already opens the right one from the server's own status,
+and each link only led somewhere that bounced straight back: the sign-in
+screen's "First time? Set up Slowbooks" opened a wizard whose only possible
+answer was "Setup is already complete on this server", and the wizard's
+"Already set up? Sign in" wanted a password that does not exist yet. Each
+screen's 409 already hands the reader over to the other when it turns out
+they belong there.
+
+No schema change. 545 operations.
 
 ### v2.20.0 — Tidy lists, classes in detail
 
