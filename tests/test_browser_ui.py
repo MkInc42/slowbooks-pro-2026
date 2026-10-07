@@ -193,12 +193,19 @@ def _serve(route):
     )
 
 
-def _open(browser, width, height, page_hash):
+def _open_raw(browser, width, height):
+    """A page with the app served, before any navigation: for tests of what
+    the first load itself does (the splash)."""
     page = browser.new_page(viewport={"width": width, "height": height})
     page.route("**/*", _serve)
+    return page
+
+
+def _open(browser, width, height, page_hash):
+    page = _open_raw(browser, width, height)
     page.goto(f"{ORIGIN}/{page_hash}")
     page.wait_for_function("window.App && document.readyState === 'complete'")
-    page.click("#splash-dismiss")  # the splash covers the page on every start
+    page.click("#splash-dismiss")  # a fresh profile: the terms keep the splash up
     return page
 
 
@@ -698,5 +705,70 @@ def test_p_and_l_by_class_opens_the_transactions_behind_an_amount(browser):
         page.click("#class-pl-body a:has-text('Service Income')")
         page.wait_for_selector("#drilldown-body table")
         assert "class_id=7" in asked[-1]
+    finally:
+        page.close()
+
+
+# ── #220: the splash once per version, not every load ────────────────────
+
+
+def _splash_state(page):
+    return page.evaluate("""() => ({
+            shown: !document.getElementById('splash').classList.contains('hidden'),
+            notes: !document.getElementById('splash-whatsnew').hidden,
+            terms: !document.getElementById('splash-terms').hidden,
+            ack: localStorage.getItem('slowbooks.license_ack'),
+            seen: localStorage.getItem('slowbooks.whatsnew_ack'),
+        })""")
+
+
+def test_the_splash_opens_once_per_version(browser):
+    # #220: it opened on every load. The terms were gated on their version;
+    # the release notes weren't. Now both are.
+    notes = {"9.9.9": {"title": "A test release", "items": ["One thing"]}}
+    page = _open_raw(browser, 1280, 800)
+    try:
+        page.route("**/static/whats-new.json", _answer(notes))
+        page.route("**/health", _answer({"status": "ok", "version": "9.9.9"}))
+        page.goto(f"{ORIGIN}/")
+        page.wait_for_function(
+            "() => !document.getElementById('splash-whatsnew').hidden"
+        )
+        first = _splash_state(page)
+        assert first["shown"] and first["notes"] and first["terms"], first
+        page.click("#splash-dismiss")
+        after_ok = _splash_state(page)
+        assert (
+            not after_ok["shown"] and after_ok["ack"] and after_ok["seen"] == "9.9.9"
+        ), after_ok
+
+        # a reload: nothing new, so no splash
+        page.goto(f"{ORIGIN}/")
+        page.wait_for_function("window.App && document.readyState === 'complete'")
+        page.wait_for_timeout(300)
+        reloaded = _splash_state(page)
+        assert not reloaded["shown"], reloaded
+
+        # About still shows it in full, notes included
+        page.evaluate("() => App.showAbout()")
+        about = _splash_state(page)
+        assert about["shown"] and about["notes"], about
+        page.click("#splash-dismiss")
+
+        # a new version: its notes open the splash again, the terms stay acknowledged
+        page.route(
+            "**/static/whats-new.json",
+            _answer({"9.9.10": {"title": "Next", "items": ["Another"]}}),
+        )
+        page.route("**/health", _answer({"status": "ok", "version": "9.9.10"}))
+        page.goto(f"{ORIGIN}/")
+        page.wait_for_function(
+            "() => !document.getElementById('splash').classList.contains('hidden')"
+        )
+        again = _splash_state(page)
+        assert again["notes"] and not again["terms"], again
+        assert "9.9.10" in page.inner_text("#splash-whatsnew-title")
+        page.click("#splash-dismiss")
+        assert _splash_state(page)["seen"] == "9.9.10"
     finally:
         page.close()

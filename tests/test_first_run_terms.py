@@ -55,3 +55,20 @@ def test_the_installer_shows_the_license_and_ships_it():
         ROOT / "LICENSE"
     ).resolve()
     assert 'DestName: "LICENSE.txt"' in ISS, "LICENSE not shipped beside the program"
+
+
+# ── #220: the release notes, once per version, like the terms ─────────────
+
+
+def test_the_release_notes_are_shown_once_per_version():
+    # The splash opened on every load: the terms recorded their
+    # acknowledgement, the what's-new panel never did (#220, reported by
+    # stevenmirabito). Now the notes record the version they showed, and the
+    # splash opens at start only while the terms or the notes are new.
+    assert "const NOTES_KEY = 'slowbooks.whatsnew_ack'" in BOOT
+    assert "localStorage.getItem(NOTES_KEY) === key" in BOOT
+    assert "localStorage.setItem(NOTES_KEY, notesVersion)" in BOOT
+    # with the terms acknowledged the splash is hidden before first paint
+    assert "if (splash && acknowledged) {" in BOOT
+    # the licence's own acknowledgement is untouched
+    assert BOOT.count("localStorage.setItem(ACK_KEY, LICENSE_VERSION)") == 1
