@@ -22,22 +22,39 @@
     // per browser. Not a gate on every launch: once is the point.
     const LICENSE_VERSION = '2.0';
     const ACK_KEY = 'slowbooks.license_ack';
+    // The release notes the same way (#220): once per version, per browser.
+    // The splash opened on every load, because the notes never recorded
+    // that they'd been seen; now it opens at start only while something on
+    // it is new, the terms or the notes. About shows it in full any time.
+    const NOTES_KEY = 'slowbooks.whatsnew_ack';
+    const splash = document.getElementById('splash');
     const dismiss = document.getElementById('splash-dismiss');
     const terms = document.getElementById('splash-terms');
     let acknowledged = false;
     try { acknowledged = localStorage.getItem(ACK_KEY) === LICENSE_VERSION; } catch (e) { /* no storage: show it */ }
+    let notesVersion = null;  // the version whose notes are showing, once known
+    let dismissed = false;    // OK was clicked before the notes arrived
     if (terms && !acknowledged) {
         terms.hidden = false;
         const v = document.getElementById('splash-license-version');
         if (v) v.textContent = LICENSE_VERSION;
         if (dismiss) dismiss.textContent = 'I understand';
     }
+    if (splash && acknowledged) {
+        // Nothing to acknowledge yet; the notes, once loaded, open it if
+        // they're new. Hidden before first paint, so it doesn't flash.
+        splash.classList.add('hidden');
+    }
     if (dismiss) {
         dismiss.addEventListener('click', () => {
             if (terms && !acknowledged) {
                 try { localStorage.setItem(ACK_KEY, LICENSE_VERSION); } catch (e) { /* shown again next time; acceptable */ }
             }
-            document.getElementById('splash').classList.add('hidden');
+            if (notesVersion) {
+                try { localStorage.setItem(NOTES_KEY, notesVersion); } catch (e) { /* shown again next time; acceptable */ }
+            }
+            dismissed = true;
+            splash.classList.add('hidden');
         });
     }
 
@@ -69,6 +86,18 @@
                 list.appendChild(li);
             });
             box.hidden = false;
+            notesVersion = key;
+            let seen = false;
+            try { seen = localStorage.getItem(NOTES_KEY) === key; } catch (e) { /* no storage: show it */ }
+            if (seen) return;  // the splash stays shut (About still shows them)
+            // New notes: open the splash at start, unless OK was already
+            // clicked (the terms had it open), in which case they count as
+            // seen with that click.
+            if (dismissed) {
+                try { localStorage.setItem(NOTES_KEY, key); } catch (e) { /* shown again next time; acceptable */ }
+            } else if (splash) {
+                splash.classList.remove('hidden');
+            }
         } catch (e) { /* splash stays as shipped */ }
     })();
 
