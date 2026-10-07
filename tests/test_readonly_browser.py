@@ -317,6 +317,7 @@ DIALOGS = [
     ("#/job-costs", "JobCostsPage.view({job_cost})"),
     ("#/customers", "CustomersPage.showDetails({customer})"),
     ("#/vendors", "VendorsPage.showForm({vendor})"),
+    ("#/vendors", "VendorsPage.showDetails({vendor})"),
     ("#/items", "ItemsPage.showMovements({loaf})"),
     ("#/accounts", "App.showAccountForm({checking})"),
     ("#/banking/{checking}", "BankingPage.showReconciliations({checking})"),

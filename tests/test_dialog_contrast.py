@@ -86,6 +86,8 @@ SALES = [
 PURCHASES = [
     "VendorsPage.showForm()",
     "VendorsPage.showForm({vendor})",
+    "VendorsPage.showDetails({vendor})",
+    "VendorsPage.showDetails({vendor2})",
     "VendorsPage._confirmDuplicate(document.createElement('form'), null,"
     " {{name: 'Cascade Flour Mills'}},"
     " [{{id: {vendor}, name: 'Cascade Flour Mill', similarity: 0.96}}])",
