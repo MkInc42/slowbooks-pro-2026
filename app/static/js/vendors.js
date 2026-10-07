@@ -124,8 +124,8 @@ const VendorsPage = {
                         ${formatCurrency(Math.abs(balance))}
                     </div>
                     <div style="margin-top:8px">
-                        <button class="btn btn-sm btn-primary" data-write onclick="closeModal();BillsPage.showForm()">Enter Bill</button>
-                        <button class="btn btn-sm btn-secondary" data-write onclick="closeModal();BillsPage.showPayForm()">Pay Bills</button>
+                        <button class="btn btn-sm btn-primary" data-write onclick="closeModal();BillsPage._startVendor=${id};BillsPage.showForm()">Enter Bill</button>
+                        <button class="btn btn-sm btn-secondary" data-write onclick="closeModal();BillsPage.showPayForm(${id})">Pay Bills</button>
                         <button class="btn btn-sm btn-secondary" onclick="VendorsPage.showForm(${id})">Edit</button>
                     </div>
                 </div>
