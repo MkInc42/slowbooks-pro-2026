@@ -7,6 +7,16 @@ on what the software does, not on what sprint shipped what.
 
 ## [Unreleased]
 
+### Fixed
+
+- The sign-in and setup screens no longer link to each other. The app already
+  opens the right one from the server's own status, and each link only led
+  somewhere that bounced straight back: the sign-in screen's "First time? Set
+  up Slowbooks" opened a wizard whose only possible answer was "Setup is
+  already complete on this server", and the wizard's "Already set up? Sign in"
+  wanted a password that does not exist yet. Each screen's 409 already hands
+  the reader over to the other when it turns out they belong there.
+
 ### v2.20.0 — Tidy lists, classes in detail
 
 **Inactive records out of the way** (#210, asked for by Ryan of Cimarron Site
