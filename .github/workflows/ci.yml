@@ -137,8 +137,9 @@ jobs:
           # +1: tests/test_field_names.py (#198) skips as one module without playwright too.
           # +1: tests/test_combobox.py (type-ahead pickers), the same.
           # +1: tests/test_active_lists_browser.py (#210 Active/Inactive lists), the same.
-          # +1: tests/test_vendor_page.py (#223 the vendor page), the same.
-          MAX_SKIPS: "101"
+          # +2: tests/test_vendor_page.py (#223 the vendor page) and
+          # tests/test_bill_edit_browser.py (#225 editing a posted bill), the same.
+          MAX_SKIPS: "102"
         shell: pwsh
         run: |
           # -v names each test as it starts, so a mid-run death is identified

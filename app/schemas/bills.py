@@ -73,7 +73,11 @@ class BillCreate(StrictModel):
         return v
 
 
-class BillUpdate(BaseModel):
+class BillUpdate(StrictModel):
+    """An edit of a posted bill (#225): whatever is sent changes, the rest
+    stays. Lines, when sent, replace the bill's lines."""
+
+    vendor_id: Optional[int] = None
     bill_number: Optional[str] = None
     date: Optional[dt_date] = None
     due_date: Optional[dt_date] = None

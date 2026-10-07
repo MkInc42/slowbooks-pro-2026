@@ -82,12 +82,12 @@ def test_the_po_vendor_picker_hides_inactive_vendors_but_keeps_the_pos_own():
 
 def test_enter_bill_has_an_account_column_and_sends_each_lines_account():
     js = _js("bills.js")
-    form = _method(js, "async showForm()")
+    form = _method(js, "async showForm(id = null)")
     assert ">Account</th>" in form
-    row = _method(js, "lineHtml(idx)")
+    row = _method(js, "lineHtml(idx, line = null)")
     assert 'class="line-account"' in row
     assert "PurchaseAccounts.options(BillsPage._accounts" in row
-    save = _method(js, "async save(e)")
+    save = _method(js, "async save(e, id = null)")
     assert "account_id: accountId" in save
     assert "Choose an account for line" in save
 
@@ -95,7 +95,9 @@ def test_enter_bill_has_an_account_column_and_sends_each_lines_account():
 def test_picking_an_item_on_a_bill_fills_its_cost_and_account():
     # W-M1: the rate stayed 0 and a $0 bill was saved without a word.
     js = _js("bills.js")
-    assert 'onchange="BillsPage.itemSelected(this)"' in _method(js, "lineHtml(idx)")
+    assert 'onchange="BillsPage.itemSelected(this)"' in _method(
+        js, "lineHtml(idx, line = null)"
+    )
     pick = _method(js, "itemSelected(select)")
     assert "PurchaseLines.price(item)" in pick
     assert "item.expense_account_id" in pick
@@ -104,9 +106,9 @@ def test_picking_an_item_on_a_bill_fills_its_cost_and_account():
 
 def test_enter_bill_shows_a_running_total_and_refuses_zero():
     js = _js("bills.js")
-    assert 'id="bill-total"' in _method(js, "async showForm()")
+    assert 'id="bill-total"' in _method(js, "async showForm(id = null)")
     assert "#bill-total" in _method(js, "recalc()")
-    save = _method(js, "async save(e)")
+    save = _method(js, "async save(e, id = null)")
     assert "BillsPage.recalc() <= 0" in save
     assert save.index("BillsPage.recalc() <= 0") < save.index("API.post('/bills'")
 
@@ -291,3 +293,42 @@ def test_processing_a_pay_run_warns_before_it_overdraws():
     assert process.index("Overdraft.confirm") < process.index(
         "API.post(`/payroll/${id}/process`)"
     )
+
+
+# ── #225: a posted bill can be edited ─────────────────────────────────────
+
+
+def test_a_bill_has_edit_on_its_row_and_in_its_view_but_not_when_voided():
+    js = _js("bills.js")
+    row = _method(js, "async render()")
+    assert "BillsPage.showForm(${b.id})" in row and "data-write" in row
+    assert "${b.status !== 'void' ? `<button" in row  # no Edit on a voided bill
+    view = _method(js, "async view(id)")
+    assert "BillsPage.showForm(${bill.id})" in view and ">Edit</button>" in view
+    assert "${bill.status !== 'void' ? `<button" in view
+
+
+def test_the_bill_form_fills_from_the_bill_and_saves_with_put():
+    js = _js("bills.js")
+    form = _method(js, "async showForm(id = null)")
+    assert "id ? API.get(`/bills/${id}`)" in form
+    assert "Edit Bill ${bill.bill_number}" in form
+    assert "bill.lines.forEach(l => BillsPage.addLine(l))" in form
+    assert "A voided bill cannot be edited" in form
+    row = _method(js, "lineHtml(idx, line = null)")
+    # a stored line comes back with everything it carries (the #188 lesson)
+    for field in (
+        "l.item_id",
+        "l.account_id",
+        "l.description",
+        "l.cost_code_id",
+        "l.function",
+        "l.class_id",
+        "l.is_billable",
+        "l.quantity",
+        "l.rate",
+    ):
+        assert field in row, field
+    save = _method(js, "async save(e, id = null)")
+    assert "API.put(`/bills/${id}`, body)" in save
+    assert save.index("BillsPage.recalc() <= 0") < save.index("API.put(")
