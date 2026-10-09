@@ -605,3 +605,53 @@ def test_a_nonprofits_dialogs_open_safely_too(
         }
     finally:
         page.close()
+
+
+# ── NEW-38: the customer page's invoice rows are links ───────────────────
+
+
+def test_the_customer_pages_invoice_rows_open_from_the_keyboard(
+    browser, company, books
+):
+    page, handled = _open_at(browser, company, f"#/customers/{books['customer']}")
+    try:
+        page.wait_for_function(MODAL_SHOWN)
+        settle(page, handled)
+        links = page.evaluate(
+            """() => [...document.querySelectorAll('#modal a[href^="#/invoices/"]')]
+                .map(a => [a.getAttribute('href'), a.textContent.trim()])"""
+        )
+        assert len(links) >= 3, links
+        href, text = links[0]
+        inv = company.get(f"/api/invoices/{href.rsplit('/', 1)[1]}").json()
+        assert text == inv["invoice_number"]  # named by the number
+        # Enter on the link opens the invoice at its address; Back returns
+        page.focus(f'#modal a[href="{href}"]')
+        page.keyboard.press("Enter")
+        page.wait_for_function(AT, arg=href)
+        page.wait_for_function(
+            f"() => document.getElementById('modal-title').textContent.includes('#{inv['invoice_number']}')"
+        )
+        settle(page, handled)
+        page.go_back()
+        page.wait_for_function(AT, arg=f"#/customers/{books['customer']}")
+        page.wait_for_function(MODAL_SHOWN)
+        settle(page, handled)
+        assert page.locator(f'#modal a[href="{href}"]').count() == 1
+        # the row's own click still opens it
+        page.click(
+            f'#modal a[href="{href}"] >> xpath=ancestor::tr',
+            position={"x": 300, "y": 8},
+        )
+        page.wait_for_function(AT, arg=href)
+        page.go_back()
+        page.wait_for_function(MODAL_SHOWN)
+        settle(page, handled)
+        # a payment row the same: its date is the link, and opens the payment
+        pay = page.locator('#modal a[href^="#/payments/"]').first
+        assert pay.count() == 1 and pay.text_content().strip()
+        pay.focus()
+        page.keyboard.press("Enter")
+        page.wait_for_function(f"() => {TITLE.split('=> ')[1]} === 'Payment Details'")
+    finally:
+        page.close()

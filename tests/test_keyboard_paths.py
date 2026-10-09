@@ -158,3 +158,20 @@ def test_every_void_or_delete_is_marked_and_never_focused_first():
         "const target = first && !first.matches('[data-destructive]') ? first : modal;"
         in utils
     )
+
+
+# ── NEW-38 ────────────────────────────────────────────────────────────────
+
+
+def test_the_customer_pages_invoice_and_payment_rows_carry_links():
+    src = _src("customers.js")
+    assert (
+        "rowLink(`#/invoices/${i.id}`, `invoice:${i.id}`, i.invoice_number || `#${i.id}`)"
+        in src
+    )
+    assert (
+        "rowLink(`#/payments/${p.id}`, `payment:${p.id}`, p.date || `#${p.id}`)" in src
+    )
+    assert 'onclick="event.preventDefault()">${escapeHtml(text)}</a>' in src
+    # the row's click still opens the document
+    assert """onclick="closeModal();App.navigate('#/invoices/${i.id}')">""" in src
