@@ -19,7 +19,8 @@ const ReportsPage = {
         'profit-loss-by-class': { label: () => T('P&L by Class'),       open: (p) => ReportsPage.profitLossByClass(p) },
         'profit-loss-class':    { label: () => T('Profit & Loss'),      open: (p) => ReportsPage.profitLossOfClass(p.class_id, null, p), keep: ['class_id'] },
         'profit-loss-unclassified': { label: () => `${T('P&L')} Unclassified`, open: (p) => ReportsPage.profitLossUnclassified(p) },
-        'account-transactions': { label: 'Drill-down',         open: (p) => ReportsPage.openDrillDown(p.account_id, null, p.start_date, p.end_date, p.class_id || null, null, p.from || null) },
+        'profit-loss-by-job':   { label: () => `${T('P&L')} by ${T('Job')}`, open: (p) => ReportsPage.profitLossByJob(p) },
+        'account-transactions': { label: 'Drill-down',         open: (p) => ReportsPage.openDrillDown(p.account_id, null, p.start_date, p.end_date, p.class_id || null, null, p.from || null, { job_id: p.job_id }) },
         'ar-aging':             { label: () => T('Accounts Receivable Aging'), open: (p) => ReportsPage.arAging(p), asOf: true },
         'ap-aging':             { label: 'Accounts Payable Aging',    open: (p) => ReportsPage.apAging(p), asOf: true },
         'sales-tax':            { label: 'Sales Tax Report',   open: (p) => ReportsPage.salesTax(p) },
@@ -97,11 +98,11 @@ const ReportsPage = {
 
     // `detail` names which one, after the view's label, where the view is
     // a filtered one ("Back to Profit & Loss — Side Gig").
-    _backButton(name, params, detail = '') {
+    _backButton(name, params, detail = '', cls = 'btn btn-secondary') {
         const view = ReportsPage._view(name);
         if (!view) return '';
         const call = escapeHtml(`ReportsPage.backTo(${JSON.stringify(name)}, ${JSON.stringify(params || {})})`);
-        return `<button type="button" class="btn btn-secondary" data-back-to="${escapeHtml(name)}" onclick="${call}">${escapeHtml(ReportsPage._backText(name, detail))}</button>`;
+        return `<button type="button" class="${cls}" data-back-to="${escapeHtml(name)}" onclick="${call}">${escapeHtml(ReportsPage._backText(name, detail))}</button>`;
     },
 
     _backText(name, detail) {
@@ -196,6 +197,10 @@ const ReportsPage = {
                 <div class="card" style="cursor:pointer" onclick="ReportsPage.jobProfitability()">
                     <div class="card-header">${T('Job Profitability')}</div>
                     <p style="font-size:13px; color:var(--gray-500);">${Terms.text('Income, costs and margin per job')}</p>
+                </div>
+                <div class="card" style="cursor:pointer" onclick="ReportsPage.profitLossByJob()">
+                    <div class="card-header">${T('P&L')} by ${T('Job')}</div>
+                    <p style="font-size:13px; color:var(--gray-500);">${Terms.text('Every account down the side, a column per job')}</p>
                 </div>
                 <div class="card" style="cursor:pointer" onclick="ReportsPage.financialStatementsPdf()">
                     <div class="card-header">Financial Statements Pack (PDF)</div>
@@ -324,20 +329,30 @@ const ReportsPage = {
     // (#/reports/account-transactions?account_id=…&from=…), so it is
     // rebuilt from the address after a reload, or on Back from a source
     // document (R7): the names are then taken from what the server says.
-    async openDrillDown(accountId, accountName, startDate, endDate, classId = null, className = null, from = null) {
+    // `extra` carries a job (#242): { job_id, job_name }, job_id 0 being
+    // the lines with no job; the server names the job when only the id
+    // is known.
+    async openDrillDown(accountId, accountName, startDate, endDate, classId = null, className = null, from = null, extra = {}) {
         accountId = parseInt(accountId, 10);
         if (!accountId) { toast('No account_id on this row', 'error'); return; }
         classId = classId ? parseInt(classId, 10) || null : null;
+        const jobGiven = extra && extra.job_id !== undefined && extra.job_id !== null && extra.job_id !== '';
+        const jobId = jobGiven ? parseInt(extra.job_id, 10) : null;
+        const jobOn = jobGiven && !Number.isNaN(jobId);
+        let jobName = (extra && extra.job_name) || null;
         if (classId && !from) from = 'profit-loss-by-class';
+        if (jobOn && !from) from = 'profit-loss-by-job';
         const back = ReportsPage._view(from) ? from : null;
         const params = new URLSearchParams();
         params.set('account_id', accountId);
         if (startDate) params.set('start_date', startDate);
         if (endDate) params.set('end_date', endDate);
         if (classId) params.set('class_id', classId);
+        if (jobOn) params.set('job_id', jobId);
 
         ReportsPage.setAddress('account-transactions', {
-            account_id: accountId, start_date: startDate, end_date: endDate, class_id: classId, from: back,
+            account_id: accountId, start_date: startDate, end_date: endDate, class_id: classId,
+            job_id: jobOn ? String(jobId) : null, from: back,
         });
 
         // The way back carries the dates the view was on (one as-of date
@@ -353,7 +368,7 @@ const ReportsPage = {
             backBtn = ReportsPage._backButton(back, backParams, backToClass ? (className || T('Class')) : '');
         }
 
-        const title = (name, cls) => `Drill-down — ${name || `account ${accountId}`}${cls ? ` · ${cls}` : ''}`;
+        const title = (name, cls) => `Drill-down — ${name || `account ${accountId}`}${cls ? ` · ${cls}` : ''}${jobOn && jobName ? ` · ${T('Job')}: ${jobName}` : ''}`;
         openModal(title(accountName, className), `
             <div id="drilldown-body" style="font-size:11px; color:var(--gray-500);">Loading…</div>
             <div class="form-actions">
@@ -364,7 +379,8 @@ const ReportsPage = {
 
         try {
             const data = await API.get(`/reports/account-transactions?${params.toString()}`);
-            if (!accountName || (classId && !className)) {
+            if (jobOn && !jobName) jobName = data.job_name;
+            if (!accountName || (classId && !className) || jobOn) {
                 $('#modal-title').textContent = title(accountName || data.account.name, className || data.class_name);
             }
             // Rebuilt from the address, the class's name arrives now
@@ -391,6 +407,7 @@ const ReportsPage = {
                 <p style="margin-bottom:8px; color:var(--gray-500); font-size:12px;">
                     ${escapeHtml(data.account.number || '')} · ${escapeHtml(data.account.name)}
                     ${data.class_name ? `&middot; ${T('Class')}: <strong>${escapeHtml(data.class_name)}</strong>` : ''}
+                    ${jobOn && data.job_name ? `&middot; ${T('Job')}: <strong>${escapeHtml(data.job_name)}</strong>` : ''}
                     &middot; ${formatDate(data.start_date)} → ${formatDate(data.end_date)}
                     &middot; Net: <strong>${formatCurrency(data.period_net)}</strong>
                 </p>
@@ -1388,6 +1405,52 @@ ReportsPage.profitLossByClass = async function (prefill) {
                 sum: (c) => `ReportsPage.profitLossOfClass(${args(c.class_id, c.class_name, dates)})`,
             })}`;
     }, "Dates", false, { reportType: 'profit_loss_by_class', view: 'profit-loss-by-class', params, prefill, toolbar, wide: true });
+};
+
+// P&L by Job (R13, #242): the same grid with a column per job and "No job"
+// first. An amount opens the lines behind it for that job; a job's heading
+// opens the job page on the report's dates, with a way back to the report.
+// "No job" holds untagged activity and the applied-cost credits behind Job
+// Cost Entries, so the column totals equal the plain P&L.
+ReportsPage.profitLossByJob = async function (prefill) {
+    const params = ReportsPage._columnParams(prefill, 'job_ids');
+    let jobs = [];
+    try { jobs = await API.get('/jobs?include_inactive=true'); } catch (e) { jobs = []; }
+    const items = [{ id: 0, name: Terms.text('No job'), inactive: false }].concat(
+        jobs.map(j => ({ id: j.id, name: `${j.customer_name ? `${j.customer_name} › ` : ''}${j.name}`, inactive: j.is_active === false }))
+    );
+    const toolbar = ReportsPage._columnChooser({
+        kind: 'job', key: 'job_ids', noun: T('job'), nouns: T('jobs'), Nouns: T('Jobs'), inactiveWord: 'inactive',
+        items, params,
+    });
+    await ReportsPage.openPeriodModal(`${T('P&L')} by ${T('Job')}`, "this_year_to_date", async (period, range, p) => {
+        const qs = `start_date=${range.start}&end_date=${range.end}${ReportsPage._columnQs(p, 'job_ids')}`;
+        const data = await API.get(`/reports/profit-loss-by-job?${qs}`);
+        const columns = data.jobs;
+        if (!columns.length) {
+            return `${ReportsPage._filteredNote(data, 0, T('jobs'))}<div class="empty-state"><p>No activity in this period</p></div>`;
+        }
+        const args = (...xs) => xs.map(x => JSON.stringify(x)).join(',');
+        const jobKey = (c) => c.job_id === null || c.job_id === undefined ? 0 : c.job_id;
+        const jobUrl = (c) => `#/jobs/${c.job_id}?start_date=${range.start}&end_date=${range.end}&from=profit-loss-by-job`;
+        return `${ReportsPage._exportButtons('profit-loss-by-job', qs)}
+            <div style="font-size:11px; color:var(--gray-500); margin-bottom:8px;">
+                ${escapeHtml(data.start_date)} — ${escapeHtml(data.end_date)}. Click an amount for the transactions behind it, or a heading for the ${escapeHtml(T('job'))}'s page on these dates.
+                ${Terms.text('"No job" holds untagged activity')} <em>and</em> ${Terms.text('the applied-cost credits behind Job Cost Entries, so its costs can be negative and the totals still match the P&L')}.
+            </div>
+            ${ReportsPage._pivotGrid({
+                title: `${T('P&L')} by ${T('Job')}`,
+                noun: T('job'),
+                kind: 'job',
+                columns: columns.map(c => ({ ...c, id: jobKey(c), name: `${c.job_name}${c.inactive ? ' (inactive)' : ''}` })),
+                accounts: data.accounts,
+                totals: { income: data.total_income, cogs: data.total_cogs, gross_profit: data.total_gross_profit, expenses: data.total_expenses, net_income: data.total_net_income },
+                note: ReportsPage._filteredNote(data, columns.length, T('jobs')),
+                totalLabel: data.filtered ? 'Total (shown)' : 'Total',
+                drill: (a, c) => `ReportsPage.openDrillDown(${args(a.account_id, a.account_name, range.start, range.end, null, null, 'profit-loss-by-job', { job_id: jobKey(c), job_name: c.job_name })})`,
+                head: (c) => c.job_id ? `App.navigate(${JSON.stringify(jobUrl(c))})` : null,
+            })}`;
+    }, "Dates", false, { reportType: 'profit_loss_by_job', view: 'profit-loss-by-job', params, prefill, toolbar, wide: true });
 };
 
 // One class's own P&L (#213): the P&L by Class column, account by account,

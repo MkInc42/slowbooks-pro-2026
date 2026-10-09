@@ -292,6 +292,10 @@ def account_transactions(
     class_id: Annotated[
         Optional[int], Query(description="Only this class's lines (#213); omit for all")
     ] = None,
+    job_id: Annotated[
+        Optional[int],
+        Query(description="Only this job's lines (#242); 0 for the lines with no job"),
+    ] = None,
 ):
     """Phase 11: drill-down support. Every journal entry line hitting a
     given account in the date range, with source document linkage so the
@@ -308,11 +312,28 @@ def account_transactions(
     if not end_date:
         end_date = date.today()
     cls = _in_class(db, class_id)[0] if class_id is not None else None
-    out = account_register(db, acct, start_date, end_date, class_id=class_id)
+    job_name = None
+    if job_id is not None:
+        if job_id == 0:
+            from app.services.jobs_service import NO_JOB_LABEL
+
+            job_name = terms_from_db(db).text(NO_JOB_LABEL)
+        else:
+            from app.models.jobs import Job
+
+            job = db.get(Job, job_id)
+            if job is None:
+                raise HTTPException(status_code=404, detail="Job not found")
+            job_name = job.name
+    out = account_register(
+        db, acct, start_date, end_date, class_id=class_id, job_id=job_id
+    )
     out["start_date"] = start_date.isoformat()
     out["end_date"] = end_date.isoformat()
     out["class_id"] = cls.id if cls else None
     out["class_name"] = cls.name if cls else None
+    out["job_id"] = job_id
+    out["job_name"] = job_name
     return out
 
 
@@ -436,6 +457,7 @@ def _pl_pivot(
     chosen: Optional[set] = None,
     show: str = "all",
     include_empty: bool = False,
+    restrict: Optional[set] = None,
 ) -> dict:
     """P&L accounts down the side, one column per value of a dimension
     (class, job) across, from the posted lines of the period.
@@ -448,7 +470,8 @@ def _pl_pivot(
     Which columns (R3, #233): every value with activity, unless `chosen`
     names a subset (a chosen value gets a column even with nothing in it),
     `show` is "active" (an archived class or inactive job is left out), or
-    `include_empty` adds the values with no activity as zero columns. When
+    `include_empty` adds the values with no activity as zero columns;
+    `restrict` (one customer's jobs) is the most any column can be. When
     a value with activity is left out the result is `filtered`, its totals
     are the columns shown, and `unfiltered` carries the company's totals,
     so a partial Net Income is never read as the P&L's.
@@ -515,6 +538,8 @@ def _pl_pivot(
         return meta.get(key) or {"name": "Unknown", "inactive": False}
 
     def allowed(key):
+        if restrict is not None and key not in restrict:
+            return False
         if chosen is not None:
             return key in chosen
         if show == "active" and _meta(key)["inactive"]:
@@ -524,7 +549,7 @@ def _pl_pivot(
     with_activity = set(by_key)
     column_keys = {k for k in with_activity if allowed(k)}
     if chosen is not None:
-        column_keys |= {k for k in chosen if k in meta}
+        column_keys |= {k for k in chosen if k in meta and allowed(k)}
     if include_empty:
         column_keys |= {k for k in meta if allowed(k)}
     filtered = bool(with_activity - column_keys)
@@ -677,6 +702,165 @@ def profit_loss_by_class(
         "include_empty": include_empty,
     }
     return out
+
+
+@router.get("/profit-loss-by-job")
+def profit_loss_by_job(
+    start_date: date = Query(default=None),
+    end_date: date = Query(default=None),
+    db: Session = Depends(get_db),
+    job_ids: Annotated[
+        Optional[list[str]],
+        Query(
+            description="Only these jobs (repeat it, or 3,5,7); 0 is the No job column"
+        ),
+    ] = None,
+    customer_id: Annotated[
+        Optional[int], Query(description="Only this customer's jobs")
+    ] = None,
+    show: Annotated[
+        str, Query(description="all (inactive jobs too) or active")
+    ] = "all",
+    include_empty: Annotated[
+        bool, Query(description="A column for every job, activity or not")
+    ] = False,
+):
+    """P&L split by job (R13, #242): every P&L account down the side, a
+    column per job and a "No job" column first, as P&L by Class lays it
+    out. A line's job is its own, else its transaction's; untagged
+    activity is "No job" — which also holds the applied-cost credits
+    behind Job Cost Entries, so its costs can be negative — and the column
+    totals equal the plain Profit & Loss, the promise Job Profitability
+    makes. The columns are chosen as P&L by Class's are (#233); a
+    customer narrows them to that customer's jobs.
+    """
+    from app.models.jobs import Job
+    from app.services.jobs_service import NO_JOB_LABEL, job_attribution
+
+    start_date, end_date = _period(start_date, end_date)
+    if show not in ("all", "active"):
+        raise HTTPException(status_code=400, detail="show must be all or active")
+    chosen = _ids_param(job_ids, "job_ids")
+    if chosen is not None:
+        # 0 names the No job column (its key is None)
+        chosen = {None if k == 0 else k for k in chosen}
+    t = terms_from_db(db)
+    jobs = db.query(Job).all()
+    meta = {
+        j.id: {
+            "name": j.name,
+            "inactive": not j.is_active,
+            "customer_id": j.customer_id,
+            "customer_name": j.customer.name if j.customer else "",
+        }
+        for j in jobs
+    }
+    meta[None] = {
+        "name": t.text(NO_JOB_LABEL),
+        "inactive": False,
+        "customer_id": None,
+        "customer_name": "",
+    }
+    restrict = None
+    if customer_id is not None:
+        restrict = {k for k, m in meta.items() if m["customer_id"] == customer_id}
+    out = _pl_pivot(
+        db,
+        start_date,
+        end_date,
+        job_attribution(),
+        meta,
+        None,
+        chosen=chosen,
+        show=show,
+        include_empty=include_empty,
+        restrict=restrict,
+    )
+    out["jobs"] = [
+        {
+            "job_id": c["key"],
+            "job_name": c["name"],
+            "customer_id": meta[c["key"]]["customer_id"],
+            "customer_name": meta[c["key"]]["customer_name"],
+            "inactive": c["inactive"],
+            "income": c["income"],
+            "cogs": c["cogs"],
+            "gross_profit": c["gross_profit"],
+            "expenses": c["expenses"],
+            "net_income": c["net_income"],
+        }
+        for c in out.pop("columns")
+    ]
+    out["filter"] = {
+        "show": show,
+        "job_ids": sorted((0 if k is None else k) for k in chosen) if chosen else [],
+        "customer_id": customer_id,
+        "include_empty": include_empty,
+    }
+    return out
+
+
+def _by_job_data(db, start_date, end_date, job_ids, customer_id, show, include_empty):
+    data = profit_loss_by_job(
+        start_date,
+        end_date,
+        db,
+        job_ids=job_ids,
+        customer_id=customer_id,
+        show=show,
+        include_empty=include_empty,
+    )
+    t = terms_from_db(db)
+    title = f"{t('P&L')} by {t('Job')}"
+    columns = [dict(c, name=c["job_name"]) for c in data["jobs"]]
+    data["report_name"] = title
+    data["dimension"] = t("Job")
+    return data, title, columns, t
+
+
+@router.get("/profit-loss-by-job/pdf")
+def profit_loss_by_job_pdf(
+    start_date: date = Query(default=None),
+    end_date: date = Query(default=None),
+    db: Session = Depends(get_db),
+    job_ids: Optional[list[str]] = Query(default=None),
+    customer_id: Optional[int] = None,
+    show: str = "all",
+    include_empty: bool = False,
+):
+    data, title, columns, t = _by_job_data(
+        db, start_date, end_date, job_ids, customer_id, show, include_empty
+    )
+    return _pdf_response(
+        _grid_sections(data, title, columns, t),
+        db,
+        f"{t.slug('P&L')}-by-{t.slug('Job')}_{data['start_date']}_{data['end_date']}.pdf",
+        landscape=True,
+    )
+
+
+@router.get("/profit-loss-by-job/csv")
+def profit_loss_by_job_csv_route(
+    request: Request,
+    start_date: date = Query(default=None),
+    end_date: date = Query(default=None),
+    db: Session = Depends(get_db),
+    job_ids: Optional[list[str]] = Query(default=None),
+    customer_id: Optional[int] = None,
+    show: str = "all",
+    include_empty: bool = False,
+    layout: str = Query(default="wide"),
+):
+    from app.services.ledger_exports import profit_loss_by_class_csv
+
+    data, title, columns, t = _by_job_data(
+        db, start_date, end_date, job_ids, customer_id, show, include_empty
+    )
+    return _csv_download(
+        profit_loss_by_class_csv(data, columns, _company_name(db), t, layout=layout),
+        f"{t.slug('P&L')}-by-{t.slug('Job')}_{data['start_date']}_{data['end_date']}.csv",
+        request,
+    )
 
 
 @router.get("/job-profitability")

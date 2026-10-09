@@ -142,6 +142,8 @@ BANKING = [
 REPORTS = [
     "ReportsPage.profitLoss()",
     "ReportsPage.profitLossByClass()",
+    "ReportsPage.profitLossUnclassified()",
+    "ReportsPage.profitLossByJob()",
     "ReportsPage.balanceSheet()",
     "ReportsPage.trialBalance()",
     "ReportsPage.arAging()",

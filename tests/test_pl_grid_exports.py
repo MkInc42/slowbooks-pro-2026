@@ -11,6 +11,8 @@ The ledger is tests/test_pl_by_class_detail.py's: Side Gig (300 income,
 from datetime import date
 from decimal import Decimal
 
+import pytest
+
 from app.services.accounting import create_journal_entry
 from app.services.ledger_exports import rows_of
 from tests.test_pl_by_class_detail import PERIOD, ledger_fixture  # noqa: F401
@@ -406,3 +408,252 @@ def test_a_saved_by_class_report_carries_the_column_choice(client, ledger):
     )
     assert r.status_code == 201, r.text
     assert r.json()["parameters"] == params
+
+
+# ── R13: P&L by Job ──────────────────────────────────────────────────────
+
+
+def _by_job(client, extra=""):
+    r = client.get(f"/api/reports/profit-loss-by-job?{PERIOD}{extra}")
+    assert r.status_code == 200, r.text
+    return r.json()
+
+
+@pytest.fixture
+def jobbed(client, db_session, seed_accounts, seed_customer):
+    """Two jobs for the customer — Kitchen remodel (header-tagged: 300
+    income, 120 expense, plus a 180 expense line with no job of its own that
+    inherits the header's) and Deck (one line of its own in a journal with
+    no header job: 100 income), an applied-cost credit with no job (the
+    No job column's negative cost), and untagged activity (50 and 50)."""
+    income, expense, cogs = (seed_accounts[n] for n in ("4000", "6000", "5300"))
+    kitchen = client.post(
+        "/api/jobs", json={"customer_id": seed_customer.id, "name": "Kitchen remodel"}
+    ).json()
+    deck = client.post(
+        "/api/jobs", json={"customer_id": seed_customer.id, "name": "Deck"}
+    ).json()
+    create_journal_entry(
+        db_session,
+        date(2026, 7, 5),
+        "kitchen work",
+        [
+            {"account_id": expense.id, "debit": D("120"), "credit": D("0")},
+            {"account_id": income.id, "debit": D("0"), "credit": D("300")},
+            {"account_id": expense.id, "debit": D("180"), "credit": D("0")},
+        ],
+        job_id=kitchen["id"],
+    )
+    create_journal_entry(
+        db_session,
+        date(2026, 7, 7),
+        "deck, one line",
+        [
+            {
+                "account_id": income.id,
+                "debit": D("0"),
+                "credit": D("100"),
+                "job_id": deck["id"],
+            },
+            {"account_id": expense.id, "debit": D("100"), "credit": D("0")},
+        ],
+    )
+    # labour applied to the kitchen: cost on the job, the credit on no job
+    create_journal_entry(
+        db_session,
+        date(2026, 7, 9),
+        "labour applied",
+        [
+            {
+                "account_id": cogs.id,
+                "debit": D("60"),
+                "credit": D("0"),
+                "job_id": kitchen["id"],
+            },
+            {"account_id": cogs.id, "debit": D("0"), "credit": D("60")},
+        ],
+    )
+    create_journal_entry(
+        db_session,
+        date(2026, 7, 11),
+        "walk-in",
+        [
+            {"account_id": income.id, "debit": D("0"), "credit": D("50")},
+            {"account_id": expense.id, "debit": D("50"), "credit": D("0")},
+        ],
+    )
+    db_session.commit()
+    return {
+        "kitchen": kitchen["id"],
+        "deck": deck["id"],
+        "customer": seed_customer.id,
+        "income": income.id,
+        "expense": expense.id,
+        "cogs": cogs.id,
+    }
+
+
+def test_p_and_l_by_job_is_the_grid_by_job_and_ties_to_the_plain_p_and_l(
+    client, jobbed
+):
+    data = _by_job(client)
+    names = [c["job_name"] for c in data["jobs"]]
+    assert names == ["No job", "Deck", "Kitchen remodel"], "No job first, then by name"
+    at = {n: i for i, n in enumerate(names)}
+    by = {c["job_name"]: c for c in data["jobs"]}
+    assert by["No job"]["job_id"] is None
+    assert by["Kitchen remodel"]["customer_name"] == by["Deck"]["customer_name"] != ""
+    assert by["Kitchen remodel"]["income"] == 300.0
+    assert (
+        by["Kitchen remodel"]["expenses"] == 300.0
+    ), "the line with no job inherits the header's"
+    assert by["Kitchen remodel"]["cogs"] == 60.0
+    assert by["Deck"]["income"] == 100.0 and by["Deck"]["expenses"] == 0.0
+    # No job: the untagged activity, the deck journal's untagged expense,
+    # and the applied-cost credit (a negative cost)
+    assert by["No job"]["income"] == 50.0
+    assert by["No job"]["expenses"] == 150.0
+    assert by["No job"]["cogs"] == -60.0
+
+    income = next(
+        r for r in data["accounts"]["income"] if r["account_id"] == jobbed["income"]
+    )
+    assert income["amounts"][at["Kitchen remodel"]] == 300.0
+    assert income["amounts"][at["Deck"]] == 100.0
+    assert income["amounts"][at["No job"]] == 50.0 and income["total"] == 450.0
+    cogs = next(
+        r for r in data["accounts"]["cogs"] if r["account_id"] == jobbed["cogs"]
+    )
+    assert cogs["amounts"][at["No job"]] == -60.0 and cogs["total"] == 0.0
+
+    plain = client.get(f"/api/reports/profit-loss?{PERIOD}").json()
+    assert data["total_income"] == plain["total_income"] == 450.0
+    assert data["total_cogs"] == plain["total_cogs"] == 0.0
+    assert data["total_expenses"] == plain["total_expenses"] == 450.0
+    assert data["total_net_income"] == plain["net_income"] == 0.0
+    assert data["filtered"] is False
+    # and to Job Profitability, job by job
+    jp = client.get(f"/api/reports/job-profitability?{PERIOD}").json()
+    for row in jp["jobs"]:
+        assert by[row["job_name"]]["net_income"] == row["net_income"], row["job_name"]
+
+
+def test_the_by_job_columns_are_chosen_like_the_by_class_ones(client, jobbed):
+    kitchen, deck = jobbed["kitchen"], jobbed["deck"]
+    one = _by_job(client, f"&job_ids={kitchen}")
+    assert [c["job_name"] for c in one["jobs"]] == ["Kitchen remodel"]
+    assert one["filtered"] is True and one["total_net_income"] == -60.0
+    assert one["unfiltered"]["net_income"] == 0.0
+    assert one["filter"]["job_ids"] == [kitchen]
+    # 0 is the No job column
+    none = _by_job(client, "&job_ids=0")
+    assert [c["job_name"] for c in none["jobs"]] == ["No job"]
+    assert none["filter"]["job_ids"] == [0]
+    both = _by_job(client, f"&job_ids=0,{deck}")
+    assert [c["job_name"] for c in both["jobs"]] == ["No job", "Deck"]
+    # one customer's jobs: No job is not theirs
+    mine = _by_job(client, f"&customer_id={jobbed['customer']}")
+    assert [c["job_name"] for c in mine["jobs"]] == ["Deck", "Kitchen remodel"]
+    assert mine["filtered"] is True
+    assert mine["filter"]["customer_id"] == jobbed["customer"]
+    assert _by_job(client, "&customer_id=9999")["jobs"] == []
+    # an inactive job with history: under All, not under Active
+    assert client.put(f"/api/jobs/{deck}", json={"is_active": False}).status_code == 200
+    assert (
+        next(c for c in _by_job(client)["jobs"] if c["job_name"] == "Deck")["inactive"]
+        is True
+    )
+    active = _by_job(client, "&show=active")
+    assert "Deck" not in [c["job_name"] for c in active["jobs"]]
+    assert active["filtered"] is True
+    # an empty job gets a zero column when asked
+    client.post(
+        "/api/jobs", json={"customer_id": jobbed["customer"], "name": "Bid only"}
+    )
+    assert "Bid only" not in [c["job_name"] for c in _by_job(client)["jobs"]]
+    full = _by_job(client, "&include_empty=true")
+    assert [c["job_name"] for c in full["jobs"]] == [
+        "No job",
+        "Bid only",
+        "Deck",
+        "Kitchen remodel",
+    ]
+    assert full["total_net_income"] == 0.0 and full["filtered"] is False
+    assert (
+        client.get(f"/api/reports/profit-loss-by-job?{PERIOD}&job_ids=x").status_code
+        == 400
+    )
+
+    # exports, with the choice
+    rows, r = _csv_rows(client, f"/api/reports/profit-loss-by-job/csv?{PERIOD}")
+    assert r.headers["content-disposition"].endswith(
+        "p-l-by-job_2026-07-01_2026-07-31.csv"
+    )
+    assert rows[0] == [
+        "Section",
+        "Account number",
+        "Account name",
+        "No job",
+        "Deck",
+        "Kitchen remodel",
+        "Total",
+    ]
+    text = client.get(f"/api/reports/profit-loss-by-job/csv?{PERIOD}").text
+    assert "Report,P&L by Job" in text
+    rows, _ = _csv_rows(
+        client, f"/api/reports/profit-loss-by-job/csv?{PERIOD}&layout=long"
+    )
+    assert rows[0] == ["Section", "Account number", "Account name", "Job", "Amount"]
+    rows, _ = _csv_rows(
+        client, f"/api/reports/profit-loss-by-job/csv?{PERIOD}&job_ids={kitchen}"
+    )
+    assert rows[0][3:] == ["Kitchen remodel", "Total (shown)"]
+    r = client.get(f"/api/reports/profit-loss-by-job/pdf?{PERIOD}&job_ids={kitchen}")
+    assert r.status_code == 200 and r.content[:5] == b"%PDF-"
+    assert "p-l-by-job_" in r.headers["content-disposition"]
+    r = client.post(
+        "/api/saved-reports",
+        json={
+            "name": "Kitchen",
+            "report_type": "profit_loss_by_job",
+            "parameters": {"job_ids": str(kitchen), "period": "last_month"},
+        },
+    )
+    assert r.status_code == 201, r.text
+
+
+def test_the_drill_down_takes_a_job_and_agrees_with_the_job_page(client, jobbed):
+    kitchen = jobbed["kitchen"]
+    base = f"/api/reports/account-transactions?account_id={jobbed['expense']}&{PERIOD}"
+    mine = client.get(f"{base}&job_id={kitchen}").json()
+    assert mine["job_id"] == kitchen and mine["job_name"] == "Kitchen remodel"
+    assert [e["description"] for e in mine["entries"]] == [
+        "kitchen work",
+        "kitchen work",
+    ]
+    assert mine["period_net"] == 300.0
+    # the same lines the job page's Transactions tab lists for the dates
+    page = client.get(f"/api/jobs/{kitchen}/transactions?{PERIOD}").json()
+    on_account = [l for l in page if l["account_id"] == jobbed["expense"]]
+    assert sum(l["amount"] for l in on_account) == mine["period_net"]
+    assert {l["transaction_id"] for l in on_account} == {
+        e["transaction_id"] for e in mine["entries"]
+    }
+
+    # 0: the lines with no job
+    untagged = client.get(f"{base}&job_id=0").json()
+    assert untagged["job_id"] == 0 and untagged["job_name"] == "No job"
+    assert sorted(e["description"] for e in untagged["entries"]) == [
+        "deck, one line",
+        "walk-in",
+    ]
+    assert untagged["period_net"] == 150.0
+    # the two together are the account's P&L figure
+    everything = client.get(base).json()
+    assert everything["job_id"] is None
+    assert everything["period_net"] == mine["period_net"] + untagged["period_net"]
+    # a job and a class at once narrow to both
+    uncat = next(c for c in client.get("/api/classes").json() if c["is_system_default"])
+    both = client.get(f"{base}&job_id={kitchen}&class_id={uncat['id']}").json()
+    assert both["period_net"] == 300.0 and both["class_name"] == "Uncategorized"
+    assert client.get(f"{base}&job_id=99999").status_code == 404

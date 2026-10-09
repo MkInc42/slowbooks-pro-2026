@@ -34,6 +34,7 @@ _ALLOWED_TYPES = {
     # address does
     "profit_loss_by_class",
     "profit_loss_class",
+    "profit_loss_by_job",
     "balance_sheet",
     "ar_aging",
     "ap_aging",
