@@ -175,12 +175,23 @@ def general_ledger(
     end_date: date = Query(default=None),
     account_id: int = Query(default=None),
     db: Session = Depends(get_db),
+    # after db, and a plain None by default: the csv and pdf routes call
+    # this directly with db as the fourth argument
+    class_id: Annotated[
+        Optional[int],
+        Query(description="Only this class's lines (#236); omit for all"),
+    ] = None,
 ):
-    """General Ledger detail report."""
+    """General Ledger detail report. With `class_id`, only the lines of
+    that class (the line's own, else its transaction's, else Uncategorized,
+    as P&L by Class groups them), the balance brought forward included —
+    computed under the same test, or the running balances would be wrong
+    (#236)."""
     if not start_date:
         start_date = date(date.today().year, 1, 1)
     if not end_date:
         end_date = date.today()
+    cls, in_class = _in_class(db, class_id) if class_id is not None else (None, None)
 
     q = (
         db.query(TransactionLine, Transaction, Account)
@@ -190,6 +201,8 @@ def general_ledger(
     )
     if account_id:
         q = q.filter(TransactionLine.account_id == account_id)
+    if in_class is not None:
+        q = q.filter(in_class)
 
     # date, then posting order: a stable order is what makes a running
     # balance mean the same thing on screen and in an export (#179)
@@ -207,7 +220,7 @@ def general_ledger(
     ids = {acct.id for _, _, acct in results}
     opening = {}
     if ids:
-        for acct_id, dr, cr in (
+        before = (
             db.query(
                 TransactionLine.account_id,
                 sqlfunc.coalesce(sqlfunc.sum(TransactionLine.debit), 0),
@@ -215,9 +228,10 @@ def general_ledger(
             )
             .join(Transaction, TransactionLine.transaction_id == Transaction.id)
             .filter(Transaction.date < start_date, TransactionLine.account_id.in_(ids))
-            .group_by(TransactionLine.account_id)
-            .all()
-        ):
+        )
+        if in_class is not None:
+            before = before.filter(in_class)
+        for acct_id, dr, cr in before.group_by(TransactionLine.account_id).all():
             opening[acct_id] = Decimal(str(dr)) - Decimal(str(cr))
 
     def _sign(acct):
@@ -277,6 +291,9 @@ def general_ledger(
     return {
         "start_date": start_date.isoformat(),
         "end_date": end_date.isoformat(),
+        "account_id": account_id or None,
+        "class_id": cls.id if cls else None,
+        "class_name": cls.name if cls else None,
         "accounts": accounts_list,
     }
 
@@ -734,8 +751,11 @@ def _gl_section(data: dict) -> dict:
                 "style": "subtotal",
             }
         )
+    title = "General Ledger"
+    if data.get("class_name"):
+        title = f"General Ledger — {data['class_name']}"
     return {
-        "title": "General Ledger",
+        "title": title,
         "period": f"{data['start_date']} — {data['end_date']}",
         "columns": ["Date", "Reference", "Description", "Debit", "Credit", "Balance"],
         "rows": rows,
@@ -820,9 +840,10 @@ def general_ledger_pdf(
     start_date: date = Query(default=None),
     end_date: date = Query(default=None),
     account_id: int = Query(default=None),
+    class_id: int = Query(default=None),
     db: Session = Depends(get_db),
 ):
-    data = general_ledger(start_date, end_date, account_id, db)
+    data = general_ledger(start_date, end_date, account_id, db, class_id=class_id)
     return _pdf_response(
         [_gl_section(data)],
         db,
@@ -836,11 +857,12 @@ def general_ledger_csv_route(
     start_date: date = Query(default=None),
     end_date: date = Query(default=None),
     account_id: int = Query(default=None),
+    class_id: int = Query(default=None),
     db: Session = Depends(get_db),
 ):
     from app.services.ledger_exports import general_ledger_csv
 
-    data = general_ledger(start_date, end_date, account_id, db)
+    data = general_ledger(start_date, end_date, account_id, db, class_id=class_id)
     return _csv_download(
         general_ledger_csv(data, _company_name(db)),
         f"general-ledger_{data['start_date']}_{data['end_date']}.csv",

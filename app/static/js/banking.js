@@ -365,13 +365,59 @@ const BankingPage = {
     },
 
     // ------------------------------------------------------------------
-    // The register — route #/banking/:accountId
+    // The register — route #/banking/:accountId?start_date=…&end_date=…&class_id=…
     // ------------------------------------------------------------------
-    async renderRegister(accountId) {
+    // The register's filters (#236): a date range and a class, carried in
+    // the address (replaced in place when changed, so Back never walks
+    // through them) and sent to the service, which computes the balance
+    // brought forward under the same class test.
+    _regFilter: { start_date: '', end_date: '', class_id: '' },
+
+    _regFilterFrom(query) {
+        const q = query || {};
+        const isDate = v => /^\d{4}-\d{2}-\d{2}$/.test(v || '') && !isNaN(new Date(v).getTime());
+        for (const key of ['start_date', 'end_date']) {
+            if (q[key] && !isDate(q[key])) toast(`${key} in the address is not a date (${q[key]}) — ignored`, 'error');
+        }
+        return {
+            start_date: isDate(q.start_date) ? q.start_date : '',
+            end_date: isDate(q.end_date) ? q.end_date : '',
+            class_id: /^\d+$/.test(q.class_id || '') ? q.class_id : '',
+        };
+    },
+
+    _regUrl(id) {
+        const f = BankingPage._regFilter;
+        const qs = new URLSearchParams();
+        for (const k of ['start_date', 'end_date', 'class_id']) if (f[k]) qs.set(k, f[k]);
+        const q = qs.toString();
+        return `#/banking/${id}${q ? `?${q}` : ''}`;
+    },
+
+    regFilterChanged(id, filter = null) {
+        BankingPage._regFilter = filter || {
+            start_date: $('#reg-start')?.value || '',
+            end_date: $('#reg-end')?.value || '',
+            class_id: $('#reg-class')?.value || '',
+        };
+        const url = BankingPage._regUrl(id);
+        if ((location.hash || '#/') !== url) history.replaceState(history.state, '', url);
+        App.navigate(url);
+    },
+
+    regClear(id) {
+        BankingPage.regFilterChanged(id, { start_date: '', end_date: '', class_id: '' });
+    },
+
+    async renderRegister(accountId, query) {
         const id = parseInt(accountId, 10);
-        const [reg, overview] = await Promise.all([
-            API.get(`/banking/check-register?account_id=${id}`),
+        const f = BankingPage._regFilterFrom(query);
+        BankingPage._regFilter = f;
+        const filterQs = Object.entries(f).filter(([, v]) => v).map(([k, v]) => `&${k}=${encodeURIComponent(v)}`).join('');
+        const [reg, overview, classes] = await Promise.all([
+            API.get(`/banking/check-register?account_id=${id}${filterQs}`),
             API.get('/banking/overview'),
+            API.get('/classes?include_archived=true').catch(() => []),
         ]);
         const info = overview.find(a => a.account_id === id) || {};
         const feed = info.feed || null;
@@ -406,8 +452,22 @@ const BankingPage = {
 
         if (review.length) html += BankingPage._reviewPanel(review, feed.bank_account_id, id, kind);
 
+        const classOpts = classes.map(c => `<option value="${c.id}"${String(c.id) === f.class_id ? ' selected' : ''}>${escapeHtml(c.name)}${c.is_archived ? ' (archived)' : ''}</option>`).join('');
+        const filtered = !!(f.start_date || f.end_date || f.class_id);
+        html += `
+            <div class="toolbar" style="display:flex; gap:8px; align-items:center; flex-wrap:wrap;">
+                <label for="reg-start" style="font-size:11px;">From</label>
+                <input type="date" id="reg-start" value="${escapeHtml(f.start_date)}" onchange="BankingPage.regFilterChanged(${id})">
+                <label for="reg-end" style="font-size:11px;">To</label>
+                <input type="date" id="reg-end" value="${escapeHtml(f.end_date)}" onchange="BankingPage.regFilterChanged(${id})">
+                <label for="reg-class" style="font-size:11px;">${T('Class')}</label>
+                <select id="reg-class" data-no-search onchange="BankingPage.regFilterChanged(${id})"><option value="">All ${T('classes').toLowerCase()}</option>${classOpts}</select>
+                ${filtered ? `<button type="button" class="btn btn-sm btn-secondary" onclick="BankingPage.regClear(${id})">Clear</button>` : ''}
+                ${filtered ? `<span id="reg-filter-note" style="font-size:11px; color:var(--gray-500);">Showing ${reg.class_name ? `${T('class').toLowerCase()} <strong>${escapeHtml(reg.class_name)}</strong>` : 'every ' + T('class').toLowerCase()}${f.start_date ? ` from ${formatDate(f.start_date)}` : ''}${f.end_date ? ` to ${formatDate(f.end_date)}` : ''}: the running balance counts these lines${reg.class_name ? ` only — the account's whole balance is ${formatCurrency(reg.balance)}` : ''}.</span>` : ''}
+            </div>`;
+
         if (!reg.entries.length) {
-            html += `<div class="empty-state"><p>Nothing posted to this account yet</p></div>`;
+            html += `<div class="empty-state"><p>${filtered ? 'Nothing posted to this account for these filters' : 'Nothing posted to this account yet'}</p></div>`;
         } else {
             const rows = reg.entries.slice().reverse().map(e => `
                 <tr style="${e.voided ? 'color:var(--gray-400); text-decoration:line-through;' : ''}">
@@ -422,12 +482,15 @@ const BankingPage = {
                     <td style="text-align:center;">${e.reconciliation_id ? 'R' : (e.cleared ? '✓' : '')}</td>
                     <td>${e.voidable ? `<button class="btn btn-sm btn-secondary" onclick="BankingPage.voidEntry('${e.source_type}', ${e.transaction_id}, ${id})">Void</button>` : ''}</td>
                 </tr>`).join('');
+            // newest first, so the balance brought forward (a start date's
+            // doing) closes the table
+            const opening = f.start_date ? `<tr style="color:var(--gray-500);" id="reg-opening"><td>${formatDate(f.start_date)}</td><td colspan="6">Balance brought forward${reg.class_name ? ` (${escapeHtml(reg.class_name)})` : ''}</td><td class="amount">${formatCurrency(reg.opening_balance)}</td><td></td><td></td></tr>` : '';
             html += `<div class="table-container"><table>
                 <thead><tr>
                     <th scope="col">Date</th><th scope="col">Payee</th><th scope="col">Description</th><th scope="col">Ref #</th><th scope="col">Type</th>
                     <th scope="col" class="amount">${outLabel}</th><th scope="col" class="amount">${inLabel}</th><th scope="col" class="amount">Balance</th>
                     <th scope="col" title="✓ cleared · R reconciled">✓</th><th scope="col"></th>
-                </tr></thead><tbody>${rows}</tbody></table></div>`;
+                </tr></thead><tbody>${rows}${opening}</tbody></table></div>`;
         }
         return html;
     },
