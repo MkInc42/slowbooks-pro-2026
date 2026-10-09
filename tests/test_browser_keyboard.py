@@ -308,3 +308,41 @@ def test_synthetic_tabs_alone_walk_a_dialog_the_webkit_way(browser, company, boo
         ) == "Close"
     finally:
         page.close()
+
+
+# ── NEW-33: Escape in a date field ────────────────────────────────────────
+
+
+def test_escape_in_a_date_field_leaves_the_field_and_the_next_closes_the_dialog(
+    browser, company, books
+):
+    page, handled = _open(browser, company)
+    try:
+        _visit(page, handled, "#/invoices")
+        _open_dialog(page, handled, "InvoicesPage.showForm()", "#inv-lines tr")
+        page.fill("#modal textarea", "a note worth keeping")
+        page.focus("#modal input[type=date]")
+        # the key WebKit sends on after closing the calendar (a real one
+        # here, with no calendar open, reaches the page the same way)
+        page.keyboard.press("Escape")
+        assert page.evaluate(MODAL_SHOWN)
+        assert page.evaluate("() => document.activeElement.id") == "modal"
+        assert page.input_value("#modal textarea") == "a note worth keeping"
+        # as a synthetic key at the field (WebKit's, after its calendar)
+        page.focus("#modal input[type=date]")
+        page.evaluate(
+            """() => document.activeElement.dispatchEvent(new KeyboardEvent('keydown',
+                { key: 'Escape', code: 'Escape', bubbles: true, cancelable: true }))"""
+        )
+        assert page.evaluate(MODAL_SHOWN)
+        assert page.evaluate("() => document.activeElement.id") == "modal"
+        # the next Escape closes the dialog
+        page.keyboard.press("Escape")
+        page.wait_for_function(f"!({MODAL_SHOWN})()")
+        # any other field: one Escape closes it, as before
+        _open_dialog(page, handled, "InvoicesPage.showForm()", "#inv-lines tr")
+        page.focus("#modal textarea")
+        page.keyboard.press("Escape")
+        page.wait_for_function(f"!({MODAL_SHOWN})()")
+    finally:
+        page.close()

@@ -162,6 +162,20 @@ function _hasSegments(el) {
     return !!el && el.tagName === 'INPUT' && /^(date|time|datetime-local|month|week)$/.test(el.type);
 }
 
+// Escape in a date or time field closes the field's calendar; WebKit
+// sends the key on to the page too, where it closed the whole dialog with
+// it, an unsaved invoice lost (macOS gate NEW-33, the owner's own
+// keyboard). That Escape leaves the field instead, the dialog itself
+// taking focus, so the next one closes the dialog. True when it was one.
+// (Both Escape handlers, this file's and app.js's, ask.)
+function escapeLeavesPicker(e) {
+    if (!_hasSegments(e.target)) return false;
+    const modal = document.getElementById('modal');
+    const overlay = document.getElementById('modal-overlay');
+    if (modal && overlay && !overlay.classList.contains('hidden') && modal.contains(e.target)) modal.focus();
+    return true;
+}
+
 // Focus as Tab gives it: a text box's words selected, as the browser does.
 function _tabTo(el) {
     try { el.focus(); } catch (e) { return; }
@@ -218,7 +232,10 @@ let _tabFix = null;
 function modalKeydown(e) {
     const overlay = document.getElementById('modal-overlay');
     if (!overlay || overlay.classList.contains('hidden')) return;
-    if (e.key === 'Escape') { e.preventDefault(); closeModal(); return; }
+    if (e.key === 'Escape') {
+        if (escapeLeavesPicker(e)) return;
+        e.preventDefault(); closeModal(); return;
+    }
     if (e.key !== 'Tab' || e.defaultPrevented) return;
     clearTimeout(_tabFix);
     const modal = document.getElementById('modal');

@@ -1218,8 +1218,9 @@ const App = {
             if (e.altKey && e.key === 'h') { App.navigate('#/'); e.preventDefault(); }
             // Alt+D: toggle dark mode (Feature 12)
             if (e.altKey && e.key === 'd') { App.toggleTheme(); e.preventDefault(); }
-            // Escape: close modal
-            if (e.key === 'Escape') { closeModal(); }
+            // Escape: close modal (not the Escape that closes a date
+            // field's calendar: utils.js escapeLeavesPicker, NEW-33)
+            if (e.key === 'Escape' && !escapeLeavesPicker(e)) { closeModal(); }
             // Ctrl+K or /: focus search (when not in an input)
             if ((e.ctrlKey && e.key === 'k') || (e.key === '/' && !e.target.closest('input,textarea,select'))) {
                 const search = $('#global-search');
