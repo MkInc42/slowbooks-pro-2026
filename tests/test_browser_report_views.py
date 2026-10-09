@@ -804,3 +804,88 @@ def test_from_after_to_is_refused_and_the_dates_before_it_are_kept(
         assert q["end_date"] == dt.date.today().isoformat()
     finally:
         page.close()
+
+
+def test_saved_reports_are_listed_by_their_views_title_and_what_they_were_saved_on(
+    browser, company, books
+):
+    """The Report column printed the type's code — "profit loss class",
+    "account transactions" — which said nothing of which class or account
+    (NEW-27). Each row names its view by the view's own title and, from the
+    saved parameters, the class, job or account it was saved on."""
+    uncat = next(
+        c for c in company.get("/api/classes").json() if c["is_system_default"]
+    )
+    lucky = company.post("/api/classes", json={"name": "Lucky"}).json()
+    cash = next(
+        a for a in company.get("/api/accounts").json() if a["account_number"] == "1000"
+    )
+    saved = {
+        "a plain one": ("profit_loss", {"period": "last_month"}),
+        "one class": (
+            "profit_loss_class",
+            {"class_id": uncat["id"], "start_date": SEPT[0], "end_date": SEPT[1]},
+        ),
+        "a drill-down": (
+            "account_transactions",
+            {"account_id": cash["id"], "class_id": uncat["id"], "period": "last_month"},
+        ),
+        "a job's lines": (
+            "account_transactions",
+            {"account_id": cash["id"], "job_id": books["job"], "period": "this_year"},
+        ),
+        "no job": ("profit_loss_by_job", {"job_ids": "0", "period": "this_year"}),
+        "two classes": (
+            "profit_loss_by_class",
+            {"class_ids": f"{uncat['id']},{lucky['id']}", "period": "this_year"},
+        ),
+        "one of them": (
+            "profit_loss_by_class",
+            {"class_ids": str(lucky["id"]), "period": "this_year"},
+        ),
+        "the ledger": (
+            "general_ledger",
+            {"account_id": cash["id"], "period": "this_year"},
+        ),
+        "gone": ("profit_loss_class", {"class_id": 999999, "period": "this_year"}),
+        "aging": ("ar_aging", {"period": "this_year_to_date"}),
+    }
+    for name, (report_type, parameters) in saved.items():
+        r = company.post(
+            "/api/saved-reports",
+            json={"name": name, "report_type": report_type, "parameters": parameters},
+        )
+        assert r.status_code == 201, r.text
+    job_name = company.get(f"/api/jobs/{books['job']}").json()["name"]
+    page, handled = _open_at(browser, company, "#/reports")
+    try:
+        # ten saved reports: the list starts folded
+        toggle = page.locator("#saved-reports-toggle")
+        toggle.wait_for()
+        if toggle.get_attribute("aria-expanded") == "false":
+            toggle.click()
+        page.wait_for_selector("#saved-reports-list")
+        rows = dict(
+            page.eval_on_selector_all(
+                ".saved-report-row",
+                "rows => rows.map(r => [r.children[0].textContent.trim(), r.children[1].textContent.trim()])",
+            )
+        )
+        assert rows["a plain one"] == "Profit & Loss"
+        assert rows["one class"] == "Profit & Loss — Uncategorized"
+        assert rows["a drill-down"] == f"Drill-down — {cash['name']} · Uncategorized"
+        assert rows["a job's lines"] == f"Drill-down — {cash['name']} · Job: {job_name}"
+        assert rows["no job"] == "P&L by Job — No job"
+        assert rows["two classes"] == "P&L by Class — 2 classes chosen"
+        assert rows["one of them"] == "P&L by Class — Lucky"
+        assert rows["the ledger"] == f"General Ledger — {cash['name']}"
+        assert rows["gone"] == "Profit & Loss — class #999999"
+        assert rows["aging"] == "Accounts Receivable Aging"
+        # the row still opens its report
+        page.locator(".saved-report-row", has_text="one class").get_by_role(
+            "button", name="Open"
+        ).click()
+        page.wait_for_selector("#class-pl-body")
+        assert page.evaluate(TITLE) == "Profit & Loss — Uncategorized"
+    finally:
+        page.close()

@@ -260,10 +260,11 @@ const ReportsPage = {
                 try { collapsed = localStorage.getItem('sb_saved_reports_collapsed') === '1'; } catch (e) { /* ignore */ }
                 if (saved.length > 6 && localStorage.getItem('sb_saved_reports_collapsed') === null) collapsed = true;
                 const period = (p) => !p ? '' : (p.as_of_date ? `as of ${escapeHtml(p.as_of_date)}` : (p.start_date ? `${escapeHtml(p.start_date)} → ${escapeHtml(p.end_date || '')}` : (p.period ? escapeHtml(String(p.period).replace(/_/g, ' ')) : '')));
+                const names = await ReportsPage._savedNames(saved);
                 const rows = saved.slice().sort((a, b) => a.name.localeCompare(b.name)).map(s => `
                     <tr class="saved-report-row">
                         <td><a href="javascript:void(0)" onclick="ReportsPage.openSaved(${s.id})" style="font-weight:600;">${escapeHtml(s.name)}</a></td>
-                        <td>${escapeHtml(Terms.text(s.report_type.replace(/_/g, ' ')))}</td>
+                        <td>${escapeHtml(ReportsPage._savedTitle(s, names))}</td>
                         <td style="color:var(--text-muted);">${period(s.parameters)}</td>
                         <td class="actions">
                             <button class="btn btn-sm btn-secondary" onclick="ReportsPage.openSaved(${s.id})">Open</button>
@@ -371,6 +372,52 @@ const ReportsPage = {
     },
 
     // ----- Saved Reports (Phase 11) -----
+
+    // A saved report's row names its view by the view's own title (the
+    // "Back to …" label, in the company's vocabulary) and, from the saved
+    // parameters, what it was saved on: "Profit & Loss — Lighting",
+    // "Drill-down — Checking · Lighting", "P&L by Job — No job", "P&L by
+    // Class — 2 classes chosen". The type's code ("profit loss class",
+    // "account transactions") said neither (NEW-27).
+    _savedTitle(s, names) {
+        const type = String(s.report_type || '');
+        const view = ReportsPage._view(type.replace(/_/g, '-'));
+        const label = view
+            ? (typeof view.label === 'function' ? view.label() : view.label)
+            : Terms.text(type.replace(/_/g, ' '));
+        const p = s.parameters || {};
+        const given = (v) => v !== undefined && v !== null && v !== '';
+        const parts = [];
+        if (given(p.account_id)) parts.push(names.account(p.account_id));
+        if (given(p.class_id)) parts.push(names.cls(p.class_id));
+        if (given(p.job_id)) parts.push(`${T('Job')}: ${names.job(p.job_id)}`);
+        for (const [key, one, many] of [['class_ids', names.cls, T('classes')], ['job_ids', names.job, T('jobs')]]) {
+            const ids = String(p[key] || '').split(',').filter(Boolean);
+            if (ids.length === 1) parts.push(one(ids[0]));
+            else if (ids.length) parts.push(`${ids.length} ${many} chosen`);
+        }
+        return parts.length ? `${label} — ${parts.join(' · ')}` : label;
+    },
+
+    // The names the saved rows need, asked for once, and only when a row
+    // has something to name; a name since deleted falls back to the id.
+    async _savedNames(saved) {
+        const has = (key) => saved.some(s => s.parameters && s.parameters[key] !== undefined && s.parameters[key] !== null && s.parameters[key] !== '');
+        const lists = { cls: [], account: [], job: [] };
+        try {
+            [lists.cls, lists.account, lists.job] = await Promise.all([
+                has('class_id') || has('class_ids') ? API.get('/classes?include_archived=true').catch(() => []) : [],
+                has('account_id') ? API.get('/accounts').catch(() => []) : [],
+                has('job_id') || has('job_ids') ? API.get('/jobs?include_inactive=true').catch(() => []) : [],
+            ]);
+        } catch (e) { /* the ids stand */ }
+        const find = (list, id) => list.find(x => String(x.id) === String(id));
+        return {
+            cls: (id) => { const c = find(lists.cls, id); return c ? c.name : `${T('class')} #${id}`; },
+            account: (id) => { const a = find(lists.account, id); return a ? a.name : `account #${id}`; },
+            job: (id) => { if (String(id) === '0') return Terms.text('No job'); const j = find(lists.job, id); return j ? j.name : `${T('job')} #${id}`; },
+        };
+    },
 
     toggleSaved() {
         const list = $('#saved-reports-list');
