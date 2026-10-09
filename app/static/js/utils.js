@@ -120,7 +120,56 @@ function toastAction(message, actionLabel, onClick, ms = 8000) {
 // whatever opened it. (Audit finding 3: role/aria-modal live on #modal in
 // index.html; this is the behaviour half.)
 let _modalOpener = null;
-const _FOCUSABLE = 'a[href], button:not([disabled]), input:not([disabled]):not([type="hidden"]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])';
+
+// What Tab can land on, before the browser's own rules thin it out.
+const _TAB_SEL = 'a[href], area[href], button, input, select, textarea, summary, iframe, [tabindex], [contenteditable]:not([contenteditable="false"])';
+
+// Drawn, as the browser's Tab judges it: display, visibility and a folded
+// <details> all count. checkVisibility is the browser's own answer; an
+// older browser is asked the long way.
+function _drawn(el) {
+    if (typeof el.checkVisibility === 'function') return el.checkVisibility({ visibilityProperty: true });
+    return el.getClientRects().length > 0 && getComputedStyle(el).visibility !== 'hidden';
+}
+
+// The controls Tab walks under `root`, in the order the browser's own Tab
+// takes them: a tabindex above 0 first, lowest first, then everything
+// else as the document has it. What the browser skips, this skips: a
+// disabled control (a disabled fieldset's too), tabindex="-1" (a
+// type-ahead's hidden select), anything not drawn (a folded chooser, a
+// hidden input), and the radios of a group that has a checked one, bar
+// that one. A group with none checked is a stop once: the whole of it is
+// stepped over from one of its own (`from`, the control Tab leaves).
+function _tabStops(root, from) {
+    const radio = (el) => (el.tagName === 'INPUT' && el.type === 'radio' && el.name) ? el.name : null;
+    const all = [...root.querySelectorAll(_TAB_SEL)]
+        .filter(el => el.tabIndex >= 0 && !el.matches(':disabled') && _drawn(el));
+    const picked = new Set(all.filter(el => radio(el) && el.checked).map(radio));
+    const leaving = from ? radio(from) : null;
+    const stops = all.filter(el => {
+        const g = radio(el);
+        if (!g) return true;
+        if (g === leaving) return false;
+        return picked.has(g) ? el.checked : true;
+    });
+    const ahead = stops.filter(el => el.tabIndex > 0).sort((a, b) => a.tabIndex - b.tabIndex);
+    return ahead.concat(stops.filter(el => el.tabIndex === 0));
+}
+
+// A date or time field: Tab walks its own segments (month, day, year)
+// before leaving it, and only the browser knows which has the caret.
+function _hasSegments(el) {
+    return !!el && el.tagName === 'INPUT' && /^(date|time|datetime-local|month|week)$/.test(el.type);
+}
+
+// Focus as Tab gives it: a text box's words selected, as the browser does.
+function _tabTo(el) {
+    try { el.focus(); } catch (e) { return; }
+    const t = el.tagName;
+    if (t === 'TEXTAREA' || (t === 'INPUT' && /^(text|search|url|tel|password|email|number)$/.test(el.type))) {
+        try { el.select(); } catch (e) { /* not selectable */ }
+    }
+}
 
 // opts.wide: a form whose rows are wider than a dialog — the line-item
 // tables with ten or eleven columns (job cost entry). The default 700px
@@ -136,8 +185,12 @@ function openModal(title, html, opts) {
     $('#modal-overlay').classList.remove('hidden');
     const modal = $('#modal');
     modal.classList.toggle('modal--wide', !!(opts && opts.wide));
-    const first = modal.querySelector('#modal-body ' + _FOCUSABLE.split(', ').join(', #modal-body ')) || modal;
-    setTimeout(() => { try { first.focus(); } catch (e) { /* nothing focusable */ } }, 0);
+    // The first control takes focus once the dialog's own enhancements (the
+    // type-ahead boxes) are in place; a dialog with none takes it itself.
+    setTimeout(() => {
+        const first = _tabStops($('#modal-body'), null)[0] || modal;
+        try { first.focus(); } catch (e) { /* nothing focusable */ }
+    }, 0);
 }
 
 function closeModal() {
@@ -148,18 +201,57 @@ function closeModal() {
     if (opener && document.contains(opener)) { try { opener.focus(); } catch (e) { /* gone */ } }
 }
 
-document.addEventListener('keydown', (e) => {
+// Keys inside an open dialog. Escape closes it. Tab and Shift+Tab are
+// moved in script, through every control the browser's own Tab would
+// reach, in its order, wrapping at the ends: WebKit's Tab, under macOS's
+// default keyboard setting ("text boxes and lists only"), skipped buttons
+// and links and left the dialog for the page, so "Back to …", Prev/Next
+// and a report's links were out of reach (macOS gate NEW-25). Chromium
+// walks the same sequence either way. A date or time field is the one
+// place the browser keeps Tab (its segments, _hasSegments): a Tab from
+// one moves to its next segment or leaves it, and a Tab into one lands
+// on the segment the browser chooses; where the browser then leaves the
+// control for the wrong one, the walk puts that right a moment later. A
+// control that has already claimed the key (e.defaultPrevented) is left
+// alone.
+let _tabFix = null;
+function modalKeydown(e) {
     const overlay = document.getElementById('modal-overlay');
     if (!overlay || overlay.classList.contains('hidden')) return;
     if (e.key === 'Escape') { e.preventDefault(); closeModal(); return; }
-    if (e.key !== 'Tab') return;
+    if (e.key !== 'Tab' || e.defaultPrevented) return;
+    clearTimeout(_tabFix);
     const modal = document.getElementById('modal');
-    const nodes = Array.from(modal.querySelectorAll(_FOCUSABLE)).filter(n => n.offsetParent !== null);
-    if (!nodes.length) { e.preventDefault(); modal.focus(); return; }
-    const first = nodes[0], last = nodes[nodes.length - 1];
-    if (e.shiftKey && (document.activeElement === first || document.activeElement === modal)) { e.preventDefault(); last.focus(); }
-    else if (!e.shiftKey && document.activeElement === last) { e.preventDefault(); first.focus(); }
-});
+    const active = document.activeElement;
+    const stops = _tabStops(modal, active);
+    if (!stops.length) { e.preventDefault(); modal.focus(); return; }
+    const back = e.shiftKey;
+    const i = stops.indexOf(active);
+    let next;
+    if (i >= 0) {
+        next = stops[(i + (back ? -1 : 1) + stops.length) % stops.length];
+    } else if (active && modal.contains(active)) {
+        // from something that is not a stop (the dialog itself, a button
+        // disabled while it had focus): the next stop along from it
+        const follows = (s) => active.compareDocumentPosition(s) & Node.DOCUMENT_POSITION_FOLLOWING;
+        next = back ? (stops.filter(s => !follows(s)).pop() || stops[stops.length - 1]) : (stops.find(follows) || stops[0]);
+    } else {
+        next = back ? stops[stops.length - 1] : stops[0];
+    }
+    const inDialog = !!active && active !== modal && modal.contains(active);
+    if (inDialog && (_hasSegments(active) || _hasSegments(next))) {
+        // The control says when the browser's Tab leaves it, and for where
+        // (relatedTarget); a segment move leaves it on, and the listener
+        // is taken off again once this key is done with.
+        const left = (ev) => { if (ev.relatedTarget !== next) _tabFix = setTimeout(() => _tabTo(next), 0); };
+        active.addEventListener('focusout', left, { once: true });
+        setTimeout(() => active.removeEventListener('focusout', left), 0);
+        return;
+    }
+    e.preventDefault();
+    _tabTo(next);
+}
+document.addEventListener('keydown', modalKeydown);
 
 function statusBadge(status) {
     return `<span class="badge badge-${status}">${status}</span>`;
