@@ -145,7 +145,16 @@ def _open_at(browser, client, page_hash, width=1280, height=800):
     """A fresh document at the address: what a bookmark, a pasted link or a
     reload does."""
     handled = []
-    page = browser.new_page(viewport={"width": width, "height": height})
+    # The app's CSP has no 'unsafe-eval' (it is the desktop launcher's
+    # alone). A wait_for_function that finds its answer on the first look
+    # never evals in the page, but one that has to poll compiles its
+    # predicate there and the CSP refuses it ("Evaluating a string as
+    # JavaScript violates…"), which made a slow redraw a red test. The
+    # page under test is the same; only Playwright's own polling is let
+    # past the policy.
+    page = browser.new_page(
+        viewport={"width": width, "height": height}, bypass_csp=True
+    )
     page.route("**/*", _served_by(client, handled, SERVED))
     page.goto(f"{ORIGIN}/{page_hash}")
     page.wait_for_function("window.App && document.readyState === 'complete'")
