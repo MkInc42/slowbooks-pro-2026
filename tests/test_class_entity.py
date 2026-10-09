@@ -31,6 +31,9 @@ import pytest
 
 from app.services.accounting import create_journal_entry
 
+# the by-class module's ledger fixture, registered by its name
+from tests.test_pl_by_class_detail import ledger_fixture  # noqa: F401
+
 ROOT = Path(__file__).resolve().parents[1]
 JS = ROOT / "app" / "static" / "js"
 PERIOD = {"start_date": "2026-07-01", "end_date": "2026-07-31"}
