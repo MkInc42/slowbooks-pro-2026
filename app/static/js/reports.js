@@ -6,31 +6,32 @@ const ReportsPage = {
     // Every report view by its address name: #/reports/<name>?<params>
     // (R7, docs/dev/report-views.md). `open(params)` is what the address
     // runs, with the query as a plain object of strings; `label` names the
-    // view on a "Back to …" button (through T(), so nonprofit vocabulary
-    // applies); `asOf: true` marks a view dated by one as_of_date rather
+    // view on a "Back to …" button (a string, or a function returning the
+    // term, where nonprofit vocabulary renames it); `asOf: true` marks a
+    // view dated by one as_of_date rather
     // than a range; `keep` lists the drill-down params (beyond the dates)
     // that ride on the way back to the view. A saved report's report_type
     // is the name with underscores (profit_loss ↔ profit-loss), so saving
     // and reopening round-trip through the same address.
     _VIEWS: {
-        'profit-loss':          { label: 'Profit & Loss',      open: (p) => ReportsPage.profitLoss(p) },
-        'balance-sheet':        { label: 'Balance Sheet',      open: (p) => ReportsPage.balanceSheet(p), asOf: true },
-        'profit-loss-by-class': { label: 'P&L by Class',       open: (p) => ReportsPage.profitLossByClass(p) },
-        'profit-loss-class':    { label: 'Profit & Loss',      open: (p) => ReportsPage.profitLossOfClass(p.class_id, null, p.start_date, p.end_date), keep: ['class_id'] },
+        'profit-loss':          { label: () => T('Profit & Loss'),      open: (p) => ReportsPage.profitLoss(p) },
+        'balance-sheet':        { label: () => T('Balance Sheet'),      open: (p) => ReportsPage.balanceSheet(p), asOf: true },
+        'profit-loss-by-class': { label: () => T('P&L by Class'),       open: (p) => ReportsPage.profitLossByClass(p) },
+        'profit-loss-class':    { label: () => T('Profit & Loss'),      open: (p) => ReportsPage.profitLossOfClass(p.class_id, null, p.start_date, p.end_date), keep: ['class_id'] },
         'account-transactions': { label: 'Drill-down',         open: (p) => ReportsPage.openDrillDown(p.account_id, null, p.start_date, p.end_date, p.class_id || null, null, p.from || null) },
-        'ar-aging':             { label: 'Accounts Receivable Aging', open: (p) => ReportsPage.arAging(p), asOf: true },
+        'ar-aging':             { label: () => T('Accounts Receivable Aging'), open: (p) => ReportsPage.arAging(p), asOf: true },
         'ap-aging':             { label: 'Accounts Payable Aging',    open: (p) => ReportsPage.apAging(p), asOf: true },
         'sales-tax':            { label: 'Sales Tax Report',   open: (p) => ReportsPage.salesTax(p) },
         'general-ledger':       { label: 'General Ledger',     open: (p) => ReportsPage.generalLedger(p) },
-        'income-by-customer':   { label: 'Income by Customer', open: (p) => ReportsPage.incomeByCustomer(p) },
+        'income-by-customer':   { label: () => T('Income by Customer'), open: (p) => ReportsPage.incomeByCustomer(p) },
         'trial-balance':        { label: 'Trial Balance',      open: (p) => ReportsPage.trialBalance(p) },
         'cash-flow':            { label: 'Cash Flow Statement', open: (p) => ReportsPage.cashFlow(p) },
-        'job-profitability':    { label: 'Job Profitability',  open: (p) => ReportsPage.jobProfitability(p) },
-        'job-budget-vs-actual': { label: 'Job Budget vs Actual', open: (p) => ReportsPage.jobBudgetVsActual(p) },
+        'job-profitability':    { label: () => T('Job Profitability'),  open: (p) => ReportsPage.jobProfitability(p) },
+        'job-budget-vs-actual': { label: () => T('Job Budget vs Actual'), open: (p) => ReportsPage.jobBudgetVsActual(p) },
         'budget-vs-actual':     { label: 'Budget vs Actual',   open: (p) => { if (/^\d{4}$/.test(p.year || '')) BudgetsPage._year = parseInt(p.year, 10); return BudgetsPage.showVariance(p); } },
         'financial-statements': { label: 'Financial Statements Pack', open: (p) => ReportsPage.financialStatementsPdf(p) },
         'fixed-asset-reconciliation': { label: 'Fixed Asset Reconciliation', open: () => ReportsPage.fixedAssetReconciliation() },
-        'customer-statement':   { label: 'Customer Statement', open: () => ReportsPage.customerStatementPicker() },
+        'customer-statement':   { label: () => T('Customer Statement'), open: () => ReportsPage.customerStatementPicker() },
         '1099-summary':         { label: '1099 Summary',       open: (p) => ReportsPage.report1099(p) },
         'statement-of-financial-position': { label: 'Statement of Financial Position', open: (p) => ReportsPage.statementOfFinancialPosition(p), asOf: true },
         'statement-of-activities':         { label: 'Statement of Activities', open: (p) => ReportsPage.statementOfActivities(p) },
@@ -87,7 +88,8 @@ const ReportsPage = {
         const view = ReportsPage._VIEWS[name];
         if (!view) return '';
         const call = escapeHtml(`ReportsPage.backTo(${JSON.stringify(name)}, ${JSON.stringify(params || {})})`);
-        return `<button type="button" class="btn btn-secondary" onclick="${call}">Back to ${escapeHtml(T(view.label))}</button>`;
+        const label = typeof view.label === 'function' ? view.label() : view.label;
+        return `<button type="button" class="btn btn-secondary" onclick="${call}">Back to ${escapeHtml(label)}</button>`;
     },
 
     // The '/reports/:view' route: the view named in the address, opened

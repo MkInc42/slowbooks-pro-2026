@@ -54,7 +54,8 @@ def test_the_drill_down_offers_the_way_back_to_the_ledger():
     button = JS[JS.index("\n    _backButton(name, params) {") :]
     button = button[: button.index("\n    },")]
     assert "ReportsPage.backTo(" in button
-    assert "Back to ${escapeHtml(T(view.label))}" in button
+    assert "typeof view.label === 'function' ? view.label() : view.label" in button
+    assert "Back to ${escapeHtml(label)}" in button
     # the older helper still answers by name, through the same button
     back = JS[JS.index("ReportsPage._backToGeneralLedger = function") :]
     back = back[: back.index("\n};")]

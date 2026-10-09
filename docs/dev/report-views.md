@@ -23,7 +23,7 @@ Close/Escape leaves the address alone, as a document over its list does; the vie
 
 1. Add it to `ReportsPage._VIEWS` in `app/static/js/reports.js`:
    `'profit-loss-by-job': { label: 'P&L by Job', open: (p) => ReportsPage.profitLossByJob(p) }`
-   — `open(params)` is what the address runs; `label` is the "Back to …" wording (through `T()`);
+   — `open(params)` is what the address runs; `label` is the "Back to …" wording (a function returning `T(term)` where nonprofit mode renames it);
    `asOf: true` for a view dated by one `as_of_date`; `keep: ['class_id']` for drill-down params that ride back.
 2. Put the address on the bar from the opener. A report that uses `openPeriodModal` passes
    `{ view: 'profit-loss-by-job', params: { job_id }, prefill }` in its opts — the period and dates are written on
