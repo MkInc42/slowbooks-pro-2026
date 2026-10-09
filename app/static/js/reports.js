@@ -1657,16 +1657,16 @@ ReportsPage._columnChooser = function (spec) {
             <div class="grid-step__buttons">
                 <label style="font-weight:normal; text-transform:none; font-size:11px; display:inline-flex; gap:4px; align-items:center;"><input type="checkbox" id="grid-empty" ${spec.params.include_empty ? 'checked' : ''} onchange="ReportsPage.setParam('include_empty', this.checked ? 'true' : '')"> Show ${nouns} with no activity</label>
                 <button type="button" class="btn btn-sm btn-secondary" id="grid-choose-btn" aria-expanded="false" aria-controls="grid-chooser" onclick="ReportsPage.toggleChooser()">Choose ${nouns}…</button>
-                <span id="grid-choice" class="grid-live">${chosen.size ? `${chosen.size} of ${spec.items.length} chosen` : ''}</span>
+                <span id="grid-choice" class="grid-live">${chosen.size ? `${chosen.size} chosen` : ''}</span>
             </div>
             <fieldset id="grid-chooser" class="grid-chooser" hidden>
                 <legend>${escapeHtml(spec.Nouns)} to show</legend>
                 <div class="grid-chooser__list">${picks}</div>
                 <div class="grid-chooser__actions">
-                    <button type="button" class="btn btn-sm btn-primary" onclick="ReportsPage.applyChooser('${spec.key}', ${spec.items.length})">Apply</button>
+                    <button type="button" class="btn btn-sm btn-primary" onclick="ReportsPage.applyChooser('${spec.key}')">Apply</button>
                     <button type="button" class="btn btn-sm btn-secondary" onclick="ReportsPage.checkAll(true)">All</button>
                     <button type="button" class="btn btn-sm btn-secondary" onclick="ReportsPage.checkAll(false)">None</button>
-                    <button type="button" class="btn btn-sm btn-secondary" onclick="ReportsPage.checkAll(false); ReportsPage.applyChooser('${spec.key}', ${spec.items.length})">Show every ${escapeHtml(spec.noun)}</button>
+                    <button type="button" class="btn btn-sm btn-secondary" onclick="ReportsPage.checkAll(false); ReportsPage.applyChooser('${spec.key}')">Show every ${escapeHtml(spec.noun)}</button>
                 </div>
             </fieldset>
         </div>`;
@@ -1686,11 +1686,14 @@ ReportsPage.checkAll = function (on) {
 };
 
 // The ticked ids become the address's class_ids (job_ids); none ticked
-// means every column, as before.
-ReportsPage.applyChooser = function (key, total) {
+// means every column, as before. The count beside the button is of the
+// ticks alone ("2 chosen"): the grid's note counts the columns with
+// activity in the period, and "2 of 15 chosen" beside "2 of 11 classes
+// shown" read as two counts of one thing (NEW-28).
+ReportsPage.applyChooser = function (key) {
     const ids = $$('#grid-chooser input[type="checkbox"]:checked').map(c => c.value);
     const where = $('#grid-choice');
-    if (where) where.textContent = ids.length ? `${ids.length} of ${total} chosen` : '';
+    if (where) where.textContent = ids.length ? `${ids.length} chosen` : '';
     // the panel folds away and the button has the focus back
     const panel = $('#grid-chooser');
     const btn = $('#grid-choose-btn');
@@ -1723,15 +1726,31 @@ ReportsPage._columnQs = function (params, key) {
 // A grid with no column: either nothing was posted in the period, or the
 // chooser named classes (jobs) that have nothing in it — said, with the way
 // out, rather than "No activity" under a note that counts the columns.
+// (The server leaves a chosen class with nothing in the period out of the
+// columns unless "show with no activity" is on, and names it in
+// chosen_empty, NEW-26.)
 ReportsPage._emptyGrid = function (data, key, noun, nouns) {
     if (!data.filtered) return `<div class="empty-state"><p>No activity in this period</p></div>`;
-    return `<div class="empty-state grid-filtered" role="status"><p>None of the chosen ${escapeHtml(nouns)} has activity in this period.
-        <a href="javascript:void(0)" onclick="ReportsPage.setParam('${key}', '')">Show every ${escapeHtml(noun)}</a></p></div>`;
+    const names = (data.chosen_empty || []).map(escapeHtml).join(', ');
+    // the way out unticks the chooser too, so its count agrees (NEW-28)
+    return `<div class="empty-state grid-filtered" role="status"><p>None of the chosen ${escapeHtml(nouns)}${names ? ` (${names})` : ''} has activity in this period.
+        <a href="javascript:void(0)" onclick="ReportsPage.checkAll(false); ReportsPage.applyChooser('${key}')">Show every ${escapeHtml(noun)}</a></p></div>`;
 };
 
-ReportsPage._filteredNote = function (data, shown, nouns) {
+// "n of m shown" counts the columns with activity in the period, as m
+// does; a column drawn empty (asked for) or a chosen class left out for
+// having none is said separately, in the words the CSV and PDF use
+// (ledger_exports.filtered_phrase).
+ReportsPage._filteredNote = function (data, columns, nouns) {
     if (!data.filtered) return '';
-    return `<div class="grid-filtered" role="status">Filtered: ${shown} of ${data.columns_total} ${escapeHtml(nouns)} shown — these totals are for the ${escapeHtml(nouns)} shown, not the company. Company ${T('Net Income')} for these dates: <strong>${formatCurrency(data.unfiltered.net_income)}</strong>.</div>`;
+    const shown = columns.filter(c => !c.empty).length;
+    const drawnEmpty = columns.length - shown;
+    const chosenEmpty = data.chosen_empty || [];
+    const names = chosenEmpty.map(escapeHtml).join(', ');
+    let text = `Filtered: ${shown} of ${data.columns_total} ${escapeHtml(nouns)} shown`;
+    if (drawnEmpty) text += `, plus ${drawnEmpty} with no activity in this period${names ? ` (${names})` : ''}`;
+    else if (chosenEmpty.length) text += `; ${chosenEmpty.length} chosen ${chosenEmpty.length === 1 ? 'has' : 'have'} no activity in this period and ${chosenEmpty.length === 1 ? 'is' : 'are'} left out (${names})`;
+    return `<div class="grid-filtered" role="status">${text} — these totals are for the ${escapeHtml(nouns)} shown, not the company. Company ${T('Net Income')} for these dates: <strong>${formatCurrency(data.unfiltered.net_income)}</strong>.</div>`;
 };
 
 // Class tracking: Profit & Loss split by the class dimension.
@@ -1766,7 +1785,7 @@ ReportsPage.profitLossByClass = async function (prefill) {
                 columns: columns.map(c => ({ ...c, id: c.class_id, name: c.archived ? `${c.class_name} (archived)` : c.class_name })),
                 accounts: data.accounts,
                 totals: { income: data.total_income, cogs: data.total_cogs, gross_profit: data.total_gross_profit, expenses: data.total_expenses, net_income: data.total_net_income },
-                note: ReportsPage._filteredNote(data, columns.length, T('classes')),
+                note: ReportsPage._filteredNote(data, columns, T('classes')),
                 totalLabel: data.filtered ? 'Total (shown)' : 'Total',
                 drill: (a, c) => `ReportsPage.openDrillDown(${args(a.account_id, a.account_name, range.start, range.end, c.class_id, c.class_name, 'profit-loss-by-class')})`,
                 head: (c) => `ReportsPage.profitLossOfClass(${args(c.class_id, c.class_name, dates)})`,
@@ -1818,7 +1837,7 @@ ReportsPage.profitLossByJob = async function (prefill) {
                 columns: columns.map(c => ({ ...c, id: jobKey(c), name: `${jobKey(c) ? jobLabel(c.job_name, c.customer_name) : c.job_name}${c.inactive ? ' (inactive)' : ''}` })),
                 accounts: data.accounts,
                 totals: { income: data.total_income, cogs: data.total_cogs, gross_profit: data.total_gross_profit, expenses: data.total_expenses, net_income: data.total_net_income },
-                note: ReportsPage._filteredNote(data, columns.length, T('jobs')),
+                note: ReportsPage._filteredNote(data, columns, T('jobs')),
                 totalLabel: data.filtered ? 'Total (shown)' : 'Total',
                 drill: (a, c) => `ReportsPage.openDrillDown(${args(a.account_id, a.account_name, range.start, range.end, null, null, 'profit-loss-by-job', { job_id: jobKey(c), job_name: c.job_name })})`,
                 head: (c) => c.job_id ? `App.navigate(${JSON.stringify(jobUrl(c))})` : null,

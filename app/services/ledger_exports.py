@@ -197,10 +197,7 @@ def profit_loss_by_class_csv(
     w = _SafeWriter(out)
     period = f"{data['start_date']} to {data['end_date']}"
     if data.get("filtered"):
-        period += (
-            f" (filtered: {len(columns)} of {data.get('columns_total', len(columns))}"
-            " shown; totals are for the columns shown, not the company)"
-        )
+        period += f" ({filtered_phrase(data, columns)})"
     _preamble(w, company, data.get("report_name") or words("P&L by Class"), period)
     dimension = data.get("dimension") or words("Class")
     sections = (
@@ -258,6 +255,30 @@ def profit_loss_by_class_csv(
         + [_money(data["total_net_income"])]
     )
     return out.getvalue()
+
+
+def filtered_phrase(data: dict, columns: list) -> str:
+    """What a filtered grid says of itself — the CSV's preamble, the PDF's
+    period line and the screen's note, in the same words: how many of the
+    columns with activity in the period are shown; a chosen column with
+    no activity, left out, or drawn as zeros when the empty ones were
+    asked for (NEW-26); and that the totals are the columns shown, not the
+    company's. `columns` are the grid's, each saying whether it is empty."""
+    shown = sum(1 for c in columns if not c.get("empty"))
+    drawn_empty = len(columns) - shown
+    chosen_empty = data.get("chosen_empty") or []
+    text = f"filtered: {shown} of {data.get('columns_total', shown)} shown"
+    if drawn_empty:
+        text += f", plus {drawn_empty} with no activity in this period"
+        if chosen_empty:
+            text += f" ({', '.join(chosen_empty)})"
+    elif chosen_empty:
+        n = len(chosen_empty)
+        text += (
+            f"; {n} chosen {'has' if n == 1 else 'have'} no activity in this period"
+            f" and {'is' if n == 1 else 'are'} left out ({', '.join(chosen_empty)})"
+        )
+    return text + "; totals are for the columns shown, not the company"
 
 
 def balance_sheet_csv(data: dict, company: str, words) -> str:
