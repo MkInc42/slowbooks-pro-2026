@@ -25,14 +25,14 @@ A date or period in the address that is not one is ignored, and a toast says so.
    `'profit-loss-by-job': { label: 'P&L by Job', open: (p) => ReportsPage.profitLossByJob(p) }`
    — `open(params)` is what the address runs; `label` is the "Back to …" wording (a function returning `T(term)` where nonprofit mode renames it);
    `asOf: true` for a view dated by one `as_of_date`; `keep: ['class_id']` for drill-down params that ride back.
-2. Put the address on the bar from the opener. A report that uses `openPeriodModal` passes `{ view: 'profit-loss-by-job', params: { job_id }, prefill }`
-   in its opts — the period and dates are written on every render, `params` ahead of them, and `prefill` (the query) sets the starting period and dates.
-   `params` is kept by reference and rides into a saved report: a control in `opts.toolbar` (html drawn once beside the period select) changes it with
-   `ReportsPage.setParam(key, value)` and the view redraws on the new address; `opts.wide` is the wide dialog. A plain-modal view calls
-   `ReportsPage.setAddress('name', { … })` itself before `openModal`.
-3. Opening a drill-down *from* the view: `ReportsPage.openDrillDown(accountId, name, start, end, classId, className, from, { job_id })`
-   with `from` = your view name gives it "Back to <your label>" and `&from=<name>`; a page route (`#/jobs/:id?start_date=…&from=…`) reads its query the same way
-   and `ReportsPage._backButton(from, { start_date, end_date })` is its way back.
+2. Put the address on the bar from the opener. A report that uses `openPeriodModal` passes `{ view: 'profit-loss-by-job', params: { job_id }, prefill }` in its opts:
+   the period and dates are written on every render, `params` ahead of them, `prefill` (the query) sets the starting period and dates. `params` is kept by reference
+   and rides into a saved report: a control in `opts.toolbar` (html beside the period select) changes it with `ReportsPage.setParam(key, value)` and the view redraws
+   on the new address (a function as `params` is read on every render instead); `opts.wide` is the wide dialog. A plain-modal view calls `ReportsPage.setAddress` itself before `openModal`.
+3. A drill-down *from* the view: `ReportsPage.openDrillDown(accountId, name, start, end, classId, className, from, { job_id })` with `from` = your view name
+   gives it "Back to <your label>" and `&from=<name>`. A page route (`#/jobs/:id?start_date=…&from=…`, `#/classes/:id?…`, `#/banking/:id?…`) reads its query the
+   same way, replaces its address on a change inside it (`history.replaceState(history.state, '', url)`) and hops through `App.navigate(href)` from an anchor's onclick
+   (a plain `<a href>` records no `from`); `ReportsPage._backButton(from, dates)` is its way back, and `from=classes` + `class_id` → "Back to <class name>" via `ReportsPage.backToPage`.
 
 Saved reports: `report_type` is the view name with underscores (`profit_loss_by_class`) and `parameters` the query; `openSaved` navigates to
 `ReportsPage.viewUrl(view, parameters)` — the builder of any link to a report (empty values and `period=custom` are left out), as the dashboard cards use it

@@ -221,6 +221,7 @@ const JournalPage = {
             }
         });
         if (lines.length < 2) { toast('At least 2 lines required', 'error'); return; }
+        if (!(await ClassWarn.ok(form, { rows: '#je-lines tr', cls: 'je-function' }))) return;
 
         try {
             await API.post('/journal', {

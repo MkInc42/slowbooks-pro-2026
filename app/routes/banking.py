@@ -658,11 +658,16 @@ def check_register(
     account_id: int = None,
     start_date: date = None,
     end_date: date = None,
+    class_id: int = None,
     db: Session = Depends(get_db),
 ):
     """The register: every ledger line on a bank or card account, natural-
     balance running balance (a card shows the amount owed positive), with
-    the posting each row came from and whether it has cleared."""
+    the posting each row came from and whether it has cleared. With dates,
+    the lines in them and the balance brought forward; with `class_id`,
+    only that class's lines, the balance brought forward computed under
+    the same test (#236). `balance` is always the account's whole ledger
+    balance."""
     if not account_id:
         acct = (
             db.query(Account)
@@ -677,7 +682,14 @@ def check_register(
     if not account:
         raise HTTPException(status_code=404, detail="Account not found")
 
-    reg = account_register(db, account, start_date, end_date)
+    cls = None
+    if class_id is not None:
+        from app.models.classes import TxnClass
+
+        cls = db.get(TxnClass, class_id)
+        if cls is None:
+            raise HTTPException(status_code=404, detail="Class not found")
+    reg = account_register(db, account, start_date, end_date, class_id=class_id)
     entries = []
     for e in reg["entries"]:
         row = dict(e)
@@ -698,5 +710,9 @@ def check_register(
         "natural_balance": reg["account"]["natural_balance"],
         "opening_balance": reg["opening_balance"],
         "balance": float(gl_balance(db, account.id)),
+        "start_date": start_date.isoformat() if start_date else None,
+        "end_date": end_date.isoformat() if end_date else None,
+        "class_id": cls.id if cls else None,
+        "class_name": cls.name if cls else None,
         "entries": entries,
     }

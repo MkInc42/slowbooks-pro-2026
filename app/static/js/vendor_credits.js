@@ -188,6 +188,7 @@ const VendorCreditsPage = {
             toast(`Choose an account for line ${missing}: its item has none and the vendor has no default expense account.`, 'error');
             return;
         }
+        if (!(await ClassWarn.ok(form))) return;
         try {
             await API.post('/vendor-credits', {
                 vendor_id: parseInt(form.vendor_id.value),

@@ -872,10 +872,15 @@ def test_the_invoice_form_sends_each_lines_dimensions_back():
     save = save[: save.index("const data = {")]
     for field, key in (
         ("job_id", "jobId"),
-        ("class_id", "classId"),
         ("cost_code_id", "costCodeId"),
     ):
         assert f"{field}: row.dataset.{key}" in save, field
+    # the class goes through the line's own cell since 2.22 (#243): the
+    # cell's choice where one is drawn, else the stored class as before
+    assert "class_id: InvoicesPage.lineClassFromRow(row)," in save
+    keep = js[js.index("lineClassFromRow(row) {") :]
+    keep = keep[: keep.index("\n    },")]
+    assert "row.dataset.classId ? parseInt(row.dataset.classId) : null" in keep
 
 
 def test_a_job_keeps_its_revenue_by_cost_code_through_an_edit(

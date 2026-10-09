@@ -77,6 +77,7 @@ const CCChargesPage = {
     async save(e) {
         e.preventDefault();
         const form = e.target;
+        if (!(await ClassWarn.ok(form))) return;
         try {
             await API.post('/cc-charges', {
                 date: form.date.value,

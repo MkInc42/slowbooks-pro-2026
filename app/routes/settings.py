@@ -51,6 +51,7 @@ ENUM_SETTINGS = {
     "ocr_engine": frozenset({"auto", "tesseract"}),
     "ask_password_on_start": frozenset({"true", "false"}),
     "invoice_show_logo": frozenset({"true", "false"}),
+    "class_warn_blank": frozenset({"true", "false"}),
 }
 
 

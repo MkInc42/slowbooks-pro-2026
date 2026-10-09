@@ -111,6 +111,11 @@ DEFAULT_SETTINGS = {
     "qbo_realm_id": "",
     "qbo_token_expires_at": "",
     "qbo_oauth_state": "",
+    # Class tracking (#243): "true" starts every entry form with no class
+    # chosen and asks before a transaction is saved without one (it would
+    # be reported under Uncategorized); "false" starts the picker on
+    # Uncategorized and asks nothing.
+    "class_warn_blank": "false",
     # Phase 10: Late Fee Automation
     "late_fee_enabled": "false",
     "late_fee_rate": "1.5",

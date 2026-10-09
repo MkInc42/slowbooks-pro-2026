@@ -1,7 +1,7 @@
 # ============================================================================
 # Unified Search — expands global search to all entity types
-# Feature 4: server-side ILIKE across customers, vendors, items, invoices,
-# estimates, payments — 5 results per category
+# Feature 4: server-side ILIKE across customers, vendors, items, classes,
+# accounts, invoices, estimates, payments — 5 results per category
 #
 # A query that reads as an amount ("612.30", "$1,234.50", "612") also
 # finds the documents for that amount, to the cent: invoices and bills by
@@ -18,7 +18,9 @@ from sqlalchemy import false
 from sqlalchemy.orm import Session
 
 from app.database import get_db
+from app.models.accounts import Account
 from app.models.bills import Bill, BillStatus
+from app.models.classes import TxnClass
 from app.models.contacts import Customer, Vendor
 from app.models.credit_memos import CreditMemo
 from app.models.items import Item
@@ -107,6 +109,44 @@ def unified_search(q: str = Query(min_length=2), db: Session = Depends(get_db)):
     if items:
         results["items"] = [
             {"id": i.id, "name": i.name, "item_type": i.item_type.value} for i in items
+        ]
+
+    # Classes (#234): a hit opens the class's own page. Archived ones are
+    # found too — they still open, with their history.
+    classes = (
+        db.query(TxnClass)
+        .filter(TxnClass.name.ilike(pattern))
+        .order_by(TxnClass.is_archived, TxnClass.name)
+        .limit(LIMIT_PER)
+        .all()
+    )
+    if classes:
+        results["classes"] = [
+            {"id": c.id, "name": c.name, "is_archived": bool(c.is_archived)}
+            for c in classes
+        ]
+
+    # Accounts (#240): by number or name; a hit opens the account's register
+    # (the bank register for a bank or card account, the drill-down for the
+    # rest). Inactive accounts are found too: their history still opens.
+    accounts = (
+        db.query(Account)
+        .filter(Account.account_number.ilike(pattern) | Account.name.ilike(pattern))
+        .order_by(Account.is_active.desc(), Account.account_number)
+        .limit(LIMIT_PER)
+        .all()
+    )
+    if accounts:
+        results["accounts"] = [
+            {
+                "id": a.id,
+                "account_number": a.account_number,
+                "name": a.name,
+                "account_type": a.account_type.value,
+                "bank_kind": a.bank_kind,
+                "is_active": bool(a.is_active),
+            }
+            for a in accounts
         ]
 
     # Invoices (a sales receipt is listed under its own heading below)

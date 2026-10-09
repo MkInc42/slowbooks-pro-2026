@@ -438,6 +438,15 @@ const SettingsPage = {
                         Track income and expenses by department, location, or line of
                         business. ${T('Classes')} appear on entry forms and the ${T('P&L by Class')} report.
                     </div>
+                    <div style="margin-bottom:12px;">
+                        <label for="class-warn-blank" style="font-weight:normal;">
+                            <input type="checkbox" id="class-warn-blank" name="class_warn_blank" value="true" style="width:auto; vertical-align:middle; margin-right:6px;" ${s.class_warn_blank === 'true' ? 'checked' : ''}>
+                            Warn when a transaction is saved without a ${T('class').toLowerCase()}
+                        </label>
+                        <div style="font-size:10px; color:var(--text-muted); margin-top:4px;">
+                            On, every entry form starts with no ${T('class').toLowerCase()} chosen and asks before saving a transaction that has none on its header or its lines — it would be reported under Uncategorized. Off, the forms start on Uncategorized and ask nothing. Saved with Save Settings.
+                        </div>
+                    </div>
                     <div style="display:flex; gap:8px; margin-bottom:12px;" data-write>
                         <input type="text" id="new-class-name" placeholder="New ${T('class')} name" style="width:220px;">
                         <button type="button" class="btn btn-primary" onclick="SettingsPage.addClass()">Add ${T('Class')}</button>
@@ -816,6 +825,8 @@ const SettingsPage = {
         // An unchecked box is left out of FormData; send it as "false".
         const logoOption = e.target.querySelector('[name="invoice_show_logo"]');
         if (logoOption) data.invoice_show_logo = logoOption.checked ? 'true' : 'false';
+        const classWarn = e.target.querySelector('[name="class_warn_blank"]');
+        if (classWarn) data.class_warn_blank = classWarn.checked ? 'true' : 'false';
         const btn = document.getElementById('settings-save-btn');
         if (btn) btn.disabled = true;
         try {

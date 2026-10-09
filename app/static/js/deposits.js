@@ -12,8 +12,12 @@ const DepositsPage = {
             API.get('/classes').catch(() => []),
             API.get('/deposits?limit=20').catch(() => []),
         ]);
-        const classOpts = classes.map(c =>
-            `<option value="${c.id}" ${c.is_system_default ? 'selected' : ''}>${escapeHtml(c.name)}</option>`
+        // The Class picker starts on the system default; with Settings'
+        // "Warn when a transaction is saved without a class" on (#243) it
+        // starts blank, as every entry form does, so Deposit asks first.
+        const blank = classes.length && ClassWarn.enabled();
+        const classOpts = (blank ? `<option value="" selected>— choose a ${T('class').toLowerCase()} —</option>` : '') + classes.map(c =>
+            `<option value="${c.id}" ${c.is_system_default && !blank ? 'selected' : ''}>${escapeHtml(c.name)}</option>`
         ).join('');
 
         const bankAccts = accounts.filter(a => a.bank_kind === 'bank');
@@ -27,13 +31,13 @@ const DepositsPage = {
                 </div>
             </div>
             <div class="toolbar" data-write>
-                <label style="font-size:10px;font-weight:700;">Deposit To:</label>
+                <label for="deposit-bank-acct" style="font-size:10px;font-weight:700;">Deposit To:</label>
                 <select id="deposit-bank-acct">${bankOpts.length ? bankOpts : '<option>No bank accounts</option>'}</select>
-                <label style="font-size:10px;font-weight:700;">Date:</label>
+                <label for="deposit-date" style="font-size:10px;font-weight:700;">Date:</label>
                 <input type="date" id="deposit-date" value="${todayISO()}">
-                <label style="font-size:10px;font-weight:700;">Reference:</label>
+                <label for="deposit-ref" style="font-size:10px;font-weight:700;">Reference:</label>
                 <input type="text" id="deposit-ref" placeholder="Deposit slip #" style="width:120px;">
-                ${classOpts ? `<label style="font-size:10px;font-weight:700;">${T('Class')}:</label>
+                ${classOpts ? `<label for="deposit-class" style="font-size:10px;font-weight:700;">${T('Class')}:</label>
                 <select id="deposit-class">${classOpts}</select>` : ''}
             </div>`;
 
@@ -185,6 +189,7 @@ const DepositsPage = {
 
         const bankAcctId = $('#deposit-bank-acct')?.value;
         if (!bankAcctId) { toast('Select a bank account', 'error'); return; }
+        if ($('#deposit-class') && !ClassWarn.okValue($('#deposit-class').value)) return;
 
         try {
             await API.post('/deposits', {

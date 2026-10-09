@@ -143,6 +143,8 @@
                 e.target.value = '';
                 window.App && App.globalSearch && App.globalSearch('');
             }
+            // ArrowDown: on to the first hit
+            if (e.key === 'ArrowDown' && window.App && App.searchFocusFirst && App.searchFocusFirst()) e.preventDefault();
         });
     }
 

@@ -501,6 +501,7 @@ const BillsPage = {
             missing.sel.focus();
             return;
         }
+        if (!(await ClassWarn.ok(form, { rows: '#bill-lines tr', cls: 'line-function' }))) return;
         try {
             const vendorId = await VendorQuickAdd.ensure('bill-vendor');
             const body = {

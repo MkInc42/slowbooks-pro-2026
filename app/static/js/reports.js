@@ -24,7 +24,7 @@ const ReportsPage = {
         'ar-aging':             { label: () => T('Accounts Receivable Aging'), open: (p) => ReportsPage.arAging(p), asOf: true },
         'ap-aging':             { label: 'Accounts Payable Aging',    open: (p) => ReportsPage.apAging(p), asOf: true },
         'sales-tax':            { label: 'Sales Tax Report',   open: (p) => ReportsPage.salesTax(p) },
-        'general-ledger':       { label: 'General Ledger',     open: (p) => ReportsPage.generalLedger(p) },
+        'general-ledger':       { label: 'General Ledger',     open: (p) => ReportsPage.generalLedger(p), keep: ['class_id'] },
         'income-by-customer':   { label: () => T('Income by Customer'), open: (p) => ReportsPage.incomeByCustomer(p) },
         'trial-balance':        { label: 'Trial Balance',      open: (p) => ReportsPage.trialBalance(p) },
         'cash-flow':            { label: 'Cash Flow Statement', open: (p) => ReportsPage.cashFlow(p) },
@@ -94,6 +94,27 @@ const ReportsPage = {
             return;
         }
         App.navigate(ReportsPage.viewUrl(name, params));
+    },
+
+    // Back to a page with an address of its own (#/classes/:id, #234), by
+    // the same rule: through history when this entry was pushed from that
+    // page (its "from" is the page as it was left — its tab, its period),
+    // else by opening the page on the dates the view was on.
+    backToPage(path, params) {
+        const from = history.state && history.state.from;
+        if (from && App.parseHash(from).path === path) {
+            history.back();
+            return;
+        }
+        const qs = new URLSearchParams();
+        for (const [k, v] of Object.entries(params || {})) if (v !== null && v !== undefined && v !== '') qs.set(k, String(v));
+        const q = qs.toString();
+        App.navigate(`#${path}${q ? `?${q}` : ''}`);
+    },
+
+    _backPageButton(key, path, params, label) {
+        const call = escapeHtml(`ReportsPage.backToPage(${JSON.stringify(path)}, ${JSON.stringify(params || {})})`);
+        return `<button type="button" class="btn btn-secondary" data-back-to="${escapeHtml(key)}" onclick="${call}">Back to ${escapeHtml(label)}</button>`;
     },
 
     // `detail` names which one, after the view's label, where the view is
@@ -343,6 +364,11 @@ const ReportsPage = {
         if (classId && !from) from = 'profit-loss-by-class';
         if (jobOn && !from) from = 'profit-loss-by-job';
         const back = ReportsPage._view(from) ? from : null;
+        // The class's own page (#/classes/:id, #234) opens a drill-down for
+        // its class too: `from=classes` names it as the way back, so the
+        // button says "Back to Site Prep" and returns to the page as it was
+        // left, not to a report the user never opened.
+        const backPage = !back && from === 'classes' && classId ? `/classes/${classId}` : null;
         const params = new URLSearchParams();
         params.set('account_id', accountId);
         if (startDate) params.set('start_date', startDate);
@@ -352,7 +378,7 @@ const ReportsPage = {
 
         ReportsPage.setAddress('account-transactions', {
             account_id: accountId, start_date: startDate, end_date: endDate, class_id: classId,
-            job_id: jobOn ? String(jobId) : null, from: back,
+            job_id: jobOn ? String(jobId) : null, from: back || (backPage ? 'classes' : null),
         });
 
         // The way back carries the dates the view was on (one as-of date
@@ -366,6 +392,8 @@ const ReportsPage = {
             const backParams = v.asOf ? { as_of_date: endDate } : { start_date: startDate, end_date: endDate };
             if ((v.keep || []).includes('class_id') && classId) backParams.class_id = classId;
             backBtn = ReportsPage._backButton(back, backParams, backToClass ? (className || T('Class')) : '');
+        } else if (backPage) {
+            backBtn = ReportsPage._backPageButton('classes', backPage, { start_date: startDate, end_date: endDate }, className || T('Class'));
         }
 
         const title = (name, cls) => `Drill-down — ${name || `account ${accountId}`}${cls ? ` · ${cls}` : ''}${jobOn && jobName ? ` · ${T('Job')}: ${jobName}` : ''}`;
@@ -387,6 +415,10 @@ const ReportsPage = {
             if (backToClass && !className && data.class_name) {
                 const btn = $('#modal-body [data-back-to="profit-loss-class"]');
                 if (btn) btn.textContent = ReportsPage._backText(back, data.class_name);
+            }
+            if (backPage && !className && data.class_name) {
+                const btn = $('#modal-body [data-back-to="classes"]');
+                if (btn) btn.textContent = `Back to ${data.class_name}`;
             }
             const rows = (data.entries || []).map(e => {
                 const src = e.source_link
@@ -551,7 +583,10 @@ const ReportsPage = {
         // control in the toolbar changes it through ReportsPage.setParam
         // and the view redraws on the new address. It rides into a saved
         // report's parameters too, so a class, a job or a column choice
-        // reopens with the dates.
+        // reopens with the dates. A function as opts.params is called on
+        // every render instead, for a view whose pickers keep their own
+        // state (the General Ledger's, #236); setParam has nothing to
+        // write to then.
         // opts.toolbar (html) — controls drawn once, beside the period
         // select, that stay as the report redraws (a class picker, Prev /
         // Next, a column chooser); the report's own body is redrawn by
@@ -561,7 +596,8 @@ const ReportsPage = {
         const reportType = opts.reportType || null;
         const prefill = opts.prefill || {};
         const view = opts.view || null;
-        const params = opts.params || {};
+        const paramsObj = typeof opts.params === 'function' ? null : (opts.params || {});
+        const params = () => (paramsObj ? paramsObj : opts.params());
 
         const currentYear = new Date().getFullYear();
         const defaultCustomStart = prefill.start_date || `${currentYear}-01-01`;
@@ -617,13 +653,13 @@ const ReportsPage = {
                 if (useAsOfOnly) {
                     const asOfDate = ReportsPage.getAsOfDate(select.value, endInput.value || todayISO());
                     currentParams = { period: select.value, as_of_date: asOfDate };
-                    if (view) ReportsPage.setAddress(view, { ...params, ...currentParams });
-                    content.innerHTML = await loadContent(select.value, { as_of_date: asOfDate }, params);
+                    if (view) ReportsPage.setAddress(view, { ...params(), ...currentParams });
+                    content.innerHTML = await loadContent(select.value, { as_of_date: asOfDate }, params());
                 } else {
                     const range = ReportsPage.getDateRange(select.value, startInput.value, endInput.value);
                     currentParams = { period: select.value, start_date: range.start, end_date: range.end };
-                    if (view) ReportsPage.setAddress(view, { ...params, ...currentParams });
-                    content.innerHTML = await loadContent(select.value, range, params);
+                    if (view) ReportsPage.setAddress(view, { ...params(), ...currentParams });
+                    content.innerHTML = await loadContent(select.value, range, params());
                 }
             } catch (err) {
                 content.innerHTML = `<div class="empty-state"><p>${escapeHtml(err.message)}</p></div>`;
@@ -631,7 +667,7 @@ const ReportsPage = {
         };
         // The open report, for its toolbar's controls (ReportsPage.setParam,
         // ReportsPage.refresh): one period dialog is open at a time.
-        ReportsPage._live = { view, params, render, select };
+        ReportsPage._live = { view, params: paramsObj, render, select };
 
         select.addEventListener("change", render);
         startInput.addEventListener("change", () => { if (select.value === "custom" && !useAsOfOnly) render(); });
@@ -640,7 +676,7 @@ const ReportsPage = {
         if (reportType) {
             const sb = $("#report-save-btn");
             if (sb) sb.addEventListener("click", () => {
-                ReportsPage.saveCurrent(reportType, { ...params, ...currentParams });
+                ReportsPage.saveCurrent(reportType, { ...params(), ...currentParams });
             });
         }
 
@@ -657,7 +693,7 @@ const ReportsPage = {
     // choice) and redraw; an empty value removes it from the address.
     setParam(key, value, redraw = true) {
         const live = ReportsPage._live;
-        if (!live) return;
+        if (!live || !live.params) return;
         if (value === null || value === undefined || value === '') delete live.params[key];
         else live.params[key] = value;
         if (redraw) live.render();
@@ -791,20 +827,55 @@ const ReportsPage = {
         }, "Dates", false, { reportType: 'sales_tax', view: 'sales-tax', prefill });
     },
 
+    // The General Ledger's filters (#236): one account, one class, or both,
+    // chosen in the report and carried on its address, its exports and a
+    // saved report. The class test is P&L by Class's (a line's own class,
+    // else its transaction's, else Uncategorized), applied to the balance
+    // brought forward as well, so the running balances are that class's.
+    _gl: { account_id: '', class_id: '' },
+    _glLists: null,
+
     async generalLedger(prefill) {
+        const p = prefill || {};
+        ReportsPage._gl = {
+            account_id: /^\d+$/.test(p.account_id || '') ? p.account_id : '',
+            class_id: /^\d+$/.test(p.class_id || '') ? p.class_id : '',
+        };
+        ReportsPage._glLists = null;
         await ReportsPage.openPeriodModal("General Ledger", "this_year_to_date", async (_period, range) => {
-            const data = await API.get(`/reports/general-ledger?start_date=${range.start}&end_date=${range.end}`);
-            let html = `${ReportsPage._exportButtons('general-ledger', `start_date=${range.start}&end_date=${range.end}`)}
-                <p style="margin-bottom:12px; color:var(--gray-500);">${formatDate(data.start_date)} &mdash; ${formatDate(data.end_date)}</p>`;
+            if (!ReportsPage._glLists) {
+                const [accounts, classes] = await Promise.all([
+                    API.get('/accounts').catch(() => []),
+                    API.get('/classes?include_archived=true').catch(() => []),
+                ]);
+                ReportsPage._glLists = { accounts, classes };
+            }
+            const f = ReportsPage._gl;
+            const qs = `start_date=${range.start}&end_date=${range.end}${f.account_id ? `&account_id=${f.account_id}` : ''}${f.class_id ? `&class_id=${f.class_id}` : ''}`;
+            const data = await API.get(`/reports/general-ledger?${qs}`);
+            const { accounts, classes } = ReportsPage._glLists;
+            const acctOpts = accounts.map(a => `<option value="${a.id}"${String(a.id) === f.account_id ? ' selected' : ''}>${escapeHtml(a.account_number || '')} ${escapeHtml(a.name)}${a.is_active === false ? ' (inactive)' : ''}</option>`).join('');
+            const classOpts = classes.map(c => `<option value="${c.id}"${String(c.id) === f.class_id ? ' selected' : ''}>${escapeHtml(c.name)}${c.is_archived ? ' (archived)' : ''}</option>`).join('');
+            const cls = data.class_name;
+            let html = `
+                <div style="display:flex; gap:8px; align-items:center; flex-wrap:wrap; margin-bottom:6px;">
+                    <label for="gl-account" style="font-size:11px;">Account</label>
+                    <select id="gl-account" data-no-search style="max-width:220px;" onchange="ReportsPage.glFilter('account_id', this.value)"><option value="">All accounts</option>${acctOpts}</select>
+                    <label for="gl-class" style="font-size:11px;">${T('Class')}</label>
+                    <select id="gl-class" data-no-search style="max-width:200px;" onchange="ReportsPage.glFilter('class_id', this.value)"><option value="">All ${T('classes').toLowerCase()}</option>${classOpts}</select>
+                    ${ReportsPage._exportButtons('general-ledger', qs)}
+                </div>
+                <p style="margin-bottom:12px; color:var(--gray-500);">${formatDate(data.start_date)} &mdash; ${formatDate(data.end_date)}${cls ? ` &middot; ${T('Class')}: <strong>${escapeHtml(cls)}</strong> &mdash; <span id="gl-class-note">this ${T('class').toLowerCase()}'s lines only; each balance brought forward and running balance counts them alone, not the account's whole balance</span>` : ''}</p>`;
             if (data.accounts.length === 0) {
                 html += `<div class="empty-state"><p>No journal entries found</p></div>`;
             } else {
                 // An account's name opens its register for these dates, as the
-                // P&L's and Balance Sheet's do (#224). The onclick payload is
-                // built outside the template and HTML-escaped, as profitLoss
-                // does, so JSON.stringify's quotes can't break the attribute.
+                // P&L's and Balance Sheet's do (#224), for the class shown when
+                // one is. The onclick payload is built outside the template and
+                // HTML-escaped, as profitLoss does, so JSON.stringify's quotes
+                // can't break the attribute.
                 const drillCall = (acct) => escapeHtml(
-                    `ReportsPage.openDrillDown(${acct.account_id},${JSON.stringify(acct.account_name)},${JSON.stringify(range.start)},${JSON.stringify(range.end)},null,null,'general-ledger')`
+                    `ReportsPage.openDrillDown(${acct.account_id},${JSON.stringify(acct.account_name)},${JSON.stringify(range.start)},${JSON.stringify(range.end)},${data.class_id || null},${JSON.stringify(cls || null)},'general-ledger')`
                 );
                 for (const acct of data.accounts) {
                     const name = acct.account_id
@@ -812,21 +883,22 @@ const ReportsPage = {
                         : escapeHtml(acct.account_name);
                     html += `<h3 style="margin:12px 0 4px; font-size:12px; color:var(--qb-navy);">${escapeHtml(acct.account_number)} &mdash; ${name}</h3>`;
                     html += `<div class="table-container"><table>
-                        <thead><tr><th scope="col">Date</th><th scope="col">Description</th><th scope="col">Reference</th><th scope="col">Source</th><th scope="col" class="amount">Debit</th><th scope="col" class="amount">Credit</th><th scope="col" class="amount">Balance</th></tr></thead><tbody>`;
-                    html += `<tr style="color:var(--gray-500);"><td></td><td colspan="5">Balance brought forward</td><td class="amount">${formatCurrency(acct.opening_balance)}</td></tr>`;
+                        <thead><tr><th scope="col">Date</th><th scope="col">Description</th><th scope="col">Reference</th><th scope="col">Source</th><th scope="col">${T('Class')}</th><th scope="col" class="amount">Debit</th><th scope="col" class="amount">Credit</th><th scope="col" class="amount">Balance</th></tr></thead><tbody>`;
+                    html += `<tr style="color:var(--gray-500);"><td></td><td colspan="6">Balance brought forward</td><td class="amount">${formatCurrency(acct.opening_balance)}</td></tr>`;
                     for (const e of acct.entries) {
                         html += `<tr>
                             <td>${formatDate(e.date)}</td>
                             <td>${escapeHtml(e.description)}</td>
                             <td>${escapeHtml(e.reference)}</td>
                             <td style="font-size:10px; color:var(--gray-500);">${escapeHtml(e.source_type)}</td>
+                            <td style="font-size:10px;">${escapeHtml(e.class_name || '')}</td>
                             <td class="amount">${e.debit > 0 ? formatCurrency(e.debit) : ""}</td>
                             <td class="amount">${e.credit > 0 ? formatCurrency(e.credit) : ""}</td>
                             <td class="amount">${formatCurrency(e.running_balance)}</td>
                         </tr>`;
                     }
                     html += `<tr style="font-weight:600; background:var(--gray-50);">
-                        <td colspan="4">Period total</td>
+                        <td colspan="5">Period total</td>
                         <td class="amount">${formatCurrency(acct.total_debit)}</td>
                         <td class="amount">${formatCurrency(acct.total_credit)}</td>
                         <td class="amount">${formatCurrency(acct.closing_balance)}</td>
@@ -834,7 +906,16 @@ const ReportsPage = {
                 }
             }
             return html;
-        }, "Dates", false, { reportType: 'general_ledger', view: 'general-ledger', prefill });
+        }, "Dates", false, { reportType: 'general_ledger', view: 'general-ledger', params: () => ReportsPage._gl, prefill });
+    },
+
+    // A picker changed: the report re-renders on its period, and the
+    // address, the exports and a saved report carry the filter (replaced
+    // in place, as a period change is).
+    glFilter(key, value) {
+        ReportsPage._gl[key] = /^\d+$/.test(value || '') ? value : '';
+        const select = $('#report-period-select');
+        if (select) select.dispatchEvent(new Event('change'));
     },
 
     async incomeByCustomer(prefill) {
