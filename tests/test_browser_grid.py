@@ -23,9 +23,6 @@ R2 #232, R3 #233, R5 #235, R13 #242, v2.22.0):
 Skipped, as one module, where playwright or its Chromium is not installed.
 """
 
-import datetime as dt
-import re
-
 import pytest
 
 pytest.importorskip("playwright.sync_api")
@@ -66,9 +63,7 @@ MODAL_SHOWN = (
 )
 TITLE = "() => document.getElementById('modal-title').textContent"
 LIVE = "() => document.getElementById('grid-live').textContent"
-CURRENT_HEAD = (
-    "() => (document.querySelector('#report-content thead th.is-current') || {}).textContent"
-)
+CURRENT_HEAD = "() => (document.querySelector('#report-content thead th.is-current') || {}).textContent"
 SCROLL = """() => { const b = document.getElementById('grid-scroll');
     const first = b.querySelector('thead th:first-child').getBoundingClientRect();
     const total = b.querySelector('thead th:last-child').getBoundingClientRect();
@@ -101,10 +96,26 @@ def divisions_fixture(company, books):
                     "description": f"{name} work",
                     "class_id": cls["id"],
                     "lines": [
-                        {"account_id": accounts["1000"], "debit": str(100 * n), "credit": "0"},
-                        {"account_id": accounts["4000"], "debit": "0", "credit": str(100 * n)},
-                        {"account_id": accounts["6000"], "debit": str(10 * n), "credit": "0"},
-                        {"account_id": accounts["1000"], "debit": "0", "credit": str(10 * n)},
+                        {
+                            "account_id": accounts["1000"],
+                            "debit": str(100 * n),
+                            "credit": "0",
+                        },
+                        {
+                            "account_id": accounts["4000"],
+                            "debit": "0",
+                            "credit": str(100 * n),
+                        },
+                        {
+                            "account_id": accounts["6000"],
+                            "debit": str(10 * n),
+                            "credit": "0",
+                        },
+                        {
+                            "account_id": accounts["1000"],
+                            "debit": "0",
+                            "credit": str(10 * n),
+                        },
                     ],
                 },
             )
@@ -194,12 +205,17 @@ def test_the_grid_is_wide_and_scrolls_with_the_account_column_frozen(
         assert page.evaluate(LIVE) == "Column 12 of 12: Site Prep"
         assert page.evaluate(CURRENT_HEAD).strip() == "Site Prep"
         # every cell of the column is marked, the section rows included
-        assert page.locator('#report-content .pivot-grid [data-col="11"].is-current').count() == page.locator(
-            '#report-content .pivot-grid [data-col="11"]'
-        ).count()
+        assert (
+            page.locator(
+                '#report-content .pivot-grid [data-col="11"].is-current'
+            ).count()
+            == page.locator('#report-content .pivot-grid [data-col="11"]').count()
+        )
         # the frozen first column is a row header
         assert (
-            page.locator("#report-content tbody th[scope='row']:has-text('4000 - Service Income')").count()
+            page.locator(
+                "#report-content tbody th[scope='row']:has-text('4000 - Service Income')"
+            ).count()
             == 1
         )
     finally:
@@ -255,7 +271,9 @@ def test_the_keyboard_moves_the_column_and_enter_opens_the_class(
         page.keyboard.press("ArrowRight")
         assert page.evaluate(LIVE) == "Column 1 of 12: Uncategorized"
         page.keyboard.press("ArrowLeft")
-        assert page.evaluate(LIVE) == "Column 1 of 12: Uncategorized", "stops at the first"
+        assert (
+            page.evaluate(LIVE) == "Column 1 of 12: Uncategorized"
+        ), "stops at the first"
         for _ in range(3):
             page.keyboard.press("ArrowRight")
         assert page.evaluate(LIVE) == "Column 4 of 12: Electrical"
@@ -280,13 +298,18 @@ def test_the_keyboard_moves_the_column_and_enter_opens_the_class(
         # the class view: a class picker with Prev / Next, and where it is
         pick = page.get_by_role("combobox", name="Class")
         assert pick.count() == 1 and pick.input_value() == "Roofing"
-        where = page.evaluate("() => document.getElementById('class-pl-where').textContent")
+        where = page.evaluate(
+            "() => document.getElementById('class-pl-where').textContent"
+        )
         assert where == "Roofing: 11 of 12"
         page.get_by_role("button", name="Next class").click()
         page.wait_for_function(f"({TITLE})() === 'Profit & Loss — Site Prep'")
         assert _query(_hash(page))["class_id"] == str(divisions["Site Prep"])
         assert _history(page) == length + 1, "a step within the view replaces"
-        assert page.evaluate("() => document.getElementById('class-pl-where').textContent") == "Site Prep: 12 of 12"
+        assert (
+            page.evaluate("() => document.getElementById('class-pl-where').textContent")
+            == "Site Prep: 12 of 12"
+        )
         page.get_by_role("button", name="Previous class").click()
         page.wait_for_function(f"({TITLE})() === 'Profit & Loss — Roofing'")
         # the picker itself
@@ -314,7 +337,9 @@ def test_on_a_phone_the_dialog_is_the_screen_and_the_grid_swipes(
     page, handled = _open_at(browser, company, BY_CLASS_URL, width=390, height=800)
     try:
         page.wait_for_selector("#report-content .pivot-grid")
-        width = page.evaluate("() => document.getElementById('modal').getBoundingClientRect().width")
+        width = page.evaluate(
+            "() => document.getElementById('modal').getBoundingClientRect().width"
+        )
         assert abs(width - 390 * 0.96) < 2, width
         s = page.evaluate(SCROLL)
         assert s["wider"] and s["sticky"] == "sticky"
@@ -330,5 +355,55 @@ def test_on_a_phone_the_dialog_is_the_screen_and_the_grid_swipes(
         assert page.evaluate(
             "() => document.getElementById('grid-scroll').getBoundingClientRect().right <= 390"
         )
+    finally:
+        page.close()
+
+
+# ── R2: export and save ──────────────────────────────────────────────────
+
+
+def test_the_grid_saves_as_pdf_and_csv_and_as_a_saved_report(
+    browser, company, divisions
+):
+    page, handled = _open_at(browser, company, BY_CLASS_URL)
+    try:
+        page.wait_for_selector("#report-content .pivot-grid")
+        opens = []
+        page.expose_function("_opened", lambda url: opens.append(url))
+        page.evaluate(
+            "() => { window.open = (u) => { window._opened(u); return null; }; }"
+        )
+        page.get_by_role("button", name="Save PDF").click()
+        page.get_by_role("button", name="Save CSV").click()
+        assert opens == [
+            f"/api/reports/profit-loss-by-class/pdf?start_date={SEPT[0]}&end_date={SEPT[1]}",
+            f"/api/reports/profit-loss-by-class/csv?start_date={SEPT[0]}&end_date={SEPT[1]}",
+        ]
+        # the PDF and CSV the buttons open really come back
+        pdf = company.get(opens[0])
+        assert pdf.status_code == 200 and pdf.content[:5] == b"%PDF-"
+        csv = company.get(opens[1])
+        assert csv.status_code == 200 and "Site Prep" in csv.text
+
+        page.evaluate("() => { window.prompt = () => 'Divisions, September'; }")
+        page.get_by_role("button", name="Add to Saved Reports…").click()
+        page.wait_for_selector("#saved-reports-list")
+        saved = company.get("/api/saved-reports").json()
+        mine = next(s for s in saved if s["name"] == "Divisions, September")
+        assert mine["report_type"] == "profit_loss_by_class"
+        assert mine["parameters"] == {
+            "period": "custom",
+            "start_date": SEPT[0],
+            "end_date": SEPT[1],
+        }
+        # and it reopens on its dates, as the grid (the report stays open
+        # over the refreshed Report Center; close it first)
+        page.keyboard.press("Escape")
+        page.wait_for_function(f"!({MODAL_SHOWN})()")
+        page.get_by_role("button", name="Open").first.click()
+        page.wait_for_selector("#report-content .pivot-grid")
+        assert _hash(page) == BY_CLASS_URL
+        assert page.evaluate(TITLE) == "P&L by Class"
+        assert len(_heads(page)) == 14
     finally:
         page.close()

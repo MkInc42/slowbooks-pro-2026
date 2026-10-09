@@ -591,7 +591,9 @@ def _money(value) -> str:
 
 def _pl_section(data: dict, t=None) -> dict:
     """P&L rows for the PDF; t (Terms) picks the company's words —
-    "Statement of Activities" / "Revenue & Support" for a nonprofit."""
+    "Statement of Activities" / "Revenue & Support" for a nonprofit. One
+    class's P&L (class_id on the data, #232) is titled with the class and
+    says it is that class only."""
     t = t or Terms()
     rows = []
     for label, key, total_key in (
@@ -621,12 +623,106 @@ def _pl_section(data: dict, t=None) -> dict:
     rows.append(
         {"cells": [t("Net Income"), _money(data["net_income"])], "style": "grand-total"}
     )
+    cls = data.get("class_name")
     return {
-        "title": t("Profit & Loss"),
-        "period": f"{data['start_date']} — {data['end_date']}",
+        "title": t("Profit & Loss") + (f" — {cls}" if cls else ""),
+        "period": f"{data['start_date']} — {data['end_date']}"
+        + (f" · {t('Class')}: {cls} only, not the company total" if cls else ""),
         "columns": ["", "Amount"],
         "rows": rows,
     }
+
+
+# A page holds this many class or job columns beside Account and Total;
+# past it the grid goes over several pages, each with the Account column
+# and the same Total column (the total across every column shown).
+GRID_COLUMNS_PER_PAGE = 8
+
+
+def _grid_sections(data: dict, title: str, columns: list, t=None) -> list[dict]:
+    """The P&L by Class / by Job grid as report sections for the PDF:
+    Account | one column per class or job | Total, the sections and
+    subtotals of the screen. `columns` are the grid's {name, income, cogs,
+    gross_profit, expenses, net_income} in order, aligned with each
+    account's amounts[]. More than GRID_COLUMNS_PER_PAGE columns go over
+    several landscape pages, numbered in the period line."""
+    t = t or Terms()
+    total_label = "Total (shown)" if data.get("filtered") else "Total"
+    pages = [
+        list(range(i, min(i + GRID_COLUMNS_PER_PAGE, len(columns))))
+        for i in range(0, len(columns), GRID_COLUMNS_PER_PAGE)
+    ] or [[]]
+    sections = []
+    for page_no, idx in enumerate(pages, start=1):
+        cols = [columns[i] for i in idx]
+
+        def row(label, cells, style=None):
+            r = {"cells": [label] + cells}
+            if style:
+                r["style"] = style
+            return r
+
+        def account_row(a):
+            return row(
+                f"  {a['account_number'] + ' - ' if a['account_number'] else ''}{a['account_name']}",
+                [_money(a["amounts"][i]) if a["amounts"][i] else "" for i in idx]
+                + [_money(a["total"])],
+            )
+
+        def sum_row(label, key, total, style):
+            return row(label, [_money(c[key]) for c in cols] + [_money(total)], style)
+
+        rows = []
+        for label, key in (
+            (t("Income"), "income"),
+            ("Cost of Goods Sold", "cogs"),
+            ("Expenses", "expenses"),
+        ):
+            rows.append(row(label, [""] * (len(cols) + 1), "subtotal"))
+            rows.extend(account_row(a) for a in data["accounts"][key])
+            if key == "income":
+                rows.append(
+                    sum_row(
+                        t("Total Income"), "income", data["total_income"], "subtotal"
+                    )
+                )
+            elif key == "cogs":
+                rows.append(
+                    sum_row(
+                        "Gross Profit",
+                        "gross_profit",
+                        data["total_gross_profit"],
+                        "subtotal",
+                    )
+                )
+            else:
+                rows.append(
+                    sum_row(
+                        "Total Expenses", "expenses", data["total_expenses"], "subtotal"
+                    )
+                )
+        rows.append(
+            sum_row(
+                t("Net Income"), "net_income", data["total_net_income"], "grand-total"
+            )
+        )
+        period = f"{data['start_date']} — {data['end_date']}"
+        if len(pages) > 1:
+            period += (
+                f" · columns {idx[0] + 1}–{idx[-1] + 1} of {len(columns)}"
+                f" (page {page_no} of {len(pages)}; Total is across every column)"
+            )
+        if data.get("filtered"):
+            period += f" · filtered: {len(columns)} of {data.get('columns_total', len(columns))} shown; totals are for the columns shown, not the company"
+        sections.append(
+            {
+                "title": title,
+                "period": period,
+                "columns": ["Account"] + [c["name"] for c in cols] + [total_label],
+                "rows": rows,
+            }
+        )
+    return sections
 
 
 def _bs_section(data: dict, t=None) -> dict:
@@ -756,12 +852,12 @@ def _csv_download(text: str, filename: str, request: Request):
     return _csv_response(text, filename, request)
 
 
-def _pdf_response(sections, db, filename: str):
+def _pdf_response(sections, db, filename: str, landscape: bool = False):
     from fastapi.responses import Response
     from app.services.pdf_service import generate_report_pdf
     from app.services.settings_service import get_all_settings
 
-    pdf_bytes = generate_report_pdf(sections, get_all_settings(db))
+    pdf_bytes = generate_report_pdf(sections, get_all_settings(db), landscape=landscape)
     return Response(
         content=pdf_bytes,
         media_type="application/pdf",
@@ -769,18 +865,67 @@ def _pdf_response(sections, db, filename: str):
     )
 
 
+def _pl_filename(data: dict, t, ext: str) -> str:
+    """profit-loss_2026-07-01_2026-07-31.pdf, with the class's slug after
+    the report's when the P&L is one class's (#232)."""
+    name = t.slug("Profit & Loss")
+    if data.get("class_name"):
+        name += "_" + (t.slug(data["class_name"]) or "class")
+    return f"{name}_{data['start_date']}_{data['end_date']}.{ext}"
+
+
 @router.get("/profit-loss/pdf")
 def profit_loss_pdf(
     start_date: date = Query(default=None),
     end_date: date = Query(default=None),
+    class_id: Optional[int] = Query(default=None),
     db: Session = Depends(get_db),
 ):
-    data = profit_loss(start_date, end_date, db)
+    # class_id is a keyword: profit_loss takes db before it
+    data = profit_loss(start_date, end_date, db, class_id=class_id)
     t = terms_from_db(db)
+    return _pdf_response([_pl_section(data, t)], db, _pl_filename(data, t, "pdf"))
+
+
+@router.get("/profit-loss-by-class/pdf")
+def profit_loss_by_class_pdf(
+    start_date: date = Query(default=None),
+    end_date: date = Query(default=None),
+    db: Session = Depends(get_db),
+):
+    """The by-class grid, landscape; past eight classes it goes over
+    several pages, each with the Account and Total columns (#232)."""
+    data = profit_loss_by_class(start_date, end_date, db)
+    t = terms_from_db(db)
+    columns = [dict(c, name=c["class_name"]) for c in data["classes"]]
     return _pdf_response(
-        [_pl_section(data, t)],
+        _grid_sections(data, t("P&L by Class"), columns, t),
         db,
-        f"{t.slug('Profit & Loss')}_{data['start_date']}_{data['end_date']}.pdf",
+        f"{t.slug('P&L by Class')}_{data['start_date']}_{data['end_date']}.pdf",
+        landscape=True,
+    )
+
+
+@router.get("/profit-loss-by-class/csv")
+def profit_loss_by_class_csv_route(
+    request: Request,
+    start_date: date = Query(default=None),
+    end_date: date = Query(default=None),
+    layout: str = Query(
+        default="wide",
+        description="wide: the grid, a column per class; long: one row per account and class, for a pivot table",
+    ),
+    db: Session = Depends(get_db),
+):
+    from app.services.ledger_exports import profit_loss_by_class_csv
+
+    data = profit_loss_by_class(start_date, end_date, db)
+    t = terms_from_db(db)
+    columns = [dict(c, name=c["class_name"]) for c in data["classes"]]
+    return _csv_download(
+        profit_loss_by_class_csv(data, columns, _company_name(db), t, layout=layout),
+        f"{t.slug('P&L by Class')}_{data['start_date']}_{data['end_date']}.csv",
+        request,
     )
 
 
@@ -853,15 +998,16 @@ def profit_loss_csv_route(
     request: Request,
     start_date: date = Query(default=None),
     end_date: date = Query(default=None),
+    class_id: Optional[int] = Query(default=None),
     db: Session = Depends(get_db),
 ):
     from app.services.ledger_exports import profit_loss_csv
 
-    data = profit_loss(start_date, end_date, db)
+    data = profit_loss(start_date, end_date, db, class_id=class_id)
     t = terms_from_db(db)
     return _csv_download(
         profit_loss_csv(data, _company_name(db), t),
-        f"{t.slug('Profit & Loss')}_{data['start_date']}_{data['end_date']}.csv",
+        _pl_filename(data, t, "csv"),
         request,
     )
 

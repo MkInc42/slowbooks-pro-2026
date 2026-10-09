@@ -1258,7 +1258,7 @@ ReportsPage.profitLossByClass = async function (prefill) {
         // class's heading opens its own P&L (#213), on the report's period.
         const args = (...xs) => xs.map(x => JSON.stringify(x)).join(',');
         const dates = { period, start_date: range.start, end_date: range.end };
-        return `
+        return `${ReportsPage._exportButtons('profit-loss-by-class', qs)}
             <div style="font-size:11px; color:var(--gray-500); margin-bottom:8px;">
                 ${escapeHtml(data.start_date)} — ${escapeHtml(data.end_date)}. Click an amount for the transactions behind it, or a heading for that column's own report.
             </div>
@@ -1272,7 +1272,7 @@ ReportsPage.profitLossByClass = async function (prefill) {
                 drill: (a, c) => `ReportsPage.openDrillDown(${args(a.account_id, a.account_name, range.start, range.end, c.class_id, c.class_name, 'profit-loss-by-class')})`,
                 head: (c) => `ReportsPage.profitLossOfClass(${args(c.class_id, c.class_name, dates)})`,
             })}`;
-    }, "Dates", false, { view: 'profit-loss-by-class', prefill, wide: true });
+    }, "Dates", false, { reportType: 'profit_loss_by_class', view: 'profit-loss-by-class', prefill, wide: true });
 };
 
 // One class's own P&L (#213): the P&L by Class column, account by account,

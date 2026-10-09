@@ -147,7 +147,7 @@ def profit_loss_csv(data: dict, company: str, words) -> str:
     _preamble(
         w,
         company,
-        words("Profit & Loss"),
+        profit_loss_csv_class_line(data, words),
         f"{data['start_date']} to {data['end_date']}",
     )
     w.writerow(["Section", "Account number", "Account name", "Amount"])
@@ -168,6 +168,95 @@ def profit_loss_csv(data: dict, company: str, words) -> str:
         w.writerow([label, "", f"Total {label}", _money(data[total_key])])
     w.writerow(["", "", "Gross Profit", _money(data["gross_profit"])])
     w.writerow(["", "", words("Net Income"), _money(data["net_income"])])
+    return out.getvalue()
+
+
+def profit_loss_csv_class_line(data: dict, words) -> str:
+    """The preamble's report line for one class's P&L."""
+    cls = data.get("class_name")
+    return words("Profit & Loss") + (f" — {words('Class')}: {cls}" if cls else "")
+
+
+def profit_loss_by_class_csv(
+    data: dict, columns: list, company: str, words, layout: str = "wide"
+) -> str:
+    """The P&L by Class (or by Job) grid as a spreadsheet (#232).
+
+    wide (the default): Section | Account number | Account name | one
+    column per class | Total — the grid as the screen shows it, pasted
+    into the owner's sheet; the subtotal rows carry the section's name in
+    the first column and the subtotal's in the third, so a sheet that
+    filters on Section keeps them. long: Section | Account number |
+    Account name | Class | Amount, one row per account and class, for a
+    pivot table. `columns` are the grid's {name, income, cogs,
+    gross_profit, expenses, net_income}, aligned with each account's
+    amounts[]. A filtered grid says so in the preamble and labels its
+    total "Total (shown)".
+    """
+    out = io.StringIO()
+    w = _SafeWriter(out)
+    period = f"{data['start_date']} to {data['end_date']}"
+    if data.get("filtered"):
+        period += (
+            f" (filtered: {len(columns)} of {data.get('columns_total', len(columns))}"
+            " shown; totals are for the columns shown, not the company)"
+        )
+    _preamble(w, company, data.get("report_name") or words("P&L by Class"), period)
+    dimension = data.get("dimension") or words("Class")
+    sections = (
+        (words("Income"), "income", words("Total Income"), "total_income"),
+        ("Cost of Goods Sold", "cogs", "Gross Profit", "total_gross_profit"),
+        ("Expenses", "expenses", "Total Expenses", "total_expenses"),
+    )
+    if layout == "long":
+        w.writerow(["Section", "Account number", "Account name", dimension, "Amount"])
+        for label, key, _sub, _sub_key in sections:
+            for a in data["accounts"][key]:
+                for c, amount in zip(columns, a["amounts"]):
+                    if not amount:
+                        continue
+                    w.writerow(
+                        [
+                            label,
+                            a.get("account_number") or "",
+                            a["account_name"],
+                            c["name"],
+                            _money(amount),
+                        ]
+                    )
+        for c in columns:
+            w.writerow(
+                ["", "", words("Net Income"), c["name"], _money(c["net_income"])]
+            )
+        w.writerow(
+            ["", "", words("Net Income"), "Total", _money(data["total_net_income"])]
+        )
+        return out.getvalue()
+
+    total_label = "Total (shown)" if data.get("filtered") else "Total"
+    w.writerow(
+        ["Section", "Account number", "Account name"]
+        + [c["name"] for c in columns]
+        + [total_label]
+    )
+    for label, key, sub, sub_key in sections:
+        for a in data["accounts"][key]:
+            w.writerow(
+                [label, a.get("account_number") or "", a["account_name"]]
+                + [_money(x) if x else "" for x in a["amounts"]]
+                + [_money(a["total"])]
+            )
+        sub_col = "gross_profit" if key == "cogs" else key
+        w.writerow(
+            [label, "", sub]
+            + [_money(c[sub_col]) for c in columns]
+            + [_money(data[sub_key])]
+        )
+    w.writerow(
+        ["", "", words("Net Income")]
+        + [_money(c["net_income"]) for c in columns]
+        + [_money(data["total_net_income"])]
+    )
     return out.getvalue()
 
 

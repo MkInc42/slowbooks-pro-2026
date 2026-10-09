@@ -20,8 +20,10 @@ D = Decimal
 PERIOD = "start_date=2026-07-01&end_date=2026-07-31"
 
 
-@pytest.fixture
-def ledger(client, db_session, seed_accounts):
+# Named, so another module can import it without shadowing the name its
+# tests ask for (tests/test_pl_grid_exports.py).
+@pytest.fixture(name="ledger")
+def ledger_fixture(client, db_session, seed_accounts):
     """Two classes and the postings the tests read:
     - Side Gig (header): 300 income, 300 expense
     - Retail (header) with one line of its own in Side Gig: 100 income in
