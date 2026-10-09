@@ -392,8 +392,7 @@ const InvoicesPage = {
                 await PaymentsPage.applyCredit(p.kind, p.id, [{ invoice_id: invoiceId, amount: p.amount }]);
             }
             toast('Credit applied');
-            closeModal();
-            App.navigate(location.hash);
+            App.refresh();
         } catch (err) { toast(err.message, 'error'); }
     },
 
@@ -452,8 +451,7 @@ const InvoicesPage = {
         try {
             await API.post(`/invoices/${id}/void`);
             toast(`${T('Invoice')} voided`);
-            closeModal();
-            App.navigate(location.hash);
+            App.refresh();
         } catch (err) { toast(err.message, 'error'); }
     },
 
@@ -461,8 +459,7 @@ const InvoicesPage = {
         try {
             await API.post(`/invoices/${id}/send`);
             toast(`${T('Invoice')} marked as sent`);
-            closeModal();
-            App.navigate(location.hash);
+            App.refresh();
         } catch (err) { toast(err.message, 'error'); }
     },
 
@@ -887,8 +884,7 @@ const InvoicesPage = {
             });
             if (!saved) return; // $0.00 and the user said no: the form stays open
             toast(Terms.text(id ? 'Invoice updated' : 'Invoice created'));
-            closeModal();
-            App.navigate(location.hash);
+            App.refresh();
         } catch (err) { toast(err.message, 'error'); }
     },
 

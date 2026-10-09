@@ -34,7 +34,6 @@ from tests.test_browser_report_views import (
 )  # noqa: E402
 from tests.test_theme_contrast import (  # noqa: E402,F401  (the fixtures)
     _visit,
-    books_fixture,
     browser_fixture,
     company_fixture,
     settle,
@@ -194,7 +193,7 @@ def test_the_class_page_ties_to_the_report_and_back_returns_to_the_tab_it_left(
         )
         assert pl["net_income"] == -120.0
         note = page.inner_text("#class-net-note")
-        assert "-$120.00" in note and "of the company" in note
+        assert "-$120.00" in note and "a loss against the company's" in note
         # the report links carry the page's dates
         hrefs = page.evaluate(
             "() => [...document.querySelectorAll('#page-content .page-header a')].map(a => a.getAttribute('href'))"
@@ -368,3 +367,76 @@ def test_a_nonprofit_sees_funds(browser, company, books, classed):
             page.close()
     finally:
         _ok(company.put("/api/settings", json={"company_type": "business"}))
+
+
+def test_the_class_share_is_a_percentage_only_where_one_means_something(
+    browser, company, books, classed
+):
+    """ "-0.3% of the company's -$391,838.18" for a profitable class in a
+    losing company, and "103.5%" for the class that lost the most (NEW-31):
+    signed division. The share is a percentage only with the company in the
+    black and the class not in the red; otherwise the company's figure
+    stands beside the class's, with no percentage."""
+    accounts = {a["account_number"]: a["id"] for a in _ok(company.get("/api/accounts"))}
+
+    def company_net():
+        return _ok(
+            company.get(
+                "/api/reports/profit-loss",
+                params={"start_date": SEPT[0], "end_date": SEPT[1]},
+            )
+        )["net_income"]
+
+    def note_of(page, handled, class_id):
+        _visit(
+            page,
+            handled,
+            f"#/classes/{class_id}?start_date={SEPT[0]}&end_date={SEPT[1]}",
+        )
+        page.wait_for_selector("#class-net-note")
+        return page.inner_text("#class-net-note")
+
+    def post_journal(description, class_id, debit, credit, amount):
+        body = {
+            "date": "2026-09-15",
+            "description": description,
+            "lines": [
+                {"account_id": accounts[debit], "debit": str(amount), "credit": "0"},
+                {"account_id": accounts[credit], "debit": "0", "credit": str(amount)},
+            ],
+        }
+        if class_id:
+            body["class_id"] = class_id
+        _ok(company.post("/api/journal", json=body))
+
+    page, handled = _open_at(browser, company, "#/classes")
+    try:
+        # the bakery's September is in the black; Site Prep lost $120 in it
+        net = company_net()
+        assert net > 0
+        note = note_of(page, handled, classed["site"]["id"])
+        assert f"a loss against the company's ${net:,.2f}" in note
+        assert "%" not in note
+
+        # a class in the black: its share of the company's net
+        lucky = _ok(company.post("/api/classes", json={"name": "Lucky"}))
+        post_journal("Lucky sale", lucky["id"], "1000", "4000", 500)
+        net = company_net()
+        note = note_of(page, handled, lucky["id"])
+        assert f"{500 / net * 100:.1f}% of the company's ${net:,.2f}" in note
+
+        # the company in the red: no percentage; the company's figure is said
+        post_journal("the roof", None, "6000", "1000", 1000000)
+        net = company_net()
+        assert net < 0
+        note = note_of(page, handled, lucky["id"])
+        assert "$500.00" in note
+        assert (
+            f"while the company's net income for these dates is -${-net:,.2f}" in note
+        )
+        assert "%" not in note
+        # and the class that lost the most, in a losing company: no "103.5%"
+        note = note_of(page, handled, classed["uncat"]["id"])
+        assert "%" not in note and f"-${-net:,.2f}" in note
+    finally:
+        page.close()

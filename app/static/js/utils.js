@@ -45,6 +45,56 @@ function formatDate(dateStr) {
     return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
 }
 
+// A posting's kind in the app's words rather than its source_type key: a
+// drill-down line says "Bill payment #3", "Card charge #2223", "Journal
+// entry #2224" (NEW-40). A void, an edit or an applied payment says so
+// after the document's word; a key nobody listed is spelled out.
+function sourceWord(type) {
+    const words = {
+        invoice: () => T('Invoice'), bill: 'Bill', payment: 'Payment', bill_payment: 'Bill payment',
+        vendor_credit: 'Vendor credit', credit_memo: 'Credit memo', sales_receipt: 'Sales receipt',
+        journal: 'Journal entry', manual_journal: 'Journal entry', manual: 'Journal entry',
+        expense: 'Expense', deposit: 'Deposit', cc_charge: 'Card charge', transfer: 'Transfer',
+        bank_entry: 'Bank entry', opening_balance: 'Opening balance', check: 'Check',
+        job_cost: () => `${T('Job')} cost`, payroll: 'Pay run', pto: 'Time off accrual',
+        in_kind_gift: 'In-kind gift', restriction_release: 'Release from restriction',
+        functional_allocation: 'Functional allocation', late_fee: 'Late fee',
+        adjustment: 'Inventory adjustment', sales_tax_payment: 'Sales tax payment',
+        iif_import: 'IIF import', depreciation: 'Depreciation',
+        asset_acquisition: 'Asset acquisition', asset_disposal: 'Asset disposal',
+        qbo_ledger: 'QuickBooks import', qbo_journal: 'QuickBooks journal', qbo_cogs: 'QuickBooks cost of goods',
+    };
+    const t = String(type || 'journal');
+    for (const [end, word] of [['_void', 'void'], ['_edit', 'edit'], ['_apply', 'applied']]) {
+        if (t.endsWith(end) && t.length > end.length) return `${sourceWord(t.slice(0, -end.length))} ${word}`;
+    }
+    const w = words[t];
+    if (w) return typeof w === 'function' ? w() : w;
+    const plain = t.replace(/_/g, ' ');
+    return plain.charAt(0).toUpperCase() + plain.slice(1);
+}
+
+// The dates an address (or a saved report's parameters) carries:
+// start_date and end_date must each be a date, and From must not be after
+// To. What is not is said so and comes back as '' — ignored, so the page
+// starts on its usual period and rewrites the address to the dates in use
+// (docs/dev/report-views.md; NEW-35).
+function datesFromQuery(q) {
+    q = q || {};
+    const isDate = v => /^\d{4}-\d{2}-\d{2}$/.test(v || '') && !isNaN(new Date(v).getTime());
+    const out = {};
+    for (const key of ['start_date', 'end_date']) {
+        if (q[key] && !isDate(q[key])) toast(`${key} in the address is not a date (${q[key]}) — ignored`, 'error');
+        out[key] = isDate(q[key]) ? q[key] : '';
+    }
+    if (out.start_date && out.end_date && out.start_date > out.end_date) {
+        toast(`start_date in the address (${out.start_date}) is after end_date (${out.end_date}) — both ignored`, 'error');
+        out.start_date = '';
+        out.end_date = '';
+    }
+    return out;
+}
+
 function todayISO() {
     const d = new Date();
     return d.getFullYear() + '-' + String(d.getMonth()+1).padStart(2,'0') + '-' + String(d.getDate()).padStart(2,'0');
@@ -230,14 +280,23 @@ function openModal(title, html, opts) {
     }, 0);
 }
 
-function closeModal() {
-    $('#modal-overlay').classList.add('hidden');
+// opts.keepAddress: the app is moving on by itself (App.navigate, Back or
+// Forward, a view's "Back to …"), and the address is the move's to set.
+// Without it the dialog was dismissed — Close, ×, Escape — and one that
+// had an address of its own (a report view, a customer's page) leaves
+// it: the page under it goes on the bar (App.dialogClosed), so the next
+// refresh, reload or Back does not reopen what was closed (NEW-23).
+function closeModal(opts) {
+    const overlay = $('#modal-overlay');
+    const wasOpen = !overlay.classList.contains('hidden');
+    overlay.classList.add('hidden');
     $('#modal').classList.remove('modal--wide');
     delete $('#modal').dataset.address;
     if (window.App && typeof window.App.syncBack === 'function') window.App.syncBack();
     const opener = _modalOpener;
     _modalOpener = null;
     if (opener && document.contains(opener)) { try { opener.focus(); } catch (e) { /* gone */ } }
+    if (wasOpen && !(opts && opts.keepAddress) && window.App && typeof App.dialogClosed === 'function') App.dialogClosed();
 }
 
 // Keys inside an open dialog. Escape closes it. Tab and Shift+Tab are

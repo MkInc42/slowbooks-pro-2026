@@ -79,7 +79,15 @@ const ReportsPage = {
         const here = location.hash || '#/';
         if (here === url) return;
         if (App.parseHash(here).path === `/reports/${name}`) history.replaceState(history.state, '', url);
-        else { ReportsPage._leaveFrom(); history.pushState(App.entryState(here), '', url); }
+        else {
+            ReportsPage._leaveFrom();
+            history.pushState(App.entryState(here), '', url);
+            // the view is a dialog over the page it was pushed from (the
+            // Report Center, the Budgets page) — or over whatever the view
+            // it hopped from was over: closing it puts that page on the
+            // bar (App.dialogClosed, NEW-23)
+            App._dialogUnder = App._dialogUnder || here;
+        }
         App.dialogAddressed();  // the view's own address: the toolbar's Back follows, live over it (NEW-30)
     },
 
@@ -149,14 +157,14 @@ const ReportsPage = {
     // address of its own (#/customers/12, #/vendors/3: App.routes): one
     // history entry, so browser Back returns to the report, and the row
     // it left from.
+    // (App.navigate closes the report itself, keeping its address on the
+    // entry left behind, so Back returns to it.)
     openCustomer(id) {
         ReportsPage._leaveFrom();
-        closeModal();
         App.navigate(`#/customers/${id}`);
     },
     openVendor(id) {
         ReportsPage._leaveFrom();
-        closeModal();
         App.navigate(`#/vendors/${id}`);
     },
 
@@ -168,7 +176,7 @@ const ReportsPage = {
     backTo(name, params) {
         const from = history.state && history.state.from;
         if (from && App.parseHash(from).path === `/reports/${name}`) {
-            closeModal();
+            closeModal({ keepAddress: true });
             history.back();
             return;
         }
@@ -236,8 +244,10 @@ const ReportsPage = {
 
     // The Report Center's address in place of a view's that opened nothing.
     // The entry keeps its state (what it was pushed from), so the toolbar's
-    // Back still knows what is behind it, and follows (NEW-30 review).
+    // Back still knows what is behind it, and follows (NEW-30 review); no
+    // dialog is under it any more (NEW-23).
     _addressReportCenter() {
+        App._dialogUnder = null;
         history.replaceState(history.state, '', '#/reports');
         App.addressShown();
     },
@@ -256,10 +266,11 @@ const ReportsPage = {
                 try { collapsed = localStorage.getItem('sb_saved_reports_collapsed') === '1'; } catch (e) { /* ignore */ }
                 if (saved.length > 6 && localStorage.getItem('sb_saved_reports_collapsed') === null) collapsed = true;
                 const period = (p) => !p ? '' : (p.as_of_date ? `as of ${escapeHtml(p.as_of_date)}` : (p.start_date ? `${escapeHtml(p.start_date)} → ${escapeHtml(p.end_date || '')}` : (p.period ? escapeHtml(String(p.period).replace(/_/g, ' ')) : '')));
+                const names = await ReportsPage._savedNames(saved);
                 const rows = saved.slice().sort((a, b) => a.name.localeCompare(b.name)).map(s => `
                     <tr class="saved-report-row">
                         <td><a href="javascript:void(0)" onclick="ReportsPage.openSaved(${s.id})" style="font-weight:600;">${escapeHtml(s.name)}</a></td>
-                        <td>${escapeHtml(Terms.text(s.report_type.replace(/_/g, ' ')))}</td>
+                        <td>${escapeHtml(ReportsPage._savedTitle(s, names))}</td>
                         <td style="color:var(--text-muted);">${period(s.parameters)}</td>
                         <td class="actions">
                             <button class="btn btn-sm btn-secondary" onclick="ReportsPage.openSaved(${s.id})">Open</button>
@@ -367,6 +378,52 @@ const ReportsPage = {
     },
 
     // ----- Saved Reports (Phase 11) -----
+
+    // A saved report's row names its view by the view's own title (the
+    // "Back to …" label, in the company's vocabulary) and, from the saved
+    // parameters, what it was saved on: "Profit & Loss — Lighting",
+    // "Drill-down — Checking · Lighting", "P&L by Job — No job", "P&L by
+    // Class — 2 classes chosen". The type's code ("profit loss class",
+    // "account transactions") said neither (NEW-27).
+    _savedTitle(s, names) {
+        const type = String(s.report_type || '');
+        const view = ReportsPage._view(type.replace(/_/g, '-'));
+        const label = view
+            ? (typeof view.label === 'function' ? view.label() : view.label)
+            : Terms.text(type.replace(/_/g, ' '));
+        const p = s.parameters || {};
+        const given = (v) => v !== undefined && v !== null && v !== '';
+        const parts = [];
+        if (given(p.account_id)) parts.push(names.account(p.account_id));
+        if (given(p.class_id)) parts.push(names.cls(p.class_id));
+        if (given(p.job_id)) parts.push(`${T('Job')}: ${names.job(p.job_id)}`);
+        for (const [key, one, many] of [['class_ids', names.cls, T('classes')], ['job_ids', names.job, T('jobs')]]) {
+            const ids = String(p[key] || '').split(',').filter(Boolean);
+            if (ids.length === 1) parts.push(one(ids[0]));
+            else if (ids.length) parts.push(`${ids.length} ${many} chosen`);
+        }
+        return parts.length ? `${label} — ${parts.join(' · ')}` : label;
+    },
+
+    // The names the saved rows need, asked for once, and only when a row
+    // has something to name; a name since deleted falls back to the id.
+    async _savedNames(saved) {
+        const has = (key) => saved.some(s => s.parameters && s.parameters[key] !== undefined && s.parameters[key] !== null && s.parameters[key] !== '');
+        const lists = { cls: [], account: [], job: [] };
+        try {
+            [lists.cls, lists.account, lists.job] = await Promise.all([
+                has('class_id') || has('class_ids') ? API.get('/classes?include_archived=true').catch(() => []) : [],
+                has('account_id') ? API.get('/accounts').catch(() => []) : [],
+                has('job_id') || has('job_ids') ? API.get('/jobs?include_inactive=true').catch(() => []) : [],
+            ]);
+        } catch (e) { /* the ids stand */ }
+        const find = (list, id) => list.find(x => String(x.id) === String(id));
+        return {
+            cls: (id) => { const c = find(lists.cls, id); return c ? c.name : `${T('class')} #${id}`; },
+            account: (id) => { const a = find(lists.account, id); return a ? a.name : `account #${id}`; },
+            job: (id) => { if (String(id) === '0') return Terms.text('No job'); const j = find(lists.job, id); return j ? j.name : `${T('job')} #${id}`; },
+        };
+    },
 
     toggleSaved() {
         const list = $('#saved-reports-list');
@@ -535,10 +592,15 @@ const ReportsPage = {
             // the bank register does.
             const rows = (data.entries || []).map(e => {
                 const link = e.source_link || (e.transaction_id ? `/#/journal/${e.transaction_id}` : null);
-                const num = e.source_link && e.source_id != null ? e.source_id : e.transaction_id;
+                // The line is named in the app's words and numbered by the
+                // document its link opens (the last segment of the address):
+                // an expense's source_id is its vendor, so two of Deb's
+                // expenses both read "expense #6" (NEW-40).
+                const m = link ? /\/(\d+)$/.exec(link) : null;
+                const num = m ? m[1] : e.transaction_id;
                 const src = link
-                    ? `<a href="${escapeHtml(link)}" style="color:var(--text-link); text-decoration:none;">${escapeHtml(e.source_type || 'journal')} #${num}</a>`
-                    : escapeHtml(e.source_type || '');
+                    ? `<a href="${escapeHtml(link)}" style="color:var(--text-link); text-decoration:none;">${escapeHtml(sourceWord(e.source_type || 'journal'))} #${num}</a>`
+                    : (e.source_type ? escapeHtml(sourceWord(e.source_type)) : '');
                 const mark = e.reconciliation_id ? 'R' : (e.cleared ? '✓' : '');
                 return `<tr${e.voided ? ' class="row--void" style="color:var(--text-muted); text-decoration:line-through;"' : ''}>
                     <td>${formatDate(e.date)}</td>
@@ -808,7 +870,12 @@ const ReportsPage = {
         // "Back to …"). opts.wide — the wide dialog (openModal's), for a
         // grid with a column per class or job.
         const reportType = opts.reportType || null;
-        const prefill = opts.prefill || {};
+        // The dates of the address or the saved report: a date that is not
+        // one, or From after To (NEW-35), is said so and ignored — the view
+        // starts on its usual period — and the address is then rewritten
+        // to the dates in use (datesFromQuery). An as-of view has one date,
+        // checked below once its box has refused or taken it.
+        const prefill = useAsOfOnly ? { ...(opts.prefill || {}) } : { ...(opts.prefill || {}), ...datesFromQuery(opts.prefill) };
         const view = opts.view || null;
         const paramsObj = typeof opts.params === 'function' ? null : (opts.params || {});
         const params = () => (paramsObj ? paramsObj : opts.params());
@@ -848,19 +915,23 @@ const ReportsPage = {
         const endInput = $("#report-custom-end");
         const content = $("#report-content");
 
-        // A pasted address with a date that is not one: the date input
-        // refuses it and the default stands. Said, rather than other dates
-        // quietly shown (R7 review); the address is then rewritten to the
-        // dates in use.
-        const asOfKey = prefill.end_date ? 'end_date' : 'as_of_date';
-        const dates = useAsOfOnly ? [[asOfKey, endInput]] : [['start_date', startInput], ['end_date', endInput]];
-        for (const [key, input] of dates) {
-            if (prefill[key] && input.value !== prefill[key]) toast(`${key} in the address is not a date (${prefill[key]}) — ignored`, 'error');
+        // A pasted as-of date that is not one: the date input refuses it
+        // and the default stands. Said, rather than another date quietly
+        // shown (R7 review); the address is then rewritten to the date in
+        // use, and the box shows it (NEW-24).
+        if (useAsOfOnly) {
+            const asOfKey = prefill.end_date ? 'end_date' : 'as_of_date';
+            if (prefill[asOfKey] && endInput.value !== prefill[asOfKey]) toast(`${asOfKey} in the address is not a date (${prefill[asOfKey]}) — ignored`, 'error');
         }
         if (prefill.period && !known) toast(`period in the address is not one of the choices (${prefill.period}) — ignored`, 'error');
 
         // Track current params so the Save button captures fresh values.
         let currentParams = {};
+        // The range the report last ran on. From after To typed into the
+        // boxes is refused — said, and the boxes go back to this range,
+        // which the report still shows (NEW-35); on the first render, with
+        // no range yet, the view's own period stands in.
+        let lastRange = null;
         // The first render of the view: the only one that may move focus
         // to a spotlighted row (ReportsPage._spotlight). opts.spotlight
         // false leaves the row alone altogether — a view the server has
@@ -869,15 +940,30 @@ const ReportsPage = {
 
         const render = async () => {
             ReportsPage.toggleCustomRange();
+            const custom = select.value === 'custom';
+            if (!useAsOfOnly && custom && startInput.value && endInput.value && startInput.value > endInput.value) {
+                const keep = lastRange || ReportsPage.getDateRange(initialPeriod);
+                toast(`From (${formatDate(startInput.value)}) is after To (${formatDate(endInput.value)}) — kept ${formatDate(keep.start)} to ${formatDate(keep.end)}`, 'error');
+                startInput.value = keep.start;
+                endInput.value = keep.end;
+                if (lastRange) return;  // the report on it is already showing
+            }
             content.innerHTML = `<div style="font-size:11px; color:var(--gray-500);">Loading report...</div>`;
             try {
                 if (useAsOfOnly) {
                     const asOfDate = ReportsPage.getAsOfDate(select.value, endInput.value || todayISO());
+                    // the box shows the date the report runs on (NEW-24)
+                    if (custom && endInput.value !== asOfDate) endInput.value = asOfDate;
                     currentParams = { period: select.value, as_of_date: asOfDate };
                     if (view) ReportsPage.setAddress(view, { ...params(), ...currentParams });
                     content.innerHTML = await loadContent(select.value, { as_of_date: asOfDate }, params());
                 } else {
                     const range = ReportsPage.getDateRange(select.value, startInput.value, endInput.value);
+                    // the boxes show the dates the report runs on: a date the
+                    // address had that the box refused is replaced by the
+                    // one used, not left blank (NEW-24)
+                    if (custom) { startInput.value = range.start; endInput.value = range.end; }
+                    lastRange = range;
                     currentParams = { period: select.value, start_date: range.start, end_date: range.end };
                     if (view) ReportsPage.setAddress(view, { ...params(), ...currentParams });
                     content.innerHTML = await loadContent(select.value, range, params());
@@ -1637,16 +1723,16 @@ ReportsPage._columnChooser = function (spec) {
             <div class="grid-step__buttons">
                 <label style="font-weight:normal; text-transform:none; font-size:11px; display:inline-flex; gap:4px; align-items:center;"><input type="checkbox" id="grid-empty" ${spec.params.include_empty ? 'checked' : ''} onchange="ReportsPage.setParam('include_empty', this.checked ? 'true' : '')"> Show ${nouns} with no activity</label>
                 <button type="button" class="btn btn-sm btn-secondary" id="grid-choose-btn" aria-expanded="false" aria-controls="grid-chooser" onclick="ReportsPage.toggleChooser()">Choose ${nouns}…</button>
-                <span id="grid-choice" class="grid-live">${chosen.size ? `${chosen.size} of ${spec.items.length} chosen` : ''}</span>
+                <span id="grid-choice" class="grid-live">${chosen.size ? `${chosen.size} chosen` : ''}</span>
             </div>
             <fieldset id="grid-chooser" class="grid-chooser" hidden>
                 <legend>${escapeHtml(spec.Nouns)} to show</legend>
                 <div class="grid-chooser__list">${picks}</div>
                 <div class="grid-chooser__actions">
-                    <button type="button" class="btn btn-sm btn-primary" onclick="ReportsPage.applyChooser('${spec.key}', ${spec.items.length})">Apply</button>
+                    <button type="button" class="btn btn-sm btn-primary" onclick="ReportsPage.applyChooser('${spec.key}')">Apply</button>
                     <button type="button" class="btn btn-sm btn-secondary" onclick="ReportsPage.checkAll(true)">All</button>
                     <button type="button" class="btn btn-sm btn-secondary" onclick="ReportsPage.checkAll(false)">None</button>
-                    <button type="button" class="btn btn-sm btn-secondary" onclick="ReportsPage.checkAll(false); ReportsPage.applyChooser('${spec.key}', ${spec.items.length})">Show every ${escapeHtml(spec.noun)}</button>
+                    <button type="button" class="btn btn-sm btn-secondary" onclick="ReportsPage.checkAll(false); ReportsPage.applyChooser('${spec.key}')">Show every ${escapeHtml(spec.noun)}</button>
                 </div>
             </fieldset>
         </div>`;
@@ -1666,11 +1752,14 @@ ReportsPage.checkAll = function (on) {
 };
 
 // The ticked ids become the address's class_ids (job_ids); none ticked
-// means every column, as before.
-ReportsPage.applyChooser = function (key, total) {
+// means every column, as before. The count beside the button is of the
+// ticks alone ("2 chosen"): the grid's note counts the columns with
+// activity in the period, and "2 of 15 chosen" beside "2 of 11 classes
+// shown" read as two counts of one thing (NEW-28).
+ReportsPage.applyChooser = function (key) {
     const ids = $$('#grid-chooser input[type="checkbox"]:checked').map(c => c.value);
     const where = $('#grid-choice');
-    if (where) where.textContent = ids.length ? `${ids.length} of ${total} chosen` : '';
+    if (where) where.textContent = ids.length ? `${ids.length} chosen` : '';
     // the panel folds away and the button has the focus back
     const panel = $('#grid-chooser');
     const btn = $('#grid-choose-btn');
@@ -1703,15 +1792,38 @@ ReportsPage._columnQs = function (params, key) {
 // A grid with no column: either nothing was posted in the period, or the
 // chooser named classes (jobs) that have nothing in it — said, with the way
 // out, rather than "No activity" under a note that counts the columns.
-ReportsPage._emptyGrid = function (data, key, noun, nouns) {
-    if (!data.filtered) return `<div class="empty-state"><p>No activity in this period</p></div>`;
-    return `<div class="empty-state grid-filtered" role="status"><p>None of the chosen ${escapeHtml(nouns)} has activity in this period.
-        <a href="javascript:void(0)" onclick="ReportsPage.setParam('${key}', '')">Show every ${escapeHtml(noun)}</a></p></div>`;
+// (The server leaves a chosen class with nothing in the period out of the
+// columns unless "show with no activity" is on, and names it in
+// chosen_empty, NEW-26.)
+// A few names, then "and n more": a dozen chosen-and-empty classes would
+// otherwise fill the note (NEW-26 review).
+ReportsPage._someNames = function (xs) {
+    const names = (xs || []).map(escapeHtml);
+    return names.length > 4 ? `${names.slice(0, 3).join(', ')} and ${names.length - 3} more` : names.join(', ');
 };
 
-ReportsPage._filteredNote = function (data, shown, nouns) {
+ReportsPage._emptyGrid = function (data, key, noun, nouns) {
+    if (!data.filtered) return `<div class="empty-state"><p>No activity in this period</p></div>`;
+    const names = ReportsPage._someNames(data.chosen_empty);
+    // the way out unticks the chooser too, so its count agrees (NEW-28)
+    return `<div class="empty-state grid-filtered" role="status"><p>None of the chosen ${escapeHtml(nouns)}${names ? ` (${names})` : ''} has activity in this period.
+        <a href="javascript:void(0)" onclick="ReportsPage.checkAll(false); ReportsPage.applyChooser('${key}')">Show every ${escapeHtml(noun)}</a></p></div>`;
+};
+
+// "n of m shown" counts the columns with activity in the period, as m
+// does; a column drawn empty (asked for) or a chosen class left out for
+// having none is said separately, in the words the CSV and PDF use
+// (ledger_exports.filtered_phrase).
+ReportsPage._filteredNote = function (data, columns, nouns) {
     if (!data.filtered) return '';
-    return `<div class="grid-filtered" role="status">Filtered: ${shown} of ${data.columns_total} ${escapeHtml(nouns)} shown — these totals are for the ${escapeHtml(nouns)} shown, not the company. Company ${T('Net Income')} for these dates: <strong>${formatCurrency(data.unfiltered.net_income)}</strong>.</div>`;
+    const shown = columns.filter(c => !c.empty).length;
+    const drawnEmpty = columns.length - shown;
+    const chosenEmpty = data.chosen_empty || [];
+    const names = ReportsPage._someNames(chosenEmpty);
+    let text = `Filtered: ${shown} of ${data.columns_total} ${escapeHtml(nouns)} shown`;
+    if (drawnEmpty) text += `, plus ${drawnEmpty} with no activity in this period${names ? ` (${names})` : ''}`;
+    else if (chosenEmpty.length) text += `; ${chosenEmpty.length} chosen ${chosenEmpty.length === 1 ? 'has' : 'have'} no activity in this period and ${chosenEmpty.length === 1 ? 'is' : 'are'} left out (${names})`;
+    return `<div class="grid-filtered" role="status">${text} — these totals are for the ${escapeHtml(nouns)} shown, not the company. Company ${T('Net Income')} for these dates: <strong>${formatCurrency(data.unfiltered.net_income)}</strong>.</div>`;
 };
 
 // Class tracking: Profit & Loss split by the class dimension.
@@ -1746,7 +1858,7 @@ ReportsPage.profitLossByClass = async function (prefill) {
                 columns: columns.map(c => ({ ...c, id: c.class_id, name: c.archived ? `${c.class_name} (archived)` : c.class_name })),
                 accounts: data.accounts,
                 totals: { income: data.total_income, cogs: data.total_cogs, gross_profit: data.total_gross_profit, expenses: data.total_expenses, net_income: data.total_net_income },
-                note: ReportsPage._filteredNote(data, columns.length, T('classes')),
+                note: ReportsPage._filteredNote(data, columns, T('classes')),
                 totalLabel: data.filtered ? 'Total (shown)' : 'Total',
                 drill: (a, c) => `ReportsPage.openDrillDown(${args(a.account_id, a.account_name, range.start, range.end, c.class_id, c.class_name, 'profit-loss-by-class')})`,
                 head: (c) => `ReportsPage.profitLossOfClass(${args(c.class_id, c.class_name, dates)})`,
@@ -1798,7 +1910,7 @@ ReportsPage.profitLossByJob = async function (prefill) {
                 columns: columns.map(c => ({ ...c, id: jobKey(c), name: `${jobKey(c) ? jobLabel(c.job_name, c.customer_name) : c.job_name}${c.inactive ? ' (inactive)' : ''}` })),
                 accounts: data.accounts,
                 totals: { income: data.total_income, cogs: data.total_cogs, gross_profit: data.total_gross_profit, expenses: data.total_expenses, net_income: data.total_net_income },
-                note: ReportsPage._filteredNote(data, columns.length, T('jobs')),
+                note: ReportsPage._filteredNote(data, columns, T('jobs')),
                 totalLabel: data.filtered ? 'Total (shown)' : 'Total',
                 drill: (a, c) => `ReportsPage.openDrillDown(${args(a.account_id, a.account_name, range.start, range.end, null, null, 'profit-loss-by-job', { job_id: jobKey(c), job_name: c.job_name })})`,
                 head: (c) => c.job_id ? `App.navigate(${JSON.stringify(jobUrl(c))})` : null,
@@ -2018,7 +2130,7 @@ ReportsPage.jobProfitability = async function (prefill) {
         // the accounts behind the untagged activity (#245).
         const dates = { period: _period, start_date: data.start_date, end_date: data.end_date };
         const jobCall = (j) => j.job_id
-            ? `ReportsPage._leaveFrom();closeModal();App.navigate(${JSON.stringify(`#/jobs/${j.job_id}?start_date=${data.start_date}&end_date=${data.end_date}&from=job-profitability`)})`
+            ? `ReportsPage._leaveFrom();App.navigate(${JSON.stringify(`#/jobs/${j.job_id}?start_date=${data.start_date}&end_date=${data.end_date}&from=job-profitability`)})`
             : `ReportsPage._leaveFrom();App.navigate(${JSON.stringify(ReportsPage.viewUrl('profit-loss-by-job', { ...dates, job_ids: '0' }))})`;
         const customerCell = (j) => j.customer_id
             ? ReportsPage._rowLink(`event.stopPropagation(); ReportsPage.openCustomer(${j.customer_id})`, j.customer_name || '', `customer:${j.customer_id}`)
@@ -2061,7 +2173,7 @@ ReportsPage.jobBudgetVsActual = async function (prefill) {
         const t = { revised: 0, committed: 0, actual: 0, projected: 0, variance: 0, act_revenue: 0 };
         const rows = data.map(j => {
             for (const k of Object.keys(t)) t[k] += j[k] || 0;
-            return `<tr style="cursor:pointer" onclick="closeModal();App.navigate('#/jobs/${j.job_id}')">
+            return `<tr style="cursor:pointer" onclick="App.navigate('#/jobs/${j.job_id}')">
             <td>${escapeHtml(j.customer_name || '')}</td>
             <td>${escapeHtml(j.job_name)}</td>
             <td class="amount">${formatCurrency(j.revised)}</td>

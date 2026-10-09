@@ -144,7 +144,10 @@ jobs:
           # test_browser_report_links) at one each, test_theme_contrast's second
           # module-level skip, and five new PDF tests that need WeasyPrint's
           # native stack (the by-class, by-job and class P&L exports).
-          MAX_SKIPS: "113"
+          # Round 2: -1 (tests/test_report_links.py no longer skips without
+          # Playwright: its books fixture lives in conftest), +1
+          # tests/test_browser_keyboard.py, +1 tests/test_browser_job_picker.py.
+          MAX_SKIPS: "114"
         shell: pwsh
         run: |
           # -v names each test as it starts, so a mid-run death is identified

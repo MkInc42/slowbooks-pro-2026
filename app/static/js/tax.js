@@ -118,8 +118,7 @@ const TaxPage = {
                 check_number: form.check_number.value || null,
             });
             toast('Sales tax payment recorded');
-            closeModal();
-            App.navigate(location.hash);
+            App.refresh();
         } catch (err) { toast(err.message, 'error'); }
     },
 };

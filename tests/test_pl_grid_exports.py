@@ -185,9 +185,10 @@ def test_the_p_and_l_exports_honour_class_id(client, ledger):
     by_name = {row[2]: row for row in rows[1:]}
     assert by_name["Service Income"][3] == "300.00", "this class only"
     assert by_name["Net Income"][3] == "-100.00"
-    # the preamble says which class
+    # the preamble says which class, and that it is that class alone (the
+    # PDF's words, NEW-29)
     whole = client.get(f"/api/reports/profit-loss/csv?{PERIOD}&class_id={side}").text
-    assert "Profit & Loss — Class: Side Gig" in whole
+    assert "Profit & Loss — Class: Side Gig only, not the company total" in whole
 
     r = client.get(f"/api/reports/profit-loss/pdf?{PERIOD}&class_id={side}")
     assert r.status_code == 200 and r.content[:5] == b"%PDF-"
@@ -674,3 +675,93 @@ def test_every_amount_in_the_p_and_l_csvs_has_two_decimals(client, ledger):
         assert rows, url
         bad = [line for line in rows if not re.search(r",-?\d+\.\d\d$", line)]
         assert not bad, (url, bad)
+
+
+# ── NEW-26 / W-1: a chosen column with no activity in the period ─────────
+
+
+def test_a_chosen_class_with_no_activity_is_no_column_unless_asked_and_is_named(
+    client, ledger
+):
+    dormant = client.post("/api/classes", json={"name": "Dormant"}).json()["id"]
+    retail = ledger["retail"]
+    # alone: no column, and the grid says which chosen class has nothing
+    none = _by_class(client, f"&class_ids={dormant}")
+    assert none["classes"] == [] and none["filtered"] is True
+    assert none["chosen_empty"] == ["Dormant"]
+    assert none["total_net_income"] == 0.0 and none["unfiltered"]["net_income"] == 0.0
+    # with a class that has activity: that column only, the empty one named
+    part = _by_class(client, f"&class_ids={dormant},{retail}")
+    assert [c["class_name"] for c in part["classes"]] == ["Retail"]
+    assert part["classes"][0]["empty"] is False
+    assert part["chosen_empty"] == ["Dormant"] and part["filtered"] is True
+    assert part["columns_total"] == 3, "the classes with activity, as before"
+    assert part["total_net_income"] == 100.0
+    # asked for, the empty column is drawn, and says it is empty
+    drawn = _by_class(client, f"&class_ids={dormant},{retail}&include_empty=true")
+    assert [(c["class_name"], c["empty"]) for c in drawn["classes"]] == [
+        ("Dormant", True),
+        ("Retail", False),
+    ]
+    assert drawn["chosen_empty"] == ["Dormant"]
+    # a class that does not exist is nothing to name; the whole grid names
+    # nothing, and none of its columns is empty
+    assert _by_class(client, "&class_ids=999999")["chosen_empty"] == []
+    whole = _by_class(client)
+    assert whole["chosen_empty"] == []
+    assert all(c["empty"] is False for c in whole["classes"])
+
+    # the CSV's preamble and the PDF's period line say what the screen's
+    # note says, in the same words
+    text = client.get(
+        f"/api/reports/profit-loss-by-class/csv?{PERIOD}&class_ids={dormant},{retail}"
+    ).text
+    assert (
+        "filtered: 1 of 3 shown; 1 chosen has no activity in this period and is "
+        "left out (Dormant); totals are for the columns shown, not the company"
+    ) in text
+    text = client.get(
+        f"/api/reports/profit-loss-by-class/csv?{PERIOD}&class_ids={dormant},{retail}&include_empty=true"
+    ).text
+    assert (
+        "filtered: 1 of 3 shown, plus 1 with no activity in this period (Dormant); "
+        "totals are for the columns shown, not the company"
+    ) in text
+    from app.routes.reports.financial import _grid_sections
+
+    columns = [dict(c, name=c["class_name"]) for c in part["classes"]]
+    [section] = _grid_sections(part, "P&L by Class", columns)
+    assert (
+        "1 chosen has no activity in this period and is left out (Dormant)"
+        in section["period"]
+    )
+    r = client.get(
+        f"/api/reports/profit-loss-by-class/pdf?{PERIOD}&class_ids={dormant},{retail}"
+    )
+    assert r.status_code == 200 and r.content[:5] == b"%PDF-"
+
+
+def test_a_chosen_job_with_no_activity_is_no_column_unless_asked_and_is_named(
+    client, jobbed
+):
+    fence = client.post(
+        "/api/jobs", json={"customer_id": jobbed["customer"], "name": "Fence"}
+    ).json()["id"]
+    none = _by_job(client, f"&job_ids={fence}")
+    assert none["jobs"] == [] and none["filtered"] is True
+    assert none["chosen_empty"] == ["Fence"]
+    part = _by_job(client, f"&job_ids=0,{fence}")
+    assert [c["job_name"] for c in part["jobs"]] == ["No job"]
+    assert part["chosen_empty"] == ["Fence"] and part["jobs"][0]["empty"] is False
+    drawn = _by_job(client, f"&job_ids=0,{fence}&include_empty=true")
+    assert [(c["job_name"], c["empty"]) for c in drawn["jobs"]] == [
+        ("No job", False),
+        ("Fence", True),
+    ]
+    text = client.get(
+        f"/api/reports/profit-loss-by-job/csv?{PERIOD}&job_ids={fence}"
+    ).text
+    assert (
+        "filtered: 0 of 3 shown; 1 chosen has no activity in this period and is "
+        "left out (Fence); totals are for the columns shown, not the company"
+    ) in text

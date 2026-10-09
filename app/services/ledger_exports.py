@@ -66,19 +66,29 @@ def trial_balance_csv(data: dict, company: str) -> str:
     return out.getvalue()
 
 
-def general_ledger_csv(data: dict, company: str) -> str:
+def general_ledger_csv(data: dict, company: str, words=None) -> str:
     """One row per journal line, grouped by account as the screen is:
     Date | Reference | Description | Account number | Account name | Debit |
     Credit | Running balance | Source type | Class (#213, last so a sheet
     that reads the columns by position still lines up). Each account opens with its
     balance brought forward from before the period and closes with a
     period-total row; the period total's net equals that account's Net on
-    the trial balance for the same dates."""
+    the trial balance for the same dates. A ledger for one class says so
+    in its preamble, as the PDF's title does, and carries the class on its
+    brought-forward and period-total rows too, since those balances are
+    the class's alone (NEW-34)."""
     out = io.StringIO()
     w = _SafeWriter(out)
-    _preamble(
-        w, company, "General Ledger", f"{data['start_date']} to {data['end_date']}"
-    )
+    say = words or str
+    cls = data.get("class_name") or ""
+    period = f"{data['start_date']} to {data['end_date']}"
+    if cls:
+        period += (
+            f" ({say('Class')}: {cls} only — each balance brought forward and"
+            f" running balance counts this {say('class').lower()}'s lines alone,"
+            " not the account's whole balance)"
+        )
+    _preamble(w, company, "General Ledger" + (f" — {cls}" if cls else ""), period)
     w.writerow(
         [
             "Date",
@@ -106,7 +116,7 @@ def general_ledger_csv(data: dict, company: str) -> str:
                 "",
                 _money(a["opening_balance"]),
                 "opening",
-                "",
+                cls,
             ]
         )
         for e in a["entries"]:
@@ -135,7 +145,7 @@ def general_ledger_csv(data: dict, company: str) -> str:
                 _money(a["total_credit"]),
                 _money(a["closing_balance"]),
                 "total",
-                "",
+                cls,
             ]
         )
     return out.getvalue()
@@ -172,9 +182,12 @@ def profit_loss_csv(data: dict, company: str, words) -> str:
 
 
 def profit_loss_csv_class_line(data: dict, words) -> str:
-    """The preamble's report line for one class's P&L."""
+    """The preamble's report line for one class's P&L: which class, and
+    that the figures are that class's alone — the PDF's words (NEW-29)."""
     cls = data.get("class_name")
-    return words("Profit & Loss") + (f" — {words('Class')}: {cls}" if cls else "")
+    return words("Profit & Loss") + (
+        f" — {words('Class')}: {cls} only, not the company total" if cls else ""
+    )
 
 
 def profit_loss_by_class_csv(
@@ -197,10 +210,7 @@ def profit_loss_by_class_csv(
     w = _SafeWriter(out)
     period = f"{data['start_date']} to {data['end_date']}"
     if data.get("filtered"):
-        period += (
-            f" (filtered: {len(columns)} of {data.get('columns_total', len(columns))}"
-            " shown; totals are for the columns shown, not the company)"
-        )
+        period += f" ({filtered_phrase(data, columns)})"
     _preamble(w, company, data.get("report_name") or words("P&L by Class"), period)
     dimension = data.get("dimension") or words("Class")
     sections = (
@@ -258,6 +268,30 @@ def profit_loss_by_class_csv(
         + [_money(data["total_net_income"])]
     )
     return out.getvalue()
+
+
+def filtered_phrase(data: dict, columns: list) -> str:
+    """What a filtered grid says of itself — the CSV's preamble, the PDF's
+    period line and the screen's note, in the same words: how many of the
+    columns with activity in the period are shown; a chosen column with
+    no activity, left out, or drawn as zeros when the empty ones were
+    asked for (NEW-26); and that the totals are the columns shown, not the
+    company's. `columns` are the grid's, each saying whether it is empty."""
+    shown = sum(1 for c in columns if not c.get("empty"))
+    drawn_empty = len(columns) - shown
+    chosen_empty = data.get("chosen_empty") or []
+    text = f"filtered: {shown} of {data.get('columns_total', shown)} shown"
+    if drawn_empty:
+        text += f", plus {drawn_empty} with no activity in this period"
+        if chosen_empty:
+            text += f" ({', '.join(chosen_empty)})"
+    elif chosen_empty:
+        n = len(chosen_empty)
+        text += (
+            f"; {n} chosen {'has' if n == 1 else 'have'} no activity in this period"
+            f" and {'is' if n == 1 else 'are'} left out ({', '.join(chosen_empty)})"
+        )
+    return text + "; totals are for the columns shown, not the company"
 
 
 def balance_sheet_csv(data: dict, company: str, words) -> str:

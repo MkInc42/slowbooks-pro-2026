@@ -115,7 +115,7 @@ const CustomersPage = {
         // on this page's entry (ReportsPage._leaveFrom), so Back returns here
         // with the focus on it (App.withDocument).
         const rowLink = (href, key, text) => `<a href="${href}" data-row-key="${key}" style="color:var(--text-link); text-decoration:none;" onclick="event.preventDefault()">${escapeHtml(text)}</a>`;
-        const hop = (href) => `ReportsPage._leaveFrom();closeModal();App.navigate('${href}')`;
+        const hop = (href) => `ReportsPage._leaveFrom();closeModal({ keepAddress: true });App.navigate('${href}')`;
         const invRows = invoices.slice(0, 10).map(i =>
             `<tr style="cursor:pointer" onclick="${hop(`#/invoices/${i.id}`)}">
                 <td>${rowLink(`#/invoices/${i.id}`, `invoice:${i.id}`, i.invoice_number || `#${i.id}`)}</td>
@@ -164,9 +164,9 @@ const CustomersPage = {
                         ${formatCurrency(Math.abs(balance))}
                     </div>
                     <div style="margin-top:8px">
-                        <button class="btn btn-sm btn-primary" data-write onclick="closeModal();InvoicesPage.showForm(null,${id})">${T('New Invoice')}</button>
-                        <button class="btn btn-sm btn-secondary" data-write onclick="closeModal();PaymentsPage.showForm(null,${id})">Receive Payment</button>
-                        <button class="btn btn-sm btn-secondary" data-write onclick="closeModal();JobsPage.showForm(null,${id})">New ${T('Job')}</button>
+                        <button class="btn btn-sm btn-primary" data-write onclick="closeModal({ keepAddress: true });InvoicesPage.showForm(null,${id})">${T('New Invoice')}</button>
+                        <button class="btn btn-sm btn-secondary" data-write onclick="closeModal({ keepAddress: true });PaymentsPage.showForm(null,${id})">Receive Payment</button>
+                        <button class="btn btn-sm btn-secondary" data-write onclick="closeModal({ keepAddress: true });JobsPage.showForm(null,${id})">New ${T('Job')}</button>
                         <button class="btn btn-sm btn-secondary" onclick="CustomersPage.showForm(${id})">Edit</button>
                         ${Terms.isNonprofit() ? `<button class="btn btn-sm btn-secondary" onclick="window.open('/api/donors/${id}/giving-statement/pdf?year=' + (new Date().getFullYear() - 1), '_blank')">Giving Statement (last year)</button>` : ''}
                     </div>
@@ -221,11 +221,11 @@ const CustomersPage = {
                 ${jobs.length === 0 ? '<p style="color:var(--text-muted);font-size:13px;margin:0">No jobs. A job is a project for this customer — invoices, bills, expenses and time can be tagged to it.</p>' :
                     `<table class="data-table" style="font-size:12px">
                         <thead><tr><th scope="col">${T('Job')}</th><th scope="col">Status</th><th scope="col" class="amount">Contract</th><th scope="col"></th></tr></thead>
-                        <tbody>${jobs.map(j => `<tr style="cursor:pointer" onclick="closeModal();JobsPage.showDetails(${j.id})">
+                        <tbody>${jobs.map(j => `<tr style="cursor:pointer" onclick="JobsPage.showDetails(${j.id})">
                             <td>${escapeHtml(j.name)}${j.job_number ? ` <span style="color:var(--text-muted)">#${escapeHtml(j.job_number)}</span>` : ''}</td>
                             <td>${escapeHtml((window.JobsPage && JobsPage.STATUS_LABELS[j.status]) || j.status)}${j.is_active ? '' : ' <span style="color:var(--text-muted)">(inactive)</span>'}</td>
                             <td class="amount">${j.contract_amount ? formatCurrency(j.contract_amount) : ''}</td>
-                            <td><a href="#" onclick="event.preventDefault();event.stopPropagation();closeModal();JobsPage.showForm(${j.id})">Edit</a></td>
+                            <td><a href="#" onclick="event.preventDefault();event.stopPropagation();closeModal({ keepAddress: true });JobsPage.showForm(${j.id})">Edit</a></td>
                         </tr>`).join('')}</tbody>
                     </table>`}
             </div>
@@ -415,8 +415,7 @@ const CustomersPage = {
                 await API.post('/customers', data, force ? { query: { force: true } } : undefined);
                 toast(`${T('Customer')} created`);
             }
-            closeModal();
-            App.navigate(location.hash);
+            App.refresh();
         } catch (err) {
             // Phase 11: backend returns 409 with {duplicates:[...]} when a
             // similarly-named active customer already exists.

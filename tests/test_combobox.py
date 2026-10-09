@@ -22,7 +22,6 @@ from tests.test_theme_contrast import (  # noqa: E402,F401  (the fixtures)
     _theme,
     _visit,
     below_threshold,
-    books_fixture,
     browser_fixture,
     company_fixture,
     settle,

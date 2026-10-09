@@ -46,7 +46,6 @@ from tests.test_theme_contrast import (  # noqa: E402,F401  (the fixtures)
     SERVED,
     _served_by,
     _visit,
-    books_fixture,
     browser_fixture,
     company_fixture,
     settle,
@@ -521,6 +520,25 @@ def test_a_date_in_the_address_that_is_not_one_is_said_so(browser, company, book
         assert _hash(page) == (
             f"#/reports/profit-loss?start_date={dt.date.today().year}-01-01&end_date=2026-09-30"
         )
+        # the From box shows the date the report ran on, not a blank
+        # where the box refused "garbage" (NEW-24)
+        assert page.evaluate(PERIOD) == {
+            "period": "custom",
+            "start": f"{dt.date.today().year}-01-01",
+            "end": "2026-09-30",
+        }
+    finally:
+        page.close()
+
+    # an as-of view: the box shows the date used
+    page, handled = _open_at(
+        browser, company, "#/reports/balance-sheet?as_of_date=garbage"
+    )
+    try:
+        page.wait_for_selector("#report-content table")
+        assert "as_of_date in the address is not a date (garbage)" in _toasts(page)
+        assert page.input_value("#report-custom-end") == dt.date.today().isoformat()
+        assert _query(_hash(page))["as_of_date"] == dt.date.today().isoformat()
     finally:
         page.close()
 
@@ -589,5 +607,356 @@ def test_a_saved_report_opens_through_its_address_and_an_unknown_view_does_not_c
         _visit(page, handled, "#/reports/account-transactions?start_date=2026-01-01")
         page.wait_for_function("() => location.hash === '#/reports'")
         assert not page.evaluate(MODAL_SHOWN)
+    finally:
+        page.close()
+
+
+def test_closing_a_view_leaves_its_address_for_the_page_under_it(
+    browser, company, books
+):
+    """A closed report kept its address, so the app's refreshes
+    (App.navigate(location.hash) after a save or a delete), a reload and
+    Back reopened it (NEW-23). Close, × and Escape now replace the view's
+    entry with the page it opened over; the app's own moves keep the
+    address, so a hop's Back still returns to the view."""
+    page, handled = _open_at(browser, company, "#/reports")
+    try:
+        length = _history(page)
+        # the card pushes the view; Escape replaces that entry with the
+        # Report Center's — no new entry, nothing to come Back to
+        page.locator("#page-content .card", has_text="Profit & Loss").first.click()
+        page.wait_for_selector("#report-content table")
+        assert _hash(page).startswith("#/reports/profit-loss?")
+        assert _history(page) == length + 1
+        page.keyboard.press("Escape")
+        page.wait_for_function(f"!({MODAL_SHOWN})()")
+        assert _hash(page) == "#/reports"
+        assert _history(page) == length + 1
+        # the app's refresh after an action does not bring it back
+        _visit(page, handled, "#/reports")
+        assert not page.evaluate(MODAL_SHOWN)
+        assert _hash(page) == "#/reports"
+        # nor a reload
+        page.reload()
+        page.wait_for_function("window.App && document.readyState === 'complete'")
+        page.evaluate(
+            "() => { const s = document.getElementById('splash'); if (s) s.classList.add('hidden'); }"
+        )
+        settle(page, handled)
+        assert not page.evaluate(MODAL_SHOWN)
+        assert _hash(page) == "#/reports"
+        # nor Back from the page gone to next
+        _visit(page, handled, "#/")
+        page.go_back()
+        page.wait_for_function("() => location.hash === '#/reports'")
+        settle(page, handled)
+        assert not page.evaluate(MODAL_SHOWN)
+
+        # the × and the Close button do the same, from a view reached by
+        # its address (over the Report Center)
+        _visit(page, handled, PL_URL)
+        page.wait_for_selector("#report-content table")
+        page.locator("#modal-close-btn").click()
+        page.wait_for_function(f"!({MODAL_SHOWN})()")
+        assert _hash(page) == "#/reports"
+        _visit(page, handled, PL_URL)
+        page.wait_for_selector("#report-content table")
+        page.get_by_role("button", name="Close", exact=True).click()
+        page.wait_for_function(f"!({MODAL_SHOWN})()")
+        assert _hash(page) == "#/reports"
+
+        # a drill-down over the P&L is still over the Report Center
+        _visit(page, handled, PL_URL)
+        page.wait_for_selector("#report-content table")
+        page.locator("#report-content tbody a").first.click()
+        page.wait_for_selector("#drilldown-body table")
+        assert _hash(page).startswith("#/reports/account-transactions?")
+        page.keyboard.press("Escape")
+        page.wait_for_function(f"!({MODAL_SHOWN})()")
+        assert _hash(page) == "#/reports"
+
+        # a view opened over another page closes to that page
+        _visit(page, handled, "#/budgets")
+        page.get_by_role("button", name="View Variance").click()
+        page.wait_for_function(
+            "() => location.hash.startsWith('#/reports/budget-vs-actual')"
+        )
+        page.keyboard.press("Escape")
+        page.wait_for_function(f"!({MODAL_SHOWN})()")
+        assert _hash(page) == "#/budgets"
+
+        # a document over its list: the customer's page closes to the list
+        _visit(page, handled, f"#/customers/{books['customer']}")
+        page.locator("#modal-body h4", has_text="Recent invoices").wait_for()
+        page.keyboard.press("Escape")
+        page.wait_for_function(f"!({MODAL_SHOWN})()")
+        assert _hash(page) == "#/customers"
+        _visit(page, handled, "#/customers")
+        assert not page.evaluate(MODAL_SHOWN)
+        # … and so does one opened from its row
+        page.locator("#page-content tr.customer-row").first.click()
+        page.locator("#modal-body h4", has_text="Recent invoices").wait_for()
+        assert re.fullmatch(r"#/customers/\d+", _hash(page))
+        page.locator("#modal-close-btn").click()
+        page.wait_for_function(f"!({MODAL_SHOWN})()")
+        assert _hash(page) == "#/customers"
+
+        # the app's own move keeps the address: a hop from a report pushes
+        # from the report's entry, and Back returns to the report
+        _visit(page, handled, "#/reports/ar-aging?period=this_year_to_date")
+        page.wait_for_selector("#report-content table")
+        aging = _hash(page)
+        page.locator("#report-content tbody a[data-row-key^='customer:']").first.click()
+        page.locator("#modal-body h4", has_text="Recent invoices").wait_for()
+        page.go_back()
+        page.wait_for_selector("#report-content table")
+        assert _hash(page) == aging
+        assert page.evaluate(MODAL_SHOWN)
+    finally:
+        page.close()
+
+
+def test_from_after_to_is_refused_and_the_dates_before_it_are_kept(
+    browser, company, books
+):
+    """From after To was accepted silently — an empty report (NEW-35). In an
+    address both dates are ignored, said so, and the view starts on its own
+    period; typed into the boxes it is refused, said so, and the boxes go
+    back to the range the report still shows. The pages that read dates
+    from their address (the register, the Classes list) refuse it too."""
+    page, handled = _open_at(
+        browser,
+        company,
+        "#/reports/profit-loss?start_date=2026-12-26&end_date=2026-10-09",
+    )
+    try:
+        page.wait_for_selector("#report-content table")
+        assert (
+            "start_date in the address (2026-12-26) is after end_date (2026-10-09) — both ignored"
+            in _toasts(page)
+        )
+        # the P&L's own period, and the address rewritten to it
+        assert page.input_value("#report-period-select") == "this_year_to_date"
+        q = _query(_hash(page))
+        assert q["period"] == "this_year_to_date"
+        assert q["start_date"] == f"{dt.date.today().year}-01-01"
+        assert q["end_date"] == dt.date.today().isoformat()
+
+        # typed: a custom range, then From moved past To
+        page.select_option("#report-period-select", "custom")
+        page.fill("#report-custom-start", SEPT[0])
+        page.fill("#report-custom-end", SEPT[1])
+        page.dispatch_event("#report-custom-end", "change")
+        page.wait_for_function("(u) => location.hash === u", arg=PL_URL)
+        page.wait_for_selector("#report-content table")
+        body = page.evaluate(
+            "() => document.getElementById('report-content').textContent"
+        )
+        assert "Sep 1, 2026" in body and "Sep 30, 2026" in body
+        page.fill("#report-custom-start", "2026-12-26")
+        page.dispatch_event("#report-custom-start", "change")
+        page.wait_for_function(
+            "() => [...document.querySelectorAll('#toast-container .toast')].some(t => t.textContent.includes('is after To'))"
+        )
+        assert (
+            "From (Dec 26, 2026) is after To (Sep 30, 2026) — kept Sep 1, 2026 to Sep 30, 2026"
+            in _toasts(page)
+        )
+        assert page.evaluate(PERIOD) == {
+            "period": "custom",
+            "start": SEPT[0],
+            "end": SEPT[1],
+        }
+        assert _hash(page) == PL_URL
+        assert "Sep 1, 2026" in page.evaluate(
+            "() => document.getElementById('report-content').textContent"
+        )
+    finally:
+        page.close()
+
+    # the register's address: the filter is dropped, and said so
+    bank = next(
+        a for a in company.get("/api/accounts").json() if a["account_number"] == "1000"
+    )
+    page, handled = _open_at(
+        browser,
+        company,
+        f"#/banking/{bank['id']}?start_date=2026-12-26&end_date=2026-10-09",
+    )
+    try:
+        page.wait_for_selector("#reg-start")
+        assert "is after end_date (2026-10-09) — both ignored" in _toasts(page)
+        assert page.input_value("#reg-start") == ""
+        assert page.input_value("#reg-end") == ""
+        assert page.locator("#reg-filter-note").count() == 0
+    finally:
+        page.close()
+
+    # the Classes list: the period falls back, the address is rewritten
+    page, handled = _open_at(
+        browser, company, "#/classes?start_date=2026-12-26&end_date=2026-10-09"
+    )
+    try:
+        page.wait_for_selector("#classes-total-note")
+        assert "is after end_date (2026-10-09) — both ignored" in _toasts(page)
+        q = _query(_hash(page))
+        assert q["start_date"] == f"{dt.date.today().year}-01-01"
+        assert q["end_date"] == dt.date.today().isoformat()
+    finally:
+        page.close()
+
+
+def test_saved_reports_are_listed_by_their_views_title_and_what_they_were_saved_on(
+    browser, company, books
+):
+    """The Report column printed the type's code — "profit loss class",
+    "account transactions" — which said nothing of which class or account
+    (NEW-27). Each row names its view by the view's own title and, from the
+    saved parameters, the class, job or account it was saved on."""
+    uncat = next(
+        c for c in company.get("/api/classes").json() if c["is_system_default"]
+    )
+    lucky = company.post("/api/classes", json={"name": "Lucky"}).json()
+    cash = next(
+        a for a in company.get("/api/accounts").json() if a["account_number"] == "1000"
+    )
+    saved = {
+        "a plain one": ("profit_loss", {"period": "last_month"}),
+        "one class": (
+            "profit_loss_class",
+            {"class_id": uncat["id"], "start_date": SEPT[0], "end_date": SEPT[1]},
+        ),
+        "a drill-down": (
+            "account_transactions",
+            {"account_id": cash["id"], "class_id": uncat["id"], "period": "last_month"},
+        ),
+        "a job's lines": (
+            "account_transactions",
+            {"account_id": cash["id"], "job_id": books["job"], "period": "this_year"},
+        ),
+        "no job": ("profit_loss_by_job", {"job_ids": "0", "period": "this_year"}),
+        "two classes": (
+            "profit_loss_by_class",
+            {"class_ids": f"{uncat['id']},{lucky['id']}", "period": "this_year"},
+        ),
+        "one of them": (
+            "profit_loss_by_class",
+            {"class_ids": str(lucky["id"]), "period": "this_year"},
+        ),
+        "the ledger": (
+            "general_ledger",
+            {"account_id": cash["id"], "period": "this_year"},
+        ),
+        "gone": ("profit_loss_class", {"class_id": 999999, "period": "this_year"}),
+        "aging": ("ar_aging", {"period": "this_year_to_date"}),
+    }
+    for name, (report_type, parameters) in saved.items():
+        r = company.post(
+            "/api/saved-reports",
+            json={"name": name, "report_type": report_type, "parameters": parameters},
+        )
+        assert r.status_code == 201, r.text
+    job_name = company.get(f"/api/jobs/{books['job']}").json()["name"]
+    page, handled = _open_at(browser, company, "#/reports")
+    try:
+        # ten saved reports: the list starts folded
+        toggle = page.locator("#saved-reports-toggle")
+        toggle.wait_for()
+        if toggle.get_attribute("aria-expanded") == "false":
+            toggle.click()
+        page.wait_for_selector("#saved-reports-list")
+        rows = dict(
+            page.eval_on_selector_all(
+                ".saved-report-row",
+                "rows => rows.map(r => [r.children[0].textContent.trim(), r.children[1].textContent.trim()])",
+            )
+        )
+        assert rows["a plain one"] == "Profit & Loss"
+        assert rows["one class"] == "Profit & Loss — Uncategorized"
+        assert rows["a drill-down"] == f"Drill-down — {cash['name']} · Uncategorized"
+        assert rows["a job's lines"] == f"Drill-down — {cash['name']} · Job: {job_name}"
+        assert rows["no job"] == "P&L by Job — No job"
+        assert rows["two classes"] == "P&L by Class — 2 classes chosen"
+        assert rows["one of them"] == "P&L by Class — Lucky"
+        assert rows["the ledger"] == f"General Ledger — {cash['name']}"
+        assert rows["gone"] == "Profit & Loss — class #999999"
+        assert rows["aging"] == "Accounts Receivable Aging"
+        # the row still opens its report
+        page.locator(".saved-report-row", has_text="one class").get_by_role(
+            "button", name="Open"
+        ).click()
+        page.wait_for_selector("#class-pl-body")
+        assert page.evaluate(TITLE) == "Profit & Loss — Uncategorized"
+    finally:
+        page.close()
+
+
+def test_the_apps_own_moves_keep_the_address_and_bring_the_page_back(
+    browser, company, books
+):
+    """NEW-23's review: a save, a void or a mark-as-sent is the app moving
+    on, not a dismissal. The dialog closes with the address kept and the
+    page is redrawn from it (App.refresh), so a customer's page comes back
+    after an edit or a new invoice from it, and an invoice opened by its
+    address comes back marked sent — as 2.21.0 had it. A dismissal (Escape)
+    still gives the address back, and the entry keeps its state, so the
+    toolbar's Back stays lit."""
+    cid = books["customer"]
+    page, handled = _open_at(browser, company, "#/")
+    try:
+        _visit(page, handled, f"#/customers/{cid}")
+        page.locator("#modal-body h4", has_text="Recent invoices").wait_for()
+        # Edit → Update: the page again, on its address
+        page.locator("#modal-body").get_by_role(
+            "button", name="Edit", exact=True
+        ).click()
+        page.wait_for_selector("#customer-form")
+        page.click("#customer-form button[type=submit]")
+        page.locator("#modal-body h4", has_text="Recent invoices").wait_for()
+        assert _hash(page) == f"#/customers/{cid}"
+        assert page.evaluate(MODAL_SHOWN)
+        # New Invoice from the page → Save: the page again
+        page.locator("#modal-body").get_by_role(
+            "button", name=re.compile("New Invoice")
+        ).click()
+        page.wait_for_selector("#invoice-form")
+        assert _hash(page) == f"#/customers/{cid}"
+        page.fill("#inv-lines tr .line-desc", "Round two")
+        page.fill("#inv-lines tr .line-rate", "12")
+        page.click("#invoice-form button[type=submit]")
+        page.locator("#modal-body h4", has_text="Recent invoices").wait_for()
+        assert _hash(page) == f"#/customers/{cid}"
+        newest = max(
+            company.get(f"/api/invoices?customer_id={cid}").json(),
+            key=lambda i: i["id"],
+        )
+        assert newest["status"] == "draft"
+        # an invoice by its address, marked sent: the invoice again, sent
+        _visit(page, handled, f"#/invoices/{newest['id']}")
+        page.wait_for_function(f"({TITLE})().includes('Invoice')")
+        page.locator("#modal-body").get_by_role("button", name="Mark Sent").click()
+        # closed, redrawn from the address, open again without the button
+        page.wait_for_function(
+            f"() => ({MODAL_SHOWN})() && ({TITLE})().includes('Invoice') && "
+            "![...document.querySelectorAll('#modal-body button')].some(b => b.textContent.trim() === 'Mark Sent')"
+        )
+        settle(page, handled)
+        assert _hash(page) == f"#/invoices/{newest['id']}"
+        assert page.evaluate(MODAL_SHOWN)
+        assert company.get(f"/api/invoices/{newest['id']}").json()["status"] == "sent"
+        assert (
+            page.locator("#modal-body").get_by_role("button", name="Mark Sent").count()
+            == 0
+        )
+        # a dismissal gives the address back and keeps the entry's state:
+        # the toolbar's Back is lit and goes to the page behind
+        _visit(page, handled, "#/reports")
+        page.locator("#page-content .card", has_text="Profit & Loss").first.click()
+        page.wait_for_selector("#report-content table")
+        page.keyboard.press("Escape")
+        page.wait_for_function(f"!({MODAL_SHOWN})()")
+        assert _hash(page) == "#/reports"
+        assert page.evaluate("() => !!(history.state && history.state.from)")
+        assert not page.evaluate("() => document.getElementById('back-btn').disabled")
     finally:
         page.close()

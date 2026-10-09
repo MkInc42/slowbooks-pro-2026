@@ -375,13 +375,9 @@ const BankingPage = {
 
     _regFilterFrom(query) {
         const q = query || {};
-        const isDate = v => /^\d{4}-\d{2}-\d{2}$/.test(v || '') && !isNaN(new Date(v).getTime());
-        for (const key of ['start_date', 'end_date']) {
-            if (q[key] && !isDate(q[key])) toast(`${key} in the address is not a date (${q[key]}) — ignored`, 'error');
-        }
+        // a date that is not one, or From after To, is said so and ignored
         return {
-            start_date: isDate(q.start_date) ? q.start_date : '',
-            end_date: isDate(q.end_date) ? q.end_date : '',
+            ...datesFromQuery(q),
             class_id: /^\d+$/.test(q.class_id || '') ? q.class_id : '',
         };
     },
@@ -413,6 +409,16 @@ const BankingPage = {
         const id = parseInt(accountId, 10);
         const f = BankingPage._regFilterFrom(query);
         BankingPage._regFilter = f;
+        // a date the address carried that was refused (not one, From after
+        // To) is not kept on the bar: the address reads the dates in use, so
+        // a reload does not toast again (NEW-35 review)
+        {
+            const want = BankingPage._regUrl(id);
+            if ((location.hash || '') !== want && (location.hash || '').startsWith(`#/banking/${id}`)) {
+                history.replaceState(history.state, '', want);
+                if (window.App && App.addressShown) App.addressShown();
+            }
+        }
         const filterQs = Object.entries(f).filter(([, v]) => v).map(([k, v]) => `&${k}=${encodeURIComponent(v)}`).join('');
         const [reg, overview, classes] = await Promise.all([
             API.get(`/banking/check-register?account_id=${id}${filterQs}`),

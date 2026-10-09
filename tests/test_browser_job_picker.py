@@ -24,7 +24,6 @@ pytest.importorskip("playwright.sync_api")
 from app.models.invoices import Invoice  # noqa: E402
 from tests.test_browser_grid import _open_at  # noqa: E402
 from tests.test_theme_contrast import (  # noqa: E402,F401  (the fixtures)
-    books_fixture,
     browser_fixture,
     company_fixture,
     settle,

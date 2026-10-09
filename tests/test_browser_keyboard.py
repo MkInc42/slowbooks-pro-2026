@@ -56,7 +56,6 @@ from tests.test_dialog_contrast import (  # noqa: E402,F401  (the dialogs)
 from tests.test_theme_contrast import (  # noqa: E402,F401  (the fixtures)
     _open,
     _visit,
-    books_fixture,
     browser_fixture,
     company_fixture,
     settle,
@@ -957,7 +956,12 @@ def test_back_is_inert_over_a_form_but_live_over_an_addressed_dialog(
         assert page.evaluate("location.hash") == f"#/customers/{books['customer']}"
         assert page.evaluate(MODAL_SHOWN)
         page.evaluate("() => closeModal()")
-        # a document at its address: live, and Back returns to the page before
+        # dismissing the form dismissed the page it stood in for (one modal):
+        # the list's address is on the bar (NEW-23); the page again, then a
+        # document at its address: live, and Back returns to the page before
+        assert page.evaluate("location.hash") == "#/customers"
+        _visit(page, handled, f"#/customers/{books['customer']}")
+        page.wait_for_function(MODAL_SHOWN)
         _visit(page, handled, f"#/invoices/{books['sent']}")
         page.wait_for_function(MODAL_SHOWN)
         settle(page, handled)

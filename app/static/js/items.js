@@ -219,8 +219,7 @@ const ItemsPage = {
             } else {
                 toast(id ? 'Item updated' : 'Item created');
             }
-            closeModal();
-            App.navigate(location.hash);
+            App.refresh();
         } catch (err) { toast(err.message, 'error'); }
     },
 
@@ -397,8 +396,7 @@ const ItemsPage = {
         try {
             await API.post(`/items/${id}/adjust`, payload);
             toast('Inventory adjusted');
-            closeModal();
-            App.navigate(location.hash);
+            App.refresh();
         } catch (err) {
             toast(err.message || 'Adjustment failed', 'error');
         }

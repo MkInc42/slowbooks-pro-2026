@@ -142,7 +142,7 @@ def test_the_toolbar_has_a_back_that_knows_whether_there_is_somewhere_to_go():
     )
     # the button follows every push, stamp and history move
     assert app.count("App.addressShown();") >= 3
-    assert "closeModal();\n            App.syncBack();" in app
+    assert "closeModal({ keepAddress: true });\n            App.syncBack();" in app
     assert "App.dialogAddressed();  // the view's own address" in _src("reports.js")
     # the shortcut: ⌘[ on a Mac, Alt+← elsewhere, by key position
     assert (
@@ -215,7 +215,7 @@ def test_the_customer_pages_invoice_and_payment_rows_carry_links():
     # the row's click still opens the document, through the router (a
     # history entry, Back returns), noting the link left for the focus
     assert (
-        "const hop = (href) => `ReportsPage._leaveFrom();closeModal();App.navigate('${href}')`;"
+        "const hop = (href) => `ReportsPage._leaveFrom();closeModal({ keepAddress: true });App.navigate('${href}')`;"
         in src
     )
     assert 'onclick="${hop(`#/invoices/${i.id}`)}"' in src

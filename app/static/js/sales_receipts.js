@@ -100,8 +100,7 @@ const SalesReceiptsPage = {
             const after = payment ? await API.get(`/invoices/${id}`) : sr;
             if (after.status !== 'void') await API.post(`/invoices/${id}/void`);
             toast('Sales receipt voided');
-            closeModal();
-            App.navigate(location.hash);
+            App.refresh();
         } catch (err) { toast(err.message, 'error'); }
     },
 
@@ -425,8 +424,7 @@ const SalesReceiptsPage = {
             const result = await API.post('/sales-receipts', data);
             await ScanHelper.attachAfterSave('invoice', result.invoice.id);
             toast(`${T('Sales Receipt')} #${result.invoice.invoice_number} recorded`);
-            closeModal();
-            App.navigate(location.hash);
+            App.refresh();
         } catch (err) { toast(err.message, 'error'); }
     },
 };

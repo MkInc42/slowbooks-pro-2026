@@ -485,13 +485,16 @@ def _pl_pivot(
     that leads (Uncategorized, No job), the rest alphabetical.
 
     Which columns (R3, #233): every value with activity, unless `chosen`
-    names a subset (a chosen value gets a column even with nothing in it),
-    `show` is "active" (an archived class or inactive job is left out), or
-    `include_empty` adds the values with no activity as zero columns;
-    `restrict` (one customer's jobs) is the most any column can be. When
-    a value with activity is left out the result is `filtered`, its totals
-    are the columns shown, and `unfiltered` carries the company's totals,
-    so a partial Net Income is never read as the P&L's.
+    names a subset, `show` is "active" (an archived class or inactive job
+    is left out), or `include_empty` adds the values with no activity as
+    zero columns; `restrict` (one customer's jobs) is the most any column
+    can be. A chosen value with nothing in the period is no column unless
+    `include_empty` asks for the empty ones; it is named in `chosen_empty`
+    instead, so a zero column is never counted as a class shown (NEW-26,
+    W-1), and every column says whether it is `empty`. When a value with
+    activity is left out the result is `filtered`, its totals are the
+    columns shown, and `unfiltered` carries the company's totals, so a
+    partial Net Income is never read as the P&L's.
 
     An account that nets to nothing in every column shown is left out.
     """
@@ -565,10 +568,13 @@ def _pl_pivot(
 
     with_activity = set(by_key)
     column_keys = {k for k in with_activity if allowed(k)}
-    if chosen is not None:
-        column_keys |= {k for k in chosen if k in meta and allowed(k)}
     if include_empty:
         column_keys |= {k for k in meta if allowed(k)}
+    chosen_empty = sorted(
+        _meta(k)["name"]
+        for k in (chosen or ())
+        if k in meta and allowed(k) and k not in with_activity
+    )
     filtered = bool(with_activity - column_keys)
 
     def totals_of(keys):
@@ -595,6 +601,7 @@ def _pl_pivot(
                 "key": key,
                 "name": _meta(key)["name"],
                 "inactive": bool(_meta(key)["inactive"]),
+                "empty": key not in with_activity,
                 **totals_of([key]),
             }
         )
@@ -637,6 +644,7 @@ def _pl_pivot(
         "total_net_income": shown["net_income"],
         "filtered": filtered,
         "columns_total": len(with_activity),
+        "chosen_empty": chosen_empty,
         "unfiltered": totals_of(with_activity),
     }
 
@@ -705,6 +713,7 @@ def profit_loss_by_class(
             "class_id": c["key"],
             "class_name": c["name"],
             "archived": c["inactive"],
+            "empty": c["empty"],
             "income": c["income"],
             "cogs": c["cogs"],
             "gross_profit": c["gross_profit"],
@@ -800,6 +809,7 @@ def profit_loss_by_job(
             "customer_id": meta[c["key"]]["customer_id"],
             "customer_name": meta[c["key"]]["customer_name"],
             "inactive": c["inactive"],
+            "empty": c["empty"],
             "income": c["income"],
             "cogs": c["cogs"],
             "gross_profit": c["gross_profit"],
@@ -1047,7 +1057,9 @@ def _grid_sections(data: dict, title: str, columns: list, t=None) -> list[dict]:
                 f" (page {page_no} of {len(pages)}; Total is across every column)"
             )
         if data.get("filtered"):
-            period += f" · filtered: {len(columns)} of {data.get('columns_total', len(columns))} shown; totals are for the columns shown, not the company"
+            from app.services.ledger_exports import filtered_phrase
+
+            period += " · " + filtered_phrase(data, columns)
         sections.append(
             {
                 "title": title,
@@ -1347,7 +1359,7 @@ def general_ledger_csv_route(
 
     data = general_ledger(start_date, end_date, account_id, db, class_id=class_id)
     return _csv_download(
-        general_ledger_csv(data, _company_name(db)),
+        general_ledger_csv(data, _company_name(db), terms_from_db(db)),
         f"general-ledger_{data['start_date']}_{data['end_date']}.csv",
         request,
     )

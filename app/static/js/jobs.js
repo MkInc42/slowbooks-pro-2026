@@ -169,9 +169,10 @@ const JobsPage = {
         JobsPage._open = new Set();
         JobsPage._showLines = new Set();
         const q = query || {};
-        const isDate = (v) => /^\d{4}-\d{2}-\d{2}$/.test(v || '');
-        if (isDate(q.start_date) || isDate(q.end_date)) {
-            JobsPage._period = { start: isDate(q.start_date) ? q.start_date : '', end: isDate(q.end_date) ? q.end_date : '' };
+        // a date that is not one, or From after To, is said so and ignored
+        const dates = datesFromQuery(q);
+        if (dates.start_date || dates.end_date) {
+            JobsPage._period = { start: dates.start_date, end: dates.end_date };
         }
         JobsPage._from = (typeof ReportsPage !== 'undefined' && ReportsPage._view(q.from)) ? q.from : null;
         try {
@@ -180,6 +181,9 @@ const JobsPage = {
             return `<div class="empty-state"><p>${escapeHtml(err.message)}</p><a href="#/jobs">Back to jobs</a></div>`;
         }
         const job = JobsPage._job;
+        // a date the address carried that was refused is not kept on the
+        // bar (NEW-35 review): the address reads the period in use
+        if ((q.start_date || '') !== (dates.start_date || '') || (q.end_date || '') !== (dates.end_date || '')) JobsPage._syncAddress();
         const back = JobsPage._from
             ? ReportsPage._backButton(JobsPage._from, { start_date: JobsPage._period.start, end_date: JobsPage._period.end }, '', 'btn btn-sm btn-secondary')
             : '';
@@ -239,7 +243,7 @@ const JobsPage = {
         if (JobsPage._from) qs.set('from', JobsPage._from);
         const q = qs.toString();
         const url = `#/jobs/${JobsPage._job.id}${q ? `?${q}` : ''}`;
-        if ((location.hash || '') !== url) history.replaceState(history.state, '', url);
+        if ((location.hash || '') !== url) { history.replaceState(history.state, '', url); if (window.App && App.addressShown) App.addressShown(); }
     },
     _periodQs() {
         const p = JobsPage._period;

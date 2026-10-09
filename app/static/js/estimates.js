@@ -281,8 +281,7 @@ const EstimatesPage = {
         try {
             if (id) { await API.put(`/estimates/${id}`, data); toast('Estimate updated'); }
             else { await API.post('/estimates', data); toast('Estimate created'); }
-            closeModal();
-            App.navigate(location.hash);
+            App.refresh();
         } catch (err) { toast(err.message, 'error'); }
     },
 };

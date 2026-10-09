@@ -32,7 +32,6 @@ from tests.test_theme_contrast import (  # noqa: E402,F401  (the fixtures)
     SERVED,
     _served_by,
     _visit,
-    books_fixture,
     browser_fixture,
     company_fixture,
     settle,
@@ -630,7 +629,7 @@ def test_choosing_columns_says_filtered_and_rides_on_the_address_and_exports(
         )
         assert (
             page.evaluate("() => document.getElementById('grid-choice').textContent")
-            == "2 of 12 chosen"
+            == "2 chosen"
         )
         # the export links carry the choice
         href = page.locator(
@@ -779,6 +778,108 @@ def test_p_and_l_by_job_is_the_grid_by_job_and_a_heading_opens_the_job_on_its_da
         page.wait_for_selector("#drilldown-body table")
         page.wait_for_function(
             f"({TITLE})() === 'Drill-down — Service Income · Job: No job'"
+        )
+    finally:
+        page.close()
+
+
+# ── NEW-26 / NEW-28: a chosen column with no activity, and the counts ────
+
+
+def test_choosing_only_classes_with_no_activity_shows_the_empty_state_and_the_counts_agree(
+    browser, company, books, divisions
+):
+    """A chosen class with nothing in the period was drawn as a column of
+    zeros under "Filtered: 1 of 12 classes shown" (NEW-26, W-1), and the
+    chooser's "1 of 13 chosen" counted every class listed while the note
+    counted the grid's columns (NEW-28): the chooser now counts its ticks
+    alone, the note counts the columns with activity, and a chosen class
+    with none is named — left out, or drawn as zeros when asked for."""
+    dormant = _ok(company.post("/api/classes", json={"name": "Dormant"}))["id"]
+    page, handled = _open_at(browser, company, BY_CLASS_URL)
+    try:
+        page.wait_for_selector("#report-content .pivot-grid")
+        choice = "() => document.getElementById('grid-choice').textContent"
+        choose = page.get_by_role("button", name="Choose classes…")
+        choose.click()
+        page.get_by_role("checkbox", name="Dormant").check()
+        page.get_by_role("button", name="Apply").click()
+        page.wait_for_selector(".empty-state.grid-filtered")
+        state = page.inner_text(".empty-state.grid-filtered")
+        assert (
+            "None of the chosen classes (Dormant) has activity in this period" in state
+        )
+        assert page.locator("#report-content .pivot-grid").count() == 0
+        assert page.evaluate(choice) == "1 chosen"
+
+        # with one that has activity: that column, and the note says what
+        # was left out and why
+        choose.click()
+        page.get_by_role("checkbox", name="Framing").check()
+        page.get_by_role("button", name="Apply").click()
+        page.wait_for_selector("#report-content .pivot-grid")
+        assert _heads(page) == ["Account", "Framing", "Total (shown)"]
+        note = page.inner_text(".grid-filtered")
+        assert (
+            "Filtered: 1 of 12 classes shown; 1 chosen has no activity in this "
+            "period and is left out (Dormant)"
+        ) in note
+        assert page.evaluate(choice) == "2 chosen"
+
+        # asked for, the empty column is drawn; the note still counts activity
+        page.get_by_role("checkbox", name="Show classes with no activity").check()
+        page.wait_for_function(
+            "() => [...document.querySelectorAll('#report-content thead th')].some(t => t.textContent.trim() === 'Dormant')"
+        )
+        assert _heads(page) == ["Account", "Dormant", "Framing", "Total (shown)"]
+        note = page.inner_text(".grid-filtered")
+        assert (
+            "Filtered: 1 of 12 classes shown, plus 1 with no activity in this period (Dormant)"
+            in note
+        )
+        # the CSV the Save button offers says the same
+        text = company.get(
+            f"/api/reports/profit-loss-by-class/csv?start_date={SEPT[0]}&end_date={SEPT[1]}"
+            f"&class_ids={dormant},{divisions['Framing']}&include_empty=true"
+        ).text
+        assert "plus 1 with no activity in this period (Dormant)" in text
+
+        # "Show every class" from the empty state brings the grid back
+        page.get_by_role("checkbox", name="Show classes with no activity").uncheck()
+        page.wait_for_function(
+            "() => ![...document.querySelectorAll('#report-content thead th')].some(t => t.textContent.trim() === 'Dormant')"
+        )
+        choose.click()
+        page.get_by_role("checkbox", name="Framing").uncheck()
+        page.get_by_role("button", name="Apply").click()
+        page.wait_for_selector(".empty-state.grid-filtered")
+        page.get_by_role("link", name="Show every class").click()
+        page.wait_for_function("() => !document.querySelector('.grid-filtered')")
+        assert len(_heads(page)) == 14  # Account, twelve classes, Total
+        assert page.evaluate(choice) == ""
+    finally:
+        page.close()
+
+    # the same for a job with nothing in the period
+    _ok(
+        company.post(
+            "/api/jobs", json={"customer_id": books["customer"], "name": "Fence"}
+        )
+    )
+    page, handled = _open_at(browser, company, BY_JOB_URL)
+    try:
+        page.wait_for_selector("#report-content .pivot-grid")
+        page.get_by_role("button", name="Choose jobs…").click()
+        page.get_by_role("checkbox", name="Fence").check()
+        page.get_by_role("button", name="Apply").click()
+        page.wait_for_selector(".empty-state.grid-filtered")
+        assert (
+            "None of the chosen jobs (Fence) has activity in this period"
+            in page.inner_text(".empty-state.grid-filtered")
+        )
+        assert (
+            page.evaluate("() => document.getElementById('grid-choice').textContent")
+            == "1 chosen"
         )
     finally:
         page.close()

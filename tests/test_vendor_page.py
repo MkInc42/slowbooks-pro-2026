@@ -62,8 +62,9 @@ def test_the_page_reads_what_exists_and_shows_the_whole_vendor():
         "vendor.is_active === false",
         "vendor.balance",
         "b.balance_due",
-        "BillsPage.view(${b.id})",
-        "BillsPage.viewPayment(${p.id})",
+        "hop(`#/bills/${b.id}`)",
+        "rowLink(`#/bills/${b.id}`, `bill:${b.id}`",
+        "hop(`#/bill-payments/${p.id}`)",
         "VendorCreditsPage.view(${c.id})",
         'onclick="VendorsPage.showForm(${id})">Edit',
     ):
@@ -71,10 +72,13 @@ def test_the_page_reads_what_exists_and_shows_the_whole_vendor():
     # what a read-only sign-in can't do is marked, as on the customer page
     # ...and they carry the vendor, as a customer's page carries its customer (NEW-21)
     assert (
-        'data-write onclick="closeModal();BillsPage._startVendor=${id};BillsPage.showForm()"'
+        'data-write onclick="closeModal({ keepAddress: true });BillsPage._startVendor=${id};BillsPage.showForm()"'
         in details
     )
-    assert 'data-write onclick="closeModal();BillsPage.showPayForm(${id})"' in details
+    assert (
+        'data-write onclick="closeModal({ keepAddress: true });BillsPage.showPayForm(${id})"'
+        in details
+    )
     assert 'data-write aria-label="Notes"' in details
     # the notes save the way the customer's do
     notes = _method(VENDORS, "async _saveNotes(id, value)")
@@ -160,7 +164,6 @@ sync_api = pytest.importorskip("playwright.sync_api")
 from tests.test_theme_contrast import (  # noqa: E402,F401  (the fixtures)
     _open,
     _visit,
-    books_fixture,
     browser_fixture,
     company_fixture,
     settle,

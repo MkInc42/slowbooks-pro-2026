@@ -68,7 +68,7 @@ const App = {
         '/credit-memos':  { page: 'credit-memos',    label: 'Credit Memos',       render: () => CreditMemosPage.render() },
         '/credit-memos/:id': { page: 'credit-memos', label: 'Credit Memo',        render: (id) => App.withDocument(() => CreditMemosPage.render(), () => CreditMemosPage.view(id)) },
         '/vendor-credits':{ page: 'vendor-credits',  label: 'Vendor Credits',     render: () => VendorCreditsPage.render() },
-        '/vendor-credits/:id': { page: 'vendor-credits', label: 'Vendor Credit',  render: (id) => VendorCreditsPage.view(id) },
+        '/vendor-credits/:id': { page: 'vendor-credits', label: 'Vendor Credit',  render: (id) => App.withDocument(() => VendorCreditsPage.render(), () => VendorCreditsPage.view(id)) },
         // Phase 3: Productivity
         '/recurring':     { page: 'recurring',       label: 'Recurring Invoices', render: () => RecurringPage.render() },
         '/batch-payments': { page: 'batch-payments', label: 'Batch Payments',     render: () => BatchPaymentsPage.render() },
@@ -122,6 +122,9 @@ const App = {
     async withDocument(list, open) {
         const html = await list();
         setTimeout(() => {
+            // the dialog about to open is the address's own, over the list
+            // (App.dialogClosed)
+            App._dialogUnder = App.pageUnder(location.hash);
             Promise.resolve().then(open)
                 .then(() => {
                     // the dialog's address is the bar's: Back stays live over
@@ -145,8 +148,21 @@ const App = {
     // there (the page opened through its route).
     documentAddress(hash) {
         const here = location.hash || '#/';
-        if (here !== hash) history.pushState(App.entryState(here), '', hash);
+        if (here !== hash) {
+            history.pushState(App.entryState(here), '', hash);
+            App._dialogUnder = App._dialogUnder || here;
+        }
         App.dialogAddressed();  // the open dialog's own: Back stays live over it
+    },
+
+    // The app moving on after one of its own actions (a save, a void, a
+    // mark-as-sent): the dialog closes with the address kept and the page
+    // is redrawn from it, so a document opened by its address comes back
+    // updated and a customer's page comes back after an edit from it. Not
+    // a dismissal: see closeModal (NEW-23 review).
+    refresh() {
+        closeModal({ keepAddress: true });
+        App.navigate(location.hash);
     },
 
     // ---- A dialog with an address of its own (NEW-30 review) --------------
@@ -247,6 +263,60 @@ const App = {
         btn.setAttribute('aria-keyshortcuts', mac ? 'Meta+[' : 'Alt+ArrowLeft');
     },
 
+    // The page under the open dialog, when the dialog has an address of
+    // its own: a report view (#/reports/profit-loss?…) or a document over
+    // its list (#/customers/12). Set by what opens one — withDocument (the
+    // list route under the document), documentAddress and
+    // ReportsPage.setAddress (the page the dialog was pushed from, kept
+    // through a report's own hops: a drill-down over the P&L is still
+    // over the Report Center) — and cleared by navigate; null while the
+    // open dialog is a plain form, or none is open.
+    _dialogUnder: null,
+
+    // The dialog dismissed (Close, ×, Escape: not the app moving on) had an
+    // address of its own, so the page under it goes on the bar —
+    // #/reports, #/customers, #/budgets — replaced, not pushed: the entry
+    // the view was pushed onto becomes the page it opened over, and a
+    // refresh (App.navigate(location.hash) after a save), a reload or
+    // Back cannot bring the closed view back (NEW-23).
+    dialogClosed() {
+        const under = App._dialogUnder;
+        App._dialogUnder = null;
+        if (!under || (location.hash || '#/') === under) return;
+        // replaced, and the entry keeps its state: what it was pushed from
+        // is still behind it, so the toolbar's Back follows (NEW-30)
+        history.replaceState(history.state, '', under);
+        App.addressShown();
+    },
+
+    // The page a document's or a view's address opens over: the list route
+    // of the same page ('#/customers' for '#/customers/12', '#/reports'
+    // for '#/reports/profit-loss?…'); a page's own address as it is.
+    pageUnder(hash) {
+        const here = hash || '#/';
+        const { route, param } = App.matchRoute(App.parseHash(here).path);
+        if (!route || param === null) return here;
+        const base = Object.keys(App.routes).find(k => !k.includes('/:') && App.routes[k].page === route.page);
+        return base ? `#${base}` : here;
+    },
+
+    // The route for a path and its one-segment parameter: '/jobs/:id'
+    // matches '/jobs/12' (param '12'); a path with a second segment after
+    // the parameter matches nothing.
+    matchRoute(path) {
+        let route = App.routes[path] || null;
+        let param = null;
+        if (!route) {
+            for (const [key, r] of Object.entries(App.routes)) {
+                const i = key.indexOf('/:');
+                if (i > 0 && path.startsWith(key.slice(0, i + 1)) && !path.slice(i + 1).includes('/')) {
+                    route = r; param = decodeURIComponent(path.slice(i + 1)); break;
+                }
+            }
+        }
+        return { route, param };
+    },
+
     // An address, taken apart: '#/reports/profit-loss?start_date=2026-07-01'
     // is the path '/reports/profit-loss' and the query
     // {start_date: '2026-07-01'}. The path picks the route; the query is
@@ -276,7 +346,8 @@ const App = {
         // (R7 review). Every route that opens one ('/reports/:view', the
         // document routes) opens it afresh after rendering.
         const overlay = $('#modal-overlay');
-        if (overlay && !overlay.classList.contains('hidden')) closeModal();
+        if (overlay && !overlay.classList.contains('hidden')) closeModal({ keepAddress: true });
+        App._dialogUnder = null;
         const { path, query } = App.parseHash(hash);
         const full = String(hash || '').replace(/^#/, '') || '/';
         // Keep the address in step with the page shown. The toolbar's Home,
@@ -297,17 +368,7 @@ const App = {
         // so Back knows there is an app page behind it (App.canGoBack).
         else if (!history.state) history.replaceState(App.entryState(App._here), '', here);
         App.addressShown();
-        let route = App.routes[path];
-        let param = null;
-        if (!route) {
-            // One-segment parameter routes: '/jobs/:id' matches '/jobs/12'
-            for (const [key, r] of Object.entries(App.routes)) {
-                const i = key.indexOf('/:');
-                if (i > 0 && path.startsWith(key.slice(0, i + 1)) && !path.slice(i + 1).includes('/')) {
-                    route = r; param = decodeURIComponent(path.slice(i + 1)); break;
-                }
-            }
-        }
+        const { route, param } = App.matchRoute(path);
         if (!route) { $('#page-content').innerHTML = '<p>Page not found</p>'; return; }
 
         // Update active nav
@@ -1305,7 +1366,7 @@ const App = {
             // what is open stays open
             if (App._stay) { App.syncBack(); return; }
             const overlay = $('#modal-overlay');
-            if (overlay && !overlay.classList.contains('hidden')) closeModal();
+            if (overlay && !overlay.classList.contains('hidden')) closeModal({ keepAddress: true });
             App.syncBack();
         });
         // The session's first entry: nothing of the app's behind it (a

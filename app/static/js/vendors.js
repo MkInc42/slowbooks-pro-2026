@@ -76,9 +76,14 @@ const VendorsPage = {
         const acctLabel = acct ? `${acct.account_number ? acct.account_number + ' - ' : ''}${acct.name}` : '';
 
         // -- Bills + payments — last 10 each, newest first, click-through --
+        // a row opens the document at its own address, the page's address
+        // kept behind it so Back returns here with focus on the link
+        // (NEW-38's rule, the vendor's side; NEW-23 review)
+        const hop = (href) => `ReportsPage._leaveFrom();closeModal({ keepAddress: true });App.navigate('${href}')`;
+        const rowLink = (href, key, text) => `<a href="${href}" data-row-key="${key}" style="color:var(--text-link); text-decoration:none;" onclick="event.preventDefault()">${escapeHtml(text)}</a>`;
         const billRows = bills.slice(0, 10).map(b =>
-            `<tr style="cursor:pointer" onclick="BillsPage.view(${b.id})">
-                <td>${escapeHtml(b.bill_number || '')}</td>
+            `<tr style="cursor:pointer" onclick="${hop(`#/bills/${b.id}`)}">
+                <td>${rowLink(`#/bills/${b.id}`, `bill:${b.id}`, b.bill_number || `#${b.id}`)}</td>
                 <td>${formatDate(b.date)}</td>
                 <td>${b.due_date ? formatDate(b.due_date) : ''}</td>
                 <td>${statusBadge(b.status)}</td>
@@ -86,8 +91,8 @@ const VendorsPage = {
                 <td class="amount">${formatCurrency(b.balance_due)}</td>
             </tr>`).join('');
         const payRows = payments.slice(0, 10).map(p =>
-            `<tr style="cursor:pointer" onclick="BillsPage.viewPayment(${p.id})">
-                <td>${formatDate(p.date)}</td>
+            `<tr style="cursor:pointer" onclick="${hop(`#/bill-payments/${p.id}`)}">
+                <td>${rowLink(`#/bill-payments/${p.id}`, `bill-payment:${p.id}`, formatDate(p.date))}</td>
                 <td>${escapeHtml(p.method || '')}${p.is_voided ? ' <span style="color:var(--text-danger)">(void)</span>' : ''}</td>
                 <td>${escapeHtml(p.check_number || '')}</td>
                 <td class="amount">${formatCurrency(p.amount)}</td>
@@ -124,8 +129,8 @@ const VendorsPage = {
                         ${formatCurrency(Math.abs(balance))}
                     </div>
                     <div style="margin-top:8px">
-                        <button class="btn btn-sm btn-primary" data-write onclick="closeModal();BillsPage._startVendor=${id};BillsPage.showForm()">Enter Bill</button>
-                        <button class="btn btn-sm btn-secondary" data-write onclick="closeModal();BillsPage.showPayForm(${id})">Pay Bills</button>
+                        <button class="btn btn-sm btn-primary" data-write onclick="closeModal({ keepAddress: true });BillsPage._startVendor=${id};BillsPage.showForm()">Enter Bill</button>
+                        <button class="btn btn-sm btn-secondary" data-write onclick="closeModal({ keepAddress: true });BillsPage.showPayForm(${id})">Pay Bills</button>
                         <button class="btn btn-sm btn-secondary" onclick="VendorsPage.showForm(${id})">Edit</button>
                     </div>
                     ${VendorsPage._reportsRow(vendor, acct)}
@@ -335,8 +340,7 @@ const VendorsPage = {
                 await API.post('/vendors', data, force ? { query: { force: true } } : undefined);
                 toast('Vendor created');
             }
-            closeModal();
-            App.navigate(location.hash);
+            App.refresh();
         } catch (err) {
             // Phase 11: backend returns 409 with {duplicates:[...]} when a
             // similarly-named active vendor already exists. Show the matches

@@ -99,8 +99,7 @@ const PaymentsPage = {
         try {
             await API.post(`/payments/${id}/void`);
             toast('Payment voided');
-            closeModal();
-            App.navigate(location.hash);
+            App.refresh();
         } catch (err) { toast(err.message, 'error'); }
     },
 
@@ -491,8 +490,7 @@ const PaymentsPage = {
             await PaymentsPage.applyCredit(kind, creditId, allocations);
             toast('Credit applied');
             if (backToForm) { PaymentsPage.showForm(null, customerId); return; }
-            closeModal();
-            App.navigate(location.hash);
+            App.refresh();
         } catch (err) { toast(err.message, 'error'); }
     },
 
@@ -540,8 +538,7 @@ const PaymentsPage = {
         try {
             await API.post('/payments', data);
             toast('Payment recorded');
-            closeModal();
-            App.navigate(location.hash);
+            App.refresh();
         } catch (err) { toast(err.message, 'error'); }
     },
 };

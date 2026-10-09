@@ -173,6 +173,24 @@ def test_the_exports_take_the_class_and_keep_their_columns(client, ledger):
     assert classes == {"Side Gig"}
     assert "retail, one line in side gig" in r.text
     assert "no class" not in r.text
+    # the preamble says it is one class's ledger, as the PDF's title does,
+    # and the brought-forward and period-total rows carry the class, since
+    # those balances are the class's alone (NEW-34)
+    assert "Report,General Ledger — Side Gig" in r.text
+    assert (
+        "Class: Side Gig only — each balance brought forward and running balance "
+        "counts this class's lines alone, not the account's whole balance"
+    ) in r.text
+    carried = {
+        ln.rsplit(",", 1)[1]
+        for ln in body
+        if "Balance brought forward" in ln or "Period total" in ln
+    }
+    assert carried == {"Side Gig"}
+    # without a class: the plain ledger, those rows' Class blank
+    plain = client.get("/api/reports/general-ledger/csv", params=PERIOD).text
+    assert "Report,General Ledger\r\n" in plain or "Report,General Ledger\n" in plain
+    assert "only —" not in plain
     pdf = client.get(
         "/api/reports/general-ledger/pdf",
         params={"class_id": ledger["side"], **PERIOD},
