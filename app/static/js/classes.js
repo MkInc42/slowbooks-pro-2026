@@ -310,9 +310,18 @@ const ClassesPage = {
             ? items.map(i => `<tr><td style="padding-left:24px;"><a href="${drill(i)}" onclick="event.preventDefault(); App.navigate(this.getAttribute('href'))" style="color:var(--text-link); text-decoration:none;">${i.account_number ? escapeHtml(i.account_number) + ' - ' : ''}${escapeHtml(i.account_name)}</a></td><td class="amount">${ClassesPage.money(i.amount)}</td></tr>`).join('')
             : '<tr><td colspan="2" style="padding-left:24px; color:var(--gray-400);">None</td></tr>';
         const subtotal = (title, amount) => `<tr style="font-weight:600; background:var(--gray-50);"><td>${title}</td><td class="amount">${ClassesPage.money(amount)}</td></tr>`;
-        const share = d.company_net_income
-            ? `${(d.net_income / d.company_net_income * 100).toFixed(1)}% of the company's ${ClassesPage.money(d.company_net_income)}`
-            : `the company's ${T('net income').toLowerCase()} for these dates is ${ClassesPage.money(d.company_net_income)}`;
+        // The class's share of the company's net: a percentage only where
+        // one means something — the company in the black and the class
+        // not in the red. Signed division read "-0.3% of the company's
+        // -$391,838.18" for a profitable class in a losing company, and
+        // "103.5%" for the one that lost the most (NEW-31); those say the
+        // company's figure beside the class's instead.
+        const company = d.company_net_income;
+        const share = company > 0 && d.net_income >= 0
+            ? `${(d.net_income / company * 100).toFixed(1)}% of the company's ${ClassesPage.money(company)}`
+            : company > 0
+                ? `a loss against the company's ${ClassesPage.money(company)}`
+                : `while the company's ${T('net income').toLowerCase()} for these dates is ${ClassesPage.money(company)}`;
         const fund = Terms.isNonprofit() ? ClassesPage._fundHtml(c) : '';
         return `
             <div style="display:flex;gap:18px;flex-wrap:wrap;margin-bottom:16px" id="class-stats">
