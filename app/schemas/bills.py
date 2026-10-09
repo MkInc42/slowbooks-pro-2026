@@ -132,8 +132,11 @@ class BillPaymentCreate(StrictModel):
     check_number: Optional[str] = None
     pay_from_account_id: Optional[int] = None
     notes: Optional[str] = None
-    class_id: Optional[int] = None
-    job_id: Optional[int] = None
+    # No class_id or job_id (v2.22.0, #234): the schema accepted both and the
+    # route dropped them — BillPayment has no column and the payment's
+    # journal never carried them — so a client that sent one was told
+    # nothing. Nothing sends them (Pay Bills offers neither), and a body
+    # that does is now refused like any other unknown field.
     currency: Optional[str] = None
     exchange_rate: Optional[Decimal] = None
     allocations: list[BillPaymentAllocationCreate] = []
@@ -154,8 +157,6 @@ class BillPaymentResponse(BaseModel):
     method: Optional[str] = None
     check_number: Optional[str] = None
     notes: Optional[str] = None
-    class_id: Optional[int] = None
-    job_id: Optional[int] = None
     currency: Optional[str] = None
     exchange_rate: Optional[Decimal] = None
     is_voided: bool = False

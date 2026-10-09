@@ -30,6 +30,11 @@ const App = {
         '/banking/:id':   { page: 'banking',         label: 'Register',           render: (id) => BankingPage.renderRegister(id) },
         '/banking/transfers/:id': { page: 'banking', label: 'Transfer',     render: (id) => App.withDocument(() => BankingPage.render(), () => JournalPage.view(id)) },
         '/accounts':      { page: 'accounts',        label: 'Chart of Accounts',  render: () => App.renderAccounts() },
+        // A class's own page and the Classes list (#234): the period, the
+        // tab and the Show choice ride in the query, so a reload, a bookmark
+        // or Back reproduces the page (docs/dev/report-views.md).
+        '/classes':       { page: 'classes',         label: 'Classes',            render: (_id, query) => ClassesPage.render(query) },
+        '/classes/:id':   { page: 'classes',         label: 'Class',              render: (id, query) => ClassesPage.renderDetail(id, query) },
         '/reports':       { page: 'reports',         label: 'Report Center',      render: () => ReportsPage.render() },
         // A report view's own address (#/reports/profit-loss?start_date=…,
         // #/reports/account-transactions?account_id=…): the Report Center is
@@ -775,6 +780,9 @@ const App = {
                     { key: 'customers', label: T('Customers'), onClick: (item) => `App.navigate('#/customers');closeSearchDropdown();` },
                     { key: 'vendors', label: 'Vendors', onClick: (item) => `App.navigate('#/vendors');closeSearchDropdown();` },
                     { key: 'items', label: 'Items', onClick: (item) => `App.navigate('#/items');closeSearchDropdown();` },
+                    // a class opens its own page (#234); only the id crosses into the attribute
+                    { key: 'classes', label: T('Classes'), onClick: (item) => `App.navigate('#/classes/${Number(item.id)}');closeSearchDropdown();`,
+                      text: (c) => c.is_archived ? `${c.name} (archived)` : c.name },
                     { key: 'invoices', label: T('Invoices'), onClick: (item) => `InvoicesPage.view(${item.id});closeSearchDropdown();`,
                       text: (i) => doc(i.invoice_number, i.customer_name, i.total) },
                     { key: 'sales_receipts', label: T('Sales Receipts'), onClick: (item) => `SalesReceiptsPage.view(${item.id});closeSearchDropdown();`,
