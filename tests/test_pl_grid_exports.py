@@ -248,3 +248,161 @@ def test_the_report_page_offers_export_and_save_on_the_grid():
     assert (
         "_exportButtons('profit-loss', qs)" in src
     ), "the class P&L exports with its class_id"
+
+
+# ── R3: choose the columns ───────────────────────────────────────────────
+
+
+def test_a_subset_of_classes_is_filtered_and_its_total_is_the_columns_shown(
+    client, ledger
+):
+    whole = _by_class(client)
+    assert whole["filtered"] is False
+    assert whole["columns_total"] == 3
+    assert whole["unfiltered"]["net_income"] == whole["total_net_income"]
+
+    side, retail = ledger["side"], ledger["retail"]
+    part = _by_class(client, f"&class_ids={side},{retail}")
+    assert [c["class_name"] for c in part["classes"]] == ["Retail", "Side Gig"]
+    assert part["filtered"] is True
+    assert part["columns_total"] == 3, "three classes have activity"
+    # the filtered total is the sum of the columns shown, not the company's
+    assert part["total_net_income"] == sum(c["net_income"] for c in part["classes"])
+    assert part["total_net_income"] == -100.0 + 100.0
+    assert part["total_income"] == 400.0
+    # and the company's figure rides along so the view can say so
+    assert part["unfiltered"]["net_income"] == whole["total_net_income"] == 0.0
+    assert part["unfiltered"]["income"] == 450.0
+    assert part["filter"] == {
+        "show": "all",
+        "class_ids": sorted([side, retail]),
+        "include_empty": False,
+    }
+    # an account with nothing in the columns shown is left out: the
+    # untagged-only accounts stay, as Side Gig and Retail use them too
+    assert {r["account_name"] for r in part["accounts"]["income"]} == {"Service Income"}
+    # the repeated form means the same
+    again = _by_class(client, f"&class_ids={side}&class_ids={retail}")
+    assert again["classes"] == part["classes"]
+    # one chosen class is one column, with zeros for what it has none of
+    one = _by_class(client, f"&class_ids={retail}")
+    assert [c["class_name"] for c in one["classes"]] == ["Retail"]
+    assert one["accounts"]["cogs"] == [] and one["total_cogs"] == 0.0
+    assert one["total_net_income"] == 100.0 and one["filtered"] is True
+
+    # the exports carry the choice
+    rows, _ = _csv_rows(
+        client,
+        f"/api/reports/profit-loss-by-class/csv?{PERIOD}&class_ids={side},{retail}",
+    )
+    assert rows[0] == [
+        "Section",
+        "Account number",
+        "Account name",
+        "Retail",
+        "Side Gig",
+        "Total (shown)",
+    ]
+    assert {r[2]: r for r in rows[1:]}["Net Income"][-1] == "0.00"
+    text = client.get(
+        f"/api/reports/profit-loss-by-class/csv?{PERIOD}&class_ids={side},{retail}"
+    ).text
+    assert "filtered: 2 of 3 shown; totals are for the columns shown" in text
+    r = client.get(
+        f"/api/reports/profit-loss-by-class/pdf?{PERIOD}&class_ids={side},{retail}"
+    )
+    assert r.status_code == 200 and r.content[:5] == b"%PDF-"
+
+    # nonsense is refused, not quietly dropped
+    assert (
+        client.get(
+            f"/api/reports/profit-loss-by-class?{PERIOD}&class_ids=x"
+        ).status_code
+        == 400
+    )
+    assert (
+        client.get(f"/api/reports/profit-loss-by-class?{PERIOD}&show=some").status_code
+        == 400
+    )
+
+
+def test_an_archived_class_with_history_shows_under_all_and_hides_under_active(
+    client, ledger
+):
+    retail = ledger["retail"]
+    assert (
+        client.put(f"/api/classes/{retail}", json={"is_archived": True}).status_code
+        == 200
+    )
+    everything = _by_class(client)
+    names = {c["class_name"]: c for c in everything["classes"]}
+    assert "Retail" in names and names["Retail"]["archived"] is True
+    assert everything["filtered"] is False
+    assert everything["total_net_income"] == 0.0, "still the plain P&L"
+
+    active = _by_class(client, "&show=active")
+    assert "Retail" not in {c["class_name"] for c in active["classes"]}
+    assert active["filtered"] is True
+    assert active["total_net_income"] == -100.0
+    assert active["unfiltered"]["net_income"] == 0.0
+    # chosen by id, an archived class still gets its column
+    chosen = _by_class(client, f"&show=active&class_ids={retail}")
+    assert [c["class_name"] for c in chosen["classes"]] == ["Retail"]
+
+
+def test_an_empty_class_gets_a_zero_column_when_asked(client, ledger):
+    empty = client.post("/api/classes", json={"name": "Dormant"}).json()
+    plain = _by_class(client)
+    assert "Dormant" not in {c["class_name"] for c in plain["classes"]}
+
+    full = _by_class(client, "&include_empty=true")
+    names = [c["class_name"] for c in full["classes"]]
+    assert names == ["Uncategorized", "Dormant", "Retail", "Side Gig"]
+    dormant = next(c for c in full["classes"] if c["class_name"] == "Dormant")
+    assert dormant["net_income"] == 0.0 and dormant["income"] == 0.0
+    assert full["filtered"] is False, "nothing with activity is left out"
+    assert full["total_net_income"] == plain["total_net_income"]
+    at = names.index("Dormant")
+    for section in full["accounts"].values():
+        for row in section:
+            assert row["amounts"][at] == 0.0
+    # the grid's CSV has the empty column too
+    rows, _ = _csv_rows(
+        client, f"/api/reports/profit-loss-by-class/csv?{PERIOD}&include_empty=true"
+    )
+    assert rows[0][3:] == names + ["Total"]
+    # archived and empty: only under All
+    assert (
+        client.put(
+            f"/api/classes/{empty['id']}", json={"is_archived": True}
+        ).status_code
+        == 200
+    )
+    assert "Dormant" not in [
+        c["class_name"]
+        for c in _by_class(client, "&include_empty=true&show=active")["classes"]
+    ]
+    assert "Dormant" in [
+        c["class_name"] for c in _by_class(client, "&include_empty=true")["classes"]
+    ]
+
+
+def test_a_saved_by_class_report_carries_the_column_choice(client, ledger):
+    params = {
+        "period": "last_month",
+        "start_date": "2026-07-01",
+        "end_date": "2026-07-31",
+        "show": "active",
+        "include_empty": "true",
+        "class_ids": f"{ledger['side']},{ledger['retail']}",
+    }
+    r = client.post(
+        "/api/saved-reports",
+        json={
+            "name": "Divisions",
+            "report_type": "profit_loss_by_class",
+            "parameters": params,
+        },
+    )
+    assert r.status_code == 201, r.text
+    assert r.json()["parameters"] == params

@@ -402,34 +402,62 @@ def cash_flow(
     )
 
 
-@router.get("/profit-loss-by-class")
-def profit_loss_by_class(
-    start_date: date = Query(default=None),
-    end_date: date = Query(default=None),
-    db: Session = Depends(get_db),
-):
-    """P&L split by the class dimension on each posted line.
+_PL_TYPES = (AccountType.INCOME, AccountType.COGS, AccountType.EXPENSE)
 
-    A line's own class wins, then the transaction header's; untagged
-    activity groups with the system-default "Uncategorized" class so every
-    posting is accounted for and the column totals reconcile with the
-    plain Profit & Loss.
+
+def _ids_param(values, name: str) -> Optional[set[int]]:
+    """?class_ids=3&class_ids=5, or ?class_ids=3,5 (the form an address or a
+    saved report carries) → {3, 5}; None when nothing was asked. A value
+    that is not a number is a 400, not a column that is quietly dropped."""
+    if not values:
+        return None
+    out: set[int] = set()
+    for v in values:
+        for part in str(v).split(","):
+            part = part.strip()
+            if not part:
+                continue
+            if not part.lstrip("-").isdigit():
+                raise HTTPException(
+                    status_code=400, detail=f"{name}: {part!r} is not an id"
+                )
+            out.add(int(part))
+    return out or None
+
+
+def _pl_pivot(
+    db,
+    start_date: date,
+    end_date: date,
+    key_expr,
+    meta: dict,
+    first_key,
+    *,
+    chosen: Optional[set] = None,
+    show: str = "all",
+    include_empty: bool = False,
+) -> dict:
+    """P&L accounts down the side, one column per value of a dimension
+    (class, job) across, from the posted lines of the period.
+
+    `key_expr` is the SQL for a line's value (class_attribution,
+    job_attribution); `meta` names every value the dimension has, inactive
+    ones included: {key: {"name", "inactive"}}; `first_key` is the column
+    that leads (Uncategorized, No job), the rest alphabetical.
+
+    Which columns (R3, #233): every value with activity, unless `chosen`
+    names a subset (a chosen value gets a column even with nothing in it),
+    `show` is "active" (an archived class or inactive job is left out), or
+    `include_empty` adds the values with no activity as zero columns. When
+    a value with activity is left out the result is `filtered`, its totals
+    are the columns shown, and `unfiltered` carries the company's totals,
+    so a partial Net Income is never read as the P&L's.
+
+    An account that nets to nothing in every column shown is left out.
     """
-    from app.models.classes import TxnClass
-    from app.services.classes_service import class_attribution, uncategorized_class_id
-
-    if not start_date:
-        start_date = date(date.today().year, 1, 1)
-    if not end_date:
-        end_date = date.today()
-
-    uncat_id = uncategorized_class_id(db)
-    db.commit()
-
-    pl_types = (AccountType.INCOME, AccountType.COGS, AccountType.EXPENSE)
     rows = (
         db.query(
-            class_attribution(uncat_id).label("cls"),
+            key_expr.label("k"),
             Account.id,
             Account.account_number,
             Account.name,
@@ -441,12 +469,12 @@ def profit_loss_by_class(
         .join(TransactionLine, TransactionLine.transaction_id == Transaction.id)
         .join(Account, TransactionLine.account_id == Account.id)
         .filter(
-            Account.account_type.in_(pl_types),
+            Account.account_type.in_(_PL_TYPES),
             Transaction.date >= start_date,
             Transaction.date <= end_date,
         )
         .group_by(
-            "cls",
+            "k",
             Account.id,
             Account.account_number,
             Account.name,
@@ -455,11 +483,10 @@ def profit_loss_by_class(
         .all()
     )
 
-    class_names = {c.id: c.name for c in db.query(TxnClass).all()}
-    by_class: dict[int, dict] = {}
-    # each account's amount in each class: the rows of the report (#213)
+    by_key: dict = {}
+    # each account's amount in each column: the rows of the report (#213)
     by_account: dict[int, dict] = {}
-    for cls_id, acct_id, number, name, acct_type, dr, cr in rows:
+    for key, acct_id, number, name, acct_type, dr, cr in rows:
         acct = by_account.setdefault(
             acct_id,
             {
@@ -470,17 +497,12 @@ def profit_loss_by_class(
                 "by": {},
             },
         )
+        dr, cr = Decimal(str(dr)), Decimal(str(cr))
         natural = (cr - dr) if acct_type == AccountType.INCOME else (dr - cr)
-        acct["by"][cls_id] = acct["by"].get(cls_id, Decimal("0")) + natural
-        bucket = by_class.setdefault(
-            cls_id,
-            {
-                "class_id": cls_id,
-                "class_name": class_names.get(cls_id, "Unknown"),
-                "income": Decimal("0"),
-                "cogs": Decimal("0"),
-                "expenses": Decimal("0"),
-            },
+        acct["by"][key] = acct["by"].get(key, Decimal("0")) + natural
+        bucket = by_key.setdefault(
+            key,
+            {"income": Decimal("0"), "cogs": Decimal("0"), "expenses": Decimal("0")},
         )
         if acct_type == AccountType.INCOME:
             bucket["income"] += cr - dr
@@ -489,28 +511,55 @@ def profit_loss_by_class(
         else:
             bucket["expenses"] += dr - cr
 
+    def _meta(key):
+        return meta.get(key) or {"name": "Unknown", "inactive": False}
+
+    def allowed(key):
+        if chosen is not None:
+            return key in chosen
+        if show == "active" and _meta(key)["inactive"]:
+            return False
+        return True
+
+    with_activity = set(by_key)
+    column_keys = {k for k in with_activity if allowed(k)}
+    if chosen is not None:
+        column_keys |= {k for k in chosen if k in meta}
+    if include_empty:
+        column_keys |= {k for k in meta if allowed(k)}
+    filtered = bool(with_activity - column_keys)
+
+    def totals_of(keys):
+        t = {"income": Decimal("0"), "cogs": Decimal("0"), "expenses": Decimal("0")}
+        for k in keys:
+            b = by_key.get(k)
+            if b:
+                for f in t:
+                    t[f] += b[f]
+        return {
+            "income": float(t["income"]),
+            "cogs": float(t["cogs"]),
+            "gross_profit": float(t["income"] - t["cogs"]),
+            "expenses": float(t["expenses"]),
+            "net_income": float(t["income"] - t["cogs"] - t["expenses"]),
+        }
+
     columns = []
-    for bucket in sorted(
-        by_class.values(),
-        key=lambda b: (b["class_id"] != uncat_id, b["class_name"].lower()),
+    for key in sorted(
+        column_keys, key=lambda k: (k != first_key, _meta(k)["name"].lower())
     ):
-        income, cogs, expenses = bucket["income"], bucket["cogs"], bucket["expenses"]
         columns.append(
             {
-                "class_id": bucket["class_id"],
-                "class_name": bucket["class_name"],
-                "income": float(income),
-                "cogs": float(cogs),
-                "gross_profit": float(income - cogs),
-                "expenses": float(expenses),
-                "net_income": float(income - cogs - expenses),
+                "key": key,
+                "name": _meta(key)["name"],
+                "inactive": bool(_meta(key)["inactive"]),
+                **totals_of([key]),
             }
         )
 
-    # Accounts down the side, an amount per class in the order of `classes`
-    # and the account's total, by section; an account that nets to nothing
-    # in every class is left out.
-    order = [c["class_id"] for c in columns]
+    # Accounts down the side, an amount per column in the order of
+    # `columns` and the account's total, by section.
+    order = [c["key"] for c in columns]
     section_of = {
         AccountType.INCOME: "income",
         AccountType.COGS: "cogs",
@@ -520,7 +569,7 @@ def profit_loss_by_class(
     for a in sorted(
         by_account.values(), key=lambda a: (a["number"] or "", a["name"].lower())
     ):
-        amounts = [a["by"].get(cid, Decimal("0")) for cid in order]
+        amounts = [a["by"].get(k, Decimal("0")) for k in order]
         if not any(amounts):
             continue
         accounts[section_of[a["type"]]].append(
@@ -533,17 +582,101 @@ def profit_loss_by_class(
             }
         )
 
+    shown = totals_of(order)
     return {
         "start_date": start_date.isoformat(),
         "end_date": end_date.isoformat(),
-        "classes": columns,
+        "columns": columns,
         "accounts": accounts,
-        "total_income": sum(c["income"] for c in columns),
-        "total_cogs": sum(c["cogs"] for c in columns),
-        "total_gross_profit": sum(c["gross_profit"] for c in columns),
-        "total_expenses": sum(c["expenses"] for c in columns),
-        "total_net_income": sum(c["net_income"] for c in columns),
+        "total_income": shown["income"],
+        "total_cogs": shown["cogs"],
+        "total_gross_profit": shown["gross_profit"],
+        "total_expenses": shown["expenses"],
+        "total_net_income": shown["net_income"],
+        "filtered": filtered,
+        "columns_total": len(with_activity),
+        "unfiltered": totals_of(with_activity),
     }
+
+
+def _period(start_date, end_date):
+    if not start_date:
+        start_date = date(date.today().year, 1, 1)
+    if not end_date:
+        end_date = date.today()
+    return start_date, end_date
+
+
+@router.get("/profit-loss-by-class")
+def profit_loss_by_class(
+    start_date: date = Query(default=None),
+    end_date: date = Query(default=None),
+    db: Session = Depends(get_db),
+    class_ids: Annotated[
+        Optional[list[str]],
+        Query(
+            description="Only these classes (repeat it, or 3,5,7); each gets a column"
+        ),
+    ] = None,
+    show: Annotated[
+        str, Query(description="all (archived classes too) or active")
+    ] = "all",
+    include_empty: Annotated[
+        bool, Query(description="A column for every class, activity or not")
+    ] = False,
+):
+    """P&L split by the class dimension on each posted line.
+
+    A line's own class wins, then the transaction header's; untagged
+    activity groups with the system-default "Uncategorized" class so every
+    posting is accounted for and the column totals reconcile with the
+    plain Profit & Loss. With class_ids, show=active or include_empty the
+    columns are chosen (R3, #233): a view that leaves out a class with
+    activity says `filtered` and its totals are the columns shown.
+    """
+    from app.models.classes import TxnClass
+    from app.services.classes_service import class_attribution, uncategorized_class_id
+
+    start_date, end_date = _period(start_date, end_date)
+    if show not in ("all", "active"):
+        raise HTTPException(status_code=400, detail="show must be all or active")
+    chosen = _ids_param(class_ids, "class_ids")
+    uncat_id = uncategorized_class_id(db)
+    db.commit()
+    meta = {
+        c.id: {"name": c.name, "inactive": bool(c.is_archived)}
+        for c in db.query(TxnClass).all()
+    }
+    out = _pl_pivot(
+        db,
+        start_date,
+        end_date,
+        class_attribution(uncat_id),
+        meta,
+        uncat_id,
+        chosen=chosen,
+        show=show,
+        include_empty=include_empty,
+    )
+    out["classes"] = [
+        {
+            "class_id": c["key"],
+            "class_name": c["name"],
+            "archived": c["inactive"],
+            "income": c["income"],
+            "cogs": c["cogs"],
+            "gross_profit": c["gross_profit"],
+            "expenses": c["expenses"],
+            "net_income": c["net_income"],
+        }
+        for c in out.pop("columns")
+    ]
+    out["filter"] = {
+        "show": show,
+        "class_ids": sorted(chosen) if chosen else [],
+        "include_empty": include_empty,
+    }
+    return out
 
 
 @router.get("/job-profitability")
@@ -892,10 +1025,21 @@ def profit_loss_by_class_pdf(
     start_date: date = Query(default=None),
     end_date: date = Query(default=None),
     db: Session = Depends(get_db),
+    class_ids: Optional[list[str]] = Query(default=None),
+    show: str = "all",
+    include_empty: bool = False,
 ):
     """The by-class grid, landscape; past eight classes it goes over
-    several pages, each with the Account and Total columns (#232)."""
-    data = profit_loss_by_class(start_date, end_date, db)
+    several pages, each with the Account and Total columns (#232). The
+    column choice (#233) rides along: class_ids, show, include_empty."""
+    data = profit_loss_by_class(
+        start_date,
+        end_date,
+        db,
+        class_ids=class_ids,
+        show=show,
+        include_empty=include_empty,
+    )
     t = terms_from_db(db)
     columns = [dict(c, name=c["class_name"]) for c in data["classes"]]
     return _pdf_response(
@@ -916,10 +1060,20 @@ def profit_loss_by_class_csv_route(
         description="wide: the grid, a column per class; long: one row per account and class, for a pivot table",
     ),
     db: Session = Depends(get_db),
+    class_ids: Optional[list[str]] = Query(default=None),
+    show: str = "all",
+    include_empty: bool = False,
 ):
     from app.services.ledger_exports import profit_loss_by_class_csv
 
-    data = profit_loss_by_class(start_date, end_date, db)
+    data = profit_loss_by_class(
+        start_date,
+        end_date,
+        db,
+        class_ids=class_ids,
+        show=show,
+        include_empty=include_empty,
+    )
     t = terms_from_db(db)
     columns = [dict(c, name=c["class_name"]) for c in data["classes"]]
     return _csv_download(

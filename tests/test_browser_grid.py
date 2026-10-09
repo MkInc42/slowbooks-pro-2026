@@ -555,3 +555,124 @@ def test_the_unclassified_card_is_the_uncategorized_column_of_the_grid(
         )
     finally:
         page.close()
+
+
+# ── R3: choose the columns ───────────────────────────────────────────────
+
+
+def test_choosing_columns_says_filtered_and_rides_on_the_address_and_exports(
+    browser, company, divisions
+):
+    page, handled = _open_at(browser, company, BY_CLASS_URL)
+    try:
+        page.wait_for_selector("#report-content .pivot-grid")
+        assert page.locator(".grid-filtered").count() == 0
+        show = page.get_by_role("combobox", name="Classes")
+        assert show.count() == 1 and show.input_value() == "all"
+        empty = page.get_by_role("checkbox", name="Show classes with no activity")
+        assert empty.count() == 1 and not empty.is_checked()
+        choose = page.get_by_role("button", name="Choose classes…")
+        assert choose.get_attribute("aria-expanded") == "false"
+        assert page.locator("#grid-chooser").is_hidden()
+
+        # a subset: Framing and Roofing
+        choose.click()
+        assert choose.get_attribute("aria-expanded") == "true"
+        page.get_by_role("checkbox", name="Framing").check()
+        page.get_by_role("checkbox", name="Roofing").check()
+        page.get_by_role("button", name="Apply").click()
+        page.wait_for_selector(".grid-filtered")
+        heads = _heads(page)
+        assert heads == ["Account", "Framing", "Roofing", "Total (shown)"]
+        note = page.inner_text(".grid-filtered")
+        assert "Filtered: 2 of 12 classes with activity shown" in note
+        assert "not the company" in note
+        whole = company.get(
+            "/api/reports/profit-loss-by-class",
+            params={"start_date": SEPT[0], "end_date": SEPT[1]},
+        ).json()
+        assert f"{whole['total_net_income']:,.2f}" in note
+        part = company.get(
+            "/api/reports/profit-loss-by-class",
+            params={
+                "start_date": SEPT[0],
+                "end_date": SEPT[1],
+                "class_ids": f"{divisions['Framing']},{divisions['Roofing']}",
+            },
+        ).json()
+        shown_net = page.inner_text(
+            "#report-content tbody tr:has-text('Net Income') td:last-child"
+        )
+        assert shown_net == f"${part['total_net_income']:,.2f}"
+        assert part["total_net_income"] != whole["total_net_income"]
+        q = _query(_hash(page))
+        assert sorted(q["class_ids"].replace("%2C", ",").split(",")) == sorted(
+            [str(divisions["Framing"]), str(divisions["Roofing"])]
+        )
+        assert (
+            page.evaluate("() => document.getElementById('grid-choice').textContent")
+            == "2 of 12 chosen"
+        )
+        # the export links carry the choice
+        href = page.locator(
+            "#report-content button:has-text('Save CSV')"
+        ).get_attribute("onclick")
+        assert "class_ids=" in href and "profit-loss-by-class/csv" in href
+        # the grid's picker lists only the columns shown
+        assert page.locator("#grid-jump option").count() == 3
+
+        # show the empty ones: a zero column for a class with nothing
+        _ok(company.post("/api/classes", json={"name": "Dormant"}))
+        assert page.locator("#grid-chooser").is_hidden(), "Apply folds the panel away"
+        choose.click()
+        page.get_by_role("button", name="Show every class").click()
+        page.wait_for_function("() => !document.querySelector('.grid-filtered')")
+        empty.check()
+        page.wait_for_function(
+            "() => [...document.querySelectorAll('#report-content thead th')].some(t => t.textContent.trim() === 'Dormant')"
+        )
+        assert _query(_hash(page))["include_empty"] == "true"
+        assert page.locator(".grid-filtered").count() == 0
+
+        # Active only hides an archived class with history, and says so
+        _ok(
+            company.put(
+                f"/api/classes/{divisions['Drywall']}", json={"is_archived": True}
+            )
+        )
+        page.select_option("#grid-show", "active")
+        page.wait_for_selector(".grid-filtered")
+        assert "Drywall" not in _heads(page)
+        assert _query(_hash(page))["show"] == "active"
+        page.select_option("#grid-show", "all")
+        page.wait_for_function("() => !document.querySelector('.grid-filtered')")
+        assert "Drywall (archived)" in _heads(page)
+
+        # the choice reopens from a saved report
+        page.get_by_role("button", name="Choose classes…").click()
+        page.get_by_role("checkbox", name="Site Prep").check()
+        page.get_by_role("button", name="Apply").click()
+        page.wait_for_selector(".grid-filtered")
+        page.evaluate("() => { window.prompt = () => 'Site Prep only'; }")
+        page.get_by_role("button", name="Add to Saved Reports…").click()
+        page.wait_for_selector("#saved-reports-list")
+        saved = next(
+            s
+            for s in company.get("/api/saved-reports").json()
+            if s["name"] == "Site Prep only"
+        )
+        assert saved["parameters"]["class_ids"] == str(divisions["Site Prep"])
+        assert saved["parameters"]["include_empty"] == "true"
+        page.keyboard.press("Escape")
+        page.wait_for_function(f"!({MODAL_SHOWN})()")
+        page.get_by_role("button", name="Open").first.click()
+        page.wait_for_selector(".grid-filtered")
+        assert _heads(page) == ["Account", "Site Prep", "Total (shown)"]
+        assert page.get_by_role(
+            "checkbox", name="Show classes with no activity"
+        ).is_checked()
+        assert page.locator(
+            f"#grid-chooser input[value='{divisions['Site Prep']}']"
+        ).is_checked(), "ticked in the folded panel"
+    finally:
+        page.close()

@@ -1259,14 +1259,111 @@ ReportsPage.gridKey = function (e) {
     }
 };
 
+// Choosing the grid's columns (R3, #233; the same for jobs, #242): the
+// toolbar's "Classes: All / Active only" select, "show classes with no
+// activity", and a "Choose classes…" panel of checkboxes. Each choice is a
+// param on the address (show=active, include_empty=true, class_ids=3,5)
+// and rides into the saved report and the export links. `items` are every
+// value, inactive ones marked; `key` is the ids' param name.
+ReportsPage._columnChooser = function (spec) {
+    const chosen = new Set(String(spec.params[spec.key] || '').split(',').filter(Boolean).map(Number));
+    const nouns = escapeHtml(spec.nouns);
+    const picks = spec.items.map(i => `<label><input type="checkbox" name="${spec.kind}_pick" value="${i.id}" ${chosen.has(i.id) ? 'checked' : ''}> ${escapeHtml(i.name)}${i.inactive ? ` <span style="color:var(--text-muted)">(${escapeHtml(spec.inactiveWord)})</span>` : ''}</label>`).join('');
+    return `
+        <div class="form-group">
+            <label for="grid-show">${escapeHtml(spec.Nouns)}</label>
+            <select id="grid-show" name="${spec.kind}_show" data-no-search onchange="ReportsPage.setParam('show', this.value === 'all' ? '' : this.value)">
+                <option value="all" ${spec.params.show !== 'active' ? 'selected' : ''}>All (${escapeHtml(spec.inactiveWord)} too)</option>
+                <option value="active" ${spec.params.show === 'active' ? 'selected' : ''}>Active only</option>
+            </select>
+        </div>
+        <div class="form-group full-width">
+            <div class="grid-step__buttons">
+                <label style="font-weight:normal; text-transform:none; font-size:11px; display:inline-flex; gap:4px; align-items:center;"><input type="checkbox" id="grid-empty" ${spec.params.include_empty ? 'checked' : ''} onchange="ReportsPage.setParam('include_empty', this.checked ? 'true' : '')"> Show ${nouns} with no activity</label>
+                <button type="button" class="btn btn-sm btn-secondary" id="grid-choose-btn" aria-expanded="false" aria-controls="grid-chooser" onclick="ReportsPage.toggleChooser()">Choose ${nouns}…</button>
+                <span id="grid-choice" class="grid-live">${chosen.size ? `${chosen.size} of ${spec.items.length} chosen` : ''}</span>
+            </div>
+            <fieldset id="grid-chooser" class="grid-chooser" hidden>
+                <legend>${escapeHtml(spec.Nouns)} to show</legend>
+                <div class="grid-chooser__list">${picks}</div>
+                <div class="grid-chooser__actions">
+                    <button type="button" class="btn btn-sm btn-primary" onclick="ReportsPage.applyChooser('${spec.key}', ${spec.items.length})">Apply</button>
+                    <button type="button" class="btn btn-sm btn-secondary" onclick="ReportsPage.checkAll(true)">All</button>
+                    <button type="button" class="btn btn-sm btn-secondary" onclick="ReportsPage.checkAll(false)">None</button>
+                    <button type="button" class="btn btn-sm btn-secondary" onclick="ReportsPage.checkAll(false); ReportsPage.applyChooser('${spec.key}', ${spec.items.length})">Show every ${escapeHtml(spec.noun)}</button>
+                </div>
+            </fieldset>
+        </div>`;
+};
+
+ReportsPage.toggleChooser = function () {
+    const panel = $('#grid-chooser');
+    const btn = $('#grid-choose-btn');
+    if (!panel || !btn) return;
+    panel.hidden = !panel.hidden;
+    btn.setAttribute('aria-expanded', panel.hidden ? 'false' : 'true');
+    if (!panel.hidden) { const first = panel.querySelector('input'); if (first) first.focus(); }
+};
+
+ReportsPage.checkAll = function (on) {
+    $$('#grid-chooser input[type="checkbox"]').forEach(c => { c.checked = on; });
+};
+
+// The ticked ids become the address's class_ids (job_ids); none ticked
+// means every column, as before.
+ReportsPage.applyChooser = function (key, total) {
+    const ids = $$('#grid-chooser input[type="checkbox"]:checked').map(c => c.value);
+    const where = $('#grid-choice');
+    if (where) where.textContent = ids.length ? `${ids.length} of ${total} chosen` : '';
+    // the panel folds away and the button has the focus back
+    const panel = $('#grid-chooser');
+    const btn = $('#grid-choose-btn');
+    if (panel) panel.hidden = true;
+    if (btn) { btn.setAttribute('aria-expanded', 'false'); btn.focus(); }
+    ReportsPage.setParam(key, ids.join(','));
+};
+
+// The column-choice params of an address or a saved report, as the
+// toolbar and the query string carry them.
+ReportsPage._columnParams = function (prefill, key) {
+    const p = prefill || {};
+    const params = {};
+    if (p.show === 'active') params.show = 'active';
+    if (p.include_empty === true || p.include_empty === 'true') params.include_empty = 'true';
+    if (p[key]) params[key] = String(p[key]);
+    return params;
+};
+
+ReportsPage._columnQs = function (params, key) {
+    let qs = '';
+    if (params.show === 'active') qs += '&show=active';
+    if (params.include_empty) qs += '&include_empty=true';
+    if (params[key]) qs += `&${key}=${encodeURIComponent(params[key])}`;
+    return qs;
+};
+
+// Said above a grid that shows part of the company (R3): which part, and
+// the company's own figure for the dates.
+ReportsPage._filteredNote = function (data, shown, nouns) {
+    if (!data.filtered) return '';
+    return `<div class="grid-filtered" role="status">Filtered: ${shown} of ${data.columns_total} ${escapeHtml(nouns)} with activity shown — these totals are for the ${escapeHtml(nouns)} shown, not the company. Company ${T('Net Income')} for these dates: <strong>${formatCurrency(data.unfiltered.net_income)}</strong>.</div>`;
+};
+
 // Class tracking: Profit & Loss split by the class dimension.
 ReportsPage.profitLossByClass = async function (prefill) {
-    await ReportsPage.openPeriodModal(T("P&L by Class"), "this_year_to_date", async (period, range) => {
-        const qs = `start_date=${range.start}&end_date=${range.end}`;
+    const params = ReportsPage._columnParams(prefill, 'class_ids');
+    let classes = [];
+    try { classes = await API.get('/classes?include_archived=true'); } catch (e) { classes = []; }
+    const toolbar = ReportsPage._columnChooser({
+        kind: 'class', key: 'class_ids', noun: T('class'), nouns: T('classes'), Nouns: T('Classes'), inactiveWord: 'archived',
+        items: classes.map(c => ({ id: c.id, name: c.name, inactive: !!c.is_archived })), params,
+    });
+    await ReportsPage.openPeriodModal(T("P&L by Class"), "this_year_to_date", async (period, range, p) => {
+        const qs = `start_date=${range.start}&end_date=${range.end}${ReportsPage._columnQs(p, 'class_ids')}`;
         const data = await API.get(`/reports/profit-loss-by-class?${qs}`);
-        const classes = data.classes;
-        if (!classes.length) {
-            return `<div class="empty-state"><p>No activity in this period</p></div>`;
+        const columns = data.classes;
+        if (!columns.length) {
+            return `${ReportsPage._filteredNote(data, 0, T('classes'))}<div class="empty-state"><p>No activity in this period</p></div>`;
         }
         // Accounts down the side and a column per class, as QuickBooks
         // lays it out; an amount opens the transactions behind it, and a
@@ -1281,14 +1378,16 @@ ReportsPage.profitLossByClass = async function (prefill) {
                 title: T('P&L by Class'),
                 noun: T('class'),
                 kind: 'class',
-                columns: classes.map(c => ({ ...c, id: c.class_id, name: c.class_name })),
+                columns: columns.map(c => ({ ...c, id: c.class_id, name: c.archived ? `${c.class_name} (archived)` : c.class_name })),
                 accounts: data.accounts,
                 totals: { income: data.total_income, cogs: data.total_cogs, gross_profit: data.total_gross_profit, expenses: data.total_expenses, net_income: data.total_net_income },
+                note: ReportsPage._filteredNote(data, columns.length, T('classes')),
+                totalLabel: data.filtered ? 'Total (shown)' : 'Total',
                 drill: (a, c) => `ReportsPage.openDrillDown(${args(a.account_id, a.account_name, range.start, range.end, c.class_id, c.class_name, 'profit-loss-by-class')})`,
                 head: (c) => `ReportsPage.profitLossOfClass(${args(c.class_id, c.class_name, dates)})`,
                 sum: (c) => `ReportsPage.profitLossOfClass(${args(c.class_id, c.class_name, dates)})`,
             })}`;
-    }, "Dates", false, { reportType: 'profit_loss_by_class', view: 'profit-loss-by-class', prefill, wide: true });
+    }, "Dates", false, { reportType: 'profit_loss_by_class', view: 'profit-loss-by-class', params, prefill, toolbar, wide: true });
 };
 
 // One class's own P&L (#213): the P&L by Class column, account by account,
