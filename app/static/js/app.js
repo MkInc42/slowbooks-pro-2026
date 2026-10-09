@@ -123,10 +123,15 @@ const App = {
         const html = await list();
         setTimeout(() => {
             Promise.resolve().then(open)
-                // Back to a page left by one of its row links (a customer's
-                // page, an invoice): the link takes focus back, as a report's
-                // row does, once the dialog's own first focus has gone by
-                .then(() => setTimeout(() => ReportsPage._refocusRow($('#modal-body')), 0))
+                .then(() => {
+                    // the dialog's address is the bar's: Back stays live over
+                    // it (App.editingDialog); and Back to a page left by one
+                    // of its row links (a customer's page, an invoice) puts
+                    // focus back on the link, as a report's row has it, once
+                    // the dialog's own first focus has gone by
+                    App.dialogAddressed();
+                    if (history.state && history.state.focus) setTimeout(() => ReportsPage._refocusRow($('#modal-body')), 0);
+                })
                 .catch(err => toast(err.message || 'Could not open this document', 'error'));
         }, 0);
         return html;
@@ -141,8 +146,32 @@ const App = {
     documentAddress(hash) {
         const here = location.hash || '#/';
         if (here !== hash) history.pushState({ from: here }, '', hash);
+        App.dialogAddressed();  // the open dialog's own: Back stays live over it
+    },
+
+    // ---- A dialog with an address of its own (NEW-30 review) --------------
+    // The router puts a dialog's address on the bar three ways: a document
+    // route (App.withDocument: #/invoices/12 over the list), a customer's or
+    // vendor's page (App.documentAddress) and a report view
+    // (ReportsPage.setAddress). Each marks the open dialog with that address;
+    // openModal clears the mark, so a plain form (New Invoice, Edit Customer,
+    // a Settings form) opened over the page, or over an addressed dialog,
+    // carries none. Back is inert over such a form: the button sits under
+    // the overlay and the chord does nothing, since a Back that discarded a
+    // half-typed form would be worse than none; the user closes the form
+    // first. Over an addressed dialog Back stays live: it is how a report, a
+    // document or a page is left.
+    dialogAddressed() {
+        const m = $('#modal');
+        if (m) m.dataset.address = location.hash || '#/';
         App.addressShown();
     },
+    editingDialog() {
+        const overlay = $('#modal-overlay'), m = $('#modal');
+        if (!overlay || !m || overlay.classList.contains('hidden')) return false;
+        return (m.dataset.address || '') !== (location.hash || '#/');
+    },
+    backAllowed() { return App.canGoBack() && !App.editingDialog(); },
 
     // ---- Back, within the app (macOS gate NEW-30) --------------------------
     // The Mac app's window has no Back of its own (no button, gesture or
@@ -160,7 +189,7 @@ const App = {
     _here: null,   // the address shown, for the next stamp
     isMac() { return typeof navigator !== 'undefined' && /Mac|iP(hone|ad|od)/.test(navigator.platform || ''); },
     canGoBack() { return !!(history.state && history.state.from); },
-    goBack() { if (App.canGoBack()) history.back(); },
+    goBack() { if (App.backAllowed()) history.back(); },
     // ⌘[ on a Mac (the key, or where the layout puts "["; ⌘⌥[ is not it),
     // Alt+← elsewhere
     isBackKey(e) {
@@ -171,7 +200,10 @@ const App = {
     // and history move.
     syncBack() {
         const btn = $('#back-btn');
-        if (btn) btn.disabled = !App.canGoBack();
+        if (!btn) return;
+        btn.disabled = !App.canGoBack();
+        // under a form's overlay, not above it (App.editingDialog)
+        btn.classList.toggle('tb-back--under', App.editingDialog());
     },
     // An address is on the bar (pushed, stamped or replaced): noted for the
     // next stamp, and Back follows it.
@@ -1267,8 +1299,9 @@ const App = {
             const editing = !!(e.target && e.target.closest && e.target.closest('input, textarea, select, [contenteditable]:not([contenteditable="false"])'));
             const letter = (code, key) => alt && e.code === code && (!editing || String(e.key).toLowerCase() === key);
             // Back: ⌘[ on a Mac, Alt+← elsewhere, while an app page is
-            // behind (the Mac app's window has no Back of its own, NEW-30)
-            if (App.isBackKey(e) && App.canGoBack()) { e.preventDefault(); App.goBack(); return; }
+            // behind and no form is open over the page (the Mac app's
+            // window has no Back of its own, NEW-30)
+            if (App.isBackKey(e) && App.backAllowed()) { e.preventDefault(); App.goBack(); return; }
             // Ctrl+Enter: submit quick entry form
             if (e.ctrlKey && e.key === 'Enter') {
                 const qeForm = $('#qe-form');

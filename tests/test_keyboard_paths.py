@@ -129,7 +129,7 @@ def test_the_toolbar_has_a_back_that_knows_whether_there_is_somewhere_to_go():
     assert "App.goBack && App.goBack()" in _src("bootstrap.js")
     app = _src("app.js")
     assert "canGoBack() { return !!(history.state && history.state.from); }" in app
-    assert "goBack() { if (App.canGoBack()) history.back(); }" in app
+    assert "goBack() { if (App.backAllowed()) history.back(); }" in app
     assert "history.length" not in re.sub(r"//.*", "", app)  # not in the code
     # a link's entry is stamped when first seen; the first entry at start
     assert (
@@ -143,12 +143,10 @@ def test_the_toolbar_has_a_back_that_knows_whether_there_is_somewhere_to_go():
     # the button follows every push, stamp and history move
     assert app.count("App.addressShown();") >= 3
     assert "closeModal();\n            App.syncBack();" in app
-    assert "App.addressShown();  // the toolbar's Back follows (NEW-30)" in _src(
-        "reports.js"
-    )
+    assert "App.dialogAddressed();  // the view's own address" in _src("reports.js")
     # the shortcut: ⌘[ on a Mac, Alt+← elsewhere, by key position
     assert (
-        "if (App.isBackKey(e) && App.canGoBack()) { e.preventDefault(); App.goBack(); return; }"
+        "if (App.isBackKey(e) && App.backAllowed()) { e.preventDefault(); App.goBack(); return; }"
         in app
     )
     assert (
@@ -219,7 +217,7 @@ def test_the_customer_pages_invoice_and_payment_rows_carry_links():
     assert "PaymentsPage.view(${p.id})" not in src
     # and the page's render puts the focus back on it
     assert (
-        ".then(() => setTimeout(() => ReportsPage._refocusRow($('#modal-body')), 0))"
+        "if (history.state && history.state.focus) setTimeout(() => ReportsPage._refocusRow($('#modal-body')), 0);"
         in _src("app.js")
     )
 
@@ -253,3 +251,37 @@ def test_the_drill_downs_position_is_a_live_status_with_the_account():
         "pos.textContent = list.length > 1 && i >= 0 ? `${i + 1} of ${list.length}: ${list[i].label}` : '';"
         in src
     )
+
+
+# ── Review, round 2: Back is inert over a form ───────────────────────────
+
+
+def test_back_is_inert_over_a_dialog_with_no_address_of_its_own():
+    app = _src("app.js")
+    assert "backAllowed() { return App.canGoBack() && !App.editingDialog(); }" in app
+    assert "return (m.dataset.address || '') !== (location.hash || '#/');" in app
+    # the three ways the router gives a dialog its address mark it
+    assert "App.dialogAddressed();  // the open dialog's own" in app  # documentAddress
+    assert (
+        "App.dialogAddressed();\n                    if (history.state && history.state.focus)"
+        in app
+    )  # withDocument
+    assert "App.dialogAddressed();  // the view's own address" in _src(
+        "reports.js"
+    )  # setAddress
+    # a plain form clears the mark, and the button follows
+    utils = _src("utils.js")
+    assert utils.count("delete modal.dataset.address;") == 1  # openModal
+    assert utils.count("delete $('#modal').dataset.address;") == 1  # closeModal
+    assert utils.count("window.App.syncBack();") == 2
+    assert "btn.classList.toggle('tb-back--under', App.editingDialog());" in app
+    css = (ROOT / "app/static/css/style.css").read_text(encoding="utf-8")
+    assert ".tb-back.tb-back--under {\n    z-index: auto;\n}" in css
+    # a customer's or vendor's page opens the dialog, then gives it its address
+    for name, call in (
+        ("customers.js", "App.documentAddress(`#/customers/${customer.id}`)"),
+        ("vendors.js", "App.documentAddress(`#/vendors/${vendor.id}`)"),
+    ):
+        src = _src(name)
+        at = src.index(call)
+        assert "openModal(" in src[at - 200 : at], name

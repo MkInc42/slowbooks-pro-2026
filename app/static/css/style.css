@@ -239,6 +239,11 @@ body {
     line-height: 1;
     padding: 2px 9px;
 }
+/* Under a form's overlay, not above it: a Back that discarded a half-typed
+   form would be worse than none (app.js App.editingDialog). */
+.tb-back.tb-back--under {
+    z-index: auto;
+}
 .tb-btn:disabled {
     opacity: 0.45;
     cursor: default;

@@ -252,8 +252,8 @@ const CustomersPage = {
 
         // The page's own address (#/customers/12, App.routes): Back from a
         // report opened below returns here, a reload keeps the page.
-        App.documentAddress(`#/customers/${customer.id}`);
         openModal(`${T('Customer')} — ${customer.name}`, html);
+        App.documentAddress(`#/customers/${customer.id}`);  // after the dialog: it marks it as its own
     },
 
     // Reports for this customer (#238): each opens through the report's

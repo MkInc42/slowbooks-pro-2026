@@ -200,6 +200,11 @@ function openModal(title, html, opts) {
     $('#modal-overlay').classList.remove('hidden');
     const modal = $('#modal');
     modal.classList.toggle('modal--wide', !!(opts && opts.wide));
+    // No address of its own until the router gives it one (a document, a
+    // page, a report view: App.dialogAddressed); over a plain form the
+    // toolbar's Back is inert, and sits under the overlay (App.syncBack).
+    delete modal.dataset.address;
+    if (window.App && typeof window.App.syncBack === 'function') window.App.syncBack();
     // The first control takes focus once the dialog's own enhancements (the
     // type-ahead boxes) are in place. Never a control that undoes (Void,
     // Delete: data-destructive), where Return would do it: the dialog takes
@@ -216,6 +221,8 @@ function openModal(title, html, opts) {
 function closeModal() {
     $('#modal-overlay').classList.add('hidden');
     $('#modal').classList.remove('modal--wide');
+    delete $('#modal').dataset.address;
+    if (window.App && typeof window.App.syncBack === 'function') window.App.syncBack();
     const opener = _modalOpener;
     _modalOpener = null;
     if (opener && document.contains(opener)) { try { opener.focus(); } catch (e) { /* gone */ } }

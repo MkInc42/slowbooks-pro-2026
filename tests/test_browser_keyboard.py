@@ -890,3 +890,79 @@ def test_tab_into_a_textarea_keeps_the_caret_and_into_a_text_box_selects(
         assert page.evaluate(SELECTION, "#modal .line-desc") == [0, 14, 14]
     finally:
         page.close()
+
+
+# ── Review, round 2: Back is inert over a form ───────────────────────────
+
+AT_POINT = """() => { const b = document.getElementById('back-btn'), r = b.getBoundingClientRect();
+    return document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2) === b; }"""
+
+
+def test_back_is_inert_over_a_form_but_live_over_an_addressed_dialog(
+    browser, company, books
+):
+    page, handled = _open(browser, company)
+    try:
+        _no_splash(page)
+        _sidebar(page, handled, "#/invoices")
+        assert page.evaluate(AT_POINT) and page.evaluate("() => App.backAllowed()")
+        # a plain form over the page: the button is under the overlay, the
+        # chord does nothing, and the note typed stays
+        _open_dialog(page, handled, "InvoicesPage.showForm()", "#inv-lines tr")
+        page.fill("#modal textarea", "half typed")
+        assert not page.evaluate(AT_POINT)
+        assert page.evaluate("() => App.editingDialog() && !App.backAllowed()")
+        assert not page.evaluate(BACK)["disabled"]  # somewhere to go, still
+        page.keyboard.press("Alt+ArrowLeft")
+        page.wait_for_timeout(150)
+        assert page.evaluate("location.hash") == "#/invoices"
+        assert page.evaluate(MODAL_SHOWN)
+        assert page.input_value("#modal textarea") == "half typed"
+        page.evaluate(MAC, True)
+        page.keyboard.press("Meta+BracketLeft")
+        page.wait_for_timeout(150)
+        assert page.evaluate("location.hash") == "#/invoices" and page.evaluate(
+            MODAL_SHOWN
+        )
+        page.evaluate(MAC, False)
+        # the form closed, Back is back
+        page.evaluate("() => closeModal()")
+        assert page.evaluate(AT_POINT) and page.evaluate("() => App.backAllowed()")
+        # a report view has its own address: the button is above the
+        # overlay and takes the report back to the Report Center
+        _sidebar(page, handled, "#/reports")
+        page.evaluate(
+            """() => document.querySelector('#page-content .card[onclick="ReportsPage.profitLoss()"]').click()"""
+        )
+        page.wait_for_selector("#report-content table")
+        settle(page, handled)
+        assert page.evaluate(AT_POINT) and not page.evaluate(
+            "() => App.editingDialog()"
+        )
+        page.click("#back-btn")
+        page.wait_for_function(AT, arg="#/reports")
+        page.wait_for_function(f"!({MODAL_SHOWN})()")
+        # a customer's page has one too; a form opened over it has none
+        _visit(page, handled, f"#/customers/{books['customer']}")
+        page.wait_for_function(MODAL_SHOWN)
+        assert page.evaluate(AT_POINT)
+        _open_dialog(
+            page, handled, f"CustomersPage.showForm({books['customer']})", "#modal form"
+        )
+        assert not page.evaluate(AT_POINT) and page.evaluate(
+            "() => App.editingDialog()"
+        )
+        page.keyboard.press("Alt+ArrowLeft")
+        page.wait_for_timeout(150)
+        assert page.evaluate("location.hash") == f"#/customers/{books['customer']}"
+        assert page.evaluate(MODAL_SHOWN)
+        page.evaluate("() => closeModal()")
+        # a document at its address: live, and Back returns to the page before
+        _visit(page, handled, f"#/invoices/{books['sent']}")
+        page.wait_for_function(MODAL_SHOWN)
+        settle(page, handled)
+        assert page.evaluate(AT_POINT) and page.evaluate("() => App.backAllowed()")
+        page.keyboard.press("Alt+ArrowLeft")
+        page.wait_for_function(AT, arg=f"#/customers/{books['customer']}")
+    finally:
+        page.close()
