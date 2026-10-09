@@ -109,10 +109,14 @@ const ReportsPage = {
     },
 
     // A report opened for one customer or vendor from their page (#238):
-    // the row is marked and scrolled to, and takes focus unless Back just
-    // put it elsewhere. The report is still the whole company's — only
-    // the row is picked out — so nothing about its totals changes.
-    _spotlight(root, params, focused) {
+    // the row is marked and scrolled to, and takes focus on the view's
+    // first render only (takeFocus) — not when Back just put focus on a
+    // row, and not on a later render of the same view: a period change
+    // from the keyboard was throwing focus off the period select onto the
+    // row, so every next period needed Shift+Tab first (R8 review). The
+    // report is still the whole company's — only the row is picked out —
+    // so nothing about its totals changes.
+    _spotlight(root, params, takeFocus) {
         const key = params.customer_id ? `customer:${params.customer_id}`
             : params.vendor_id ? `vendor:${params.vendor_id}` : null;
         if (!key || !root) return;
@@ -122,7 +126,7 @@ const ReportsPage = {
         row.setAttribute('aria-current', 'true');
         row.style.background = 'var(--primary-light)';
         row.scrollIntoView({ block: 'center' });
-        if (!focused) { try { el.focus(); } catch (e) { /* nothing */ } }
+        if (takeFocus) { try { el.focus(); } catch (e) { /* nothing */ } }
     },
 
     // A change inside the open period report that is not its dates — a
@@ -144,19 +148,19 @@ const ReportsPage = {
         return `<a href="javascript:void(0)" style="color:var(--text-link); text-decoration:none;" data-row-key="${escapeHtml(key)}" onclick="${escapeHtml(call)}">${escapeHtml(text)}</a>`;
     },
 
-    // A customer's or a vendor's page is a dialog over its list, not a
-    // route (CustomersPage.showDetails, VendorsPage.showDetails): the list
-    // is navigated to, so browser Back returns to the report, then the
-    // page opens over it.
+    // A customer's or a vendor's page is a dialog over its list, with an
+    // address of its own (#/customers/12, #/vendors/3: App.routes): one
+    // history entry, so browser Back returns to the report, and the row
+    // it left from.
     openCustomer(id) {
         ReportsPage._leaveFrom();
         closeModal();
-        App.navigate('#/customers').then(() => CustomersPage.showDetails(id));
+        App.navigate(`#/customers/${id}`);
     },
     openVendor(id) {
         ReportsPage._leaveFrom();
         closeModal();
-        App.navigate('#/vendors').then(() => VendorsPage.showDetails(id));
+        App.navigate(`#/vendors/${id}`);
     },
 
     // Back to a view, as its "Back to …" button does: through the browser's
@@ -413,6 +417,12 @@ const ReportsPage = {
         // account, dates, class, from — as a link to it is written.)
         const params = { account_id: accountId, period: undefined, start_date: undefined, end_date: undefined, class_id: classId, from: back };
         ReportsPage._leaveFrom();
+        // The account and class lists are asked for afresh each time the
+        // drill-down opens: a class made, or an account first posted to,
+        // since the last one is then in the selects and the Previous/Next
+        // walk (R11 review). Within one open they are kept per key.
+        ReportsPage._drillList = null;
+        ReportsPage._classList = null;
 
         // The way back carries the dates the view was on (one as-of date
         // for a balance sheet) and whatever the view says it keeps. Back to
@@ -775,6 +785,11 @@ const ReportsPage = {
 
         // Track current params so the Save button captures fresh values.
         let currentParams = {};
+        // The first render of the view: the only one that may move focus
+        // to a spotlighted row (ReportsPage._spotlight). opts.spotlight
+        // false leaves the row alone altogether — a view the server has
+        // already filtered to the customer has no one row to pick out.
+        let first = true;
 
         const render = async () => {
             ReportsPage.toggleCustomRange();
@@ -791,10 +806,12 @@ const ReportsPage = {
                     if (view) ReportsPage.setAddress(view, { ...(opts.params || {}), ...currentParams });
                     content.innerHTML = await loadContent(select.value, range);
                 }
-                ReportsPage._spotlight(content, params, ReportsPage._refocusRow(content));
+                const restored = ReportsPage._refocusRow(content);
+                if (opts.spotlight !== false) ReportsPage._spotlight(content, params, first && !restored);
             } catch (err) {
                 content.innerHTML = `<div class="empty-state"><p>${escapeHtml(err.message)}</p></div>`;
             }
+            first = false;
         };
 
         select.addEventListener("change", render);
@@ -1214,10 +1231,13 @@ const ReportsPage = {
             </div>
             <div id="report-1099-content" ${vendorId ? `data-vendor-id="${vendorId}"` : ''}><div style="font-size:11px; color:var(--gray-500);">Select year and click Generate</div></div>
             <div class="form-actions"><button type="button" class="btn btn-secondary" onclick="closeModal()">Close</button></div>`);
-        if (year) await ReportsPage.load1099();
+        if (year) await ReportsPage.load1099(true);
     },
 
-    async load1099() {
+    // first: the view's opening render, the one that may move focus to a
+    // spotlighted vendor row; Generate re-renders with focus left where
+    // it is (R8 review).
+    async load1099(first = false) {
         const year = $('#report-1099-year').value;
         const content = $('#report-1099-content');
         const vendorId = content.getAttribute('data-vendor-id') || null;
@@ -1247,7 +1267,8 @@ const ReportsPage = {
                     <thead><tr><th scope="col">Vendor</th><th scope="col">Tax ID</th><th scope="col">Type</th><th scope="col" class="amount">Total Paid</th><th scope="col">Status</th></tr></thead>
                     <tbody>${rows}</tbody>
                 </table></div>`;
-            ReportsPage._spotlight(content, { vendor_id: vendorId }, ReportsPage._refocusRow(content));
+            const restored = ReportsPage._refocusRow(content);
+            ReportsPage._spotlight(content, { vendor_id: vendorId }, first && !restored);
         } catch (err) { content.innerHTML = `<div style="color:var(--danger);">${escapeHtml(err.message)}</div>`; }
     },
 
@@ -1499,7 +1520,10 @@ ReportsPage.jobProfitability = async function (prefill) {
                     <td></td>
                 </tr></tfoot>
             </table></div>`;
-    }, "Dates", false, { view: 'job-profitability', params, prefill });
+    // No row is spotlighted: with customer_id the server already filters
+    // the rows to the customer's jobs, and the first of several would be
+    // "current" for no reason (R8 review).
+    }, "Dates", false, { view: 'job-profitability', params, prefill, spotlight: false });
 };
 
 ReportsPage.jobBudgetVsActual = async function (prefill) {

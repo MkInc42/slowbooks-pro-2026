@@ -145,6 +145,24 @@ _LINKS = {
     "payment_apply": "/#/payments/{id}",
     "bill_payment_void": "/#/bill-payments/{id}",
     "vendor_credit_void": "/#/vendor-credits/{id}",
+    # The house void (bank_posting.void_document, the expense and journal
+    # voids, the QBO import's reversals) keys its reversal by the voided
+    # posting's transaction id, and these documents' own addresses are by
+    # transaction id too — so the void links where its document does,
+    # with the voided posting's id (R11 review).
+    "expense_void": "/#/expenses/{id}",
+    "deposit_void": "/#/deposits/{id}",
+    "cc_charge_void": "/#/cc-charges/{id}",
+    "transfer_void": "/#/banking/transfers/{id}",
+    "bank_entry_void": "/#/journal/{id}",
+    "manual_void": "/#/journal/{id}",
+    "qbo_ledger_void": "/#/journal/{id}",
+    "qbo_journal_void": "/#/journal/{id}",
+    # A reversal of a posting that is itself a side effect (a payment's
+    # exchange adjustment, the local cost of goods a QBO ledger import
+    # takes back): the posting it reversed, as a journal entry.
+    "payment_apply_void": "/#/journal/{id}",
+    "qbo_cogs_void": "/#/journal/{id}",
     # Postings that are their own document: the journal entry.
     "pto": "/#/journal/{txn}",
     "check": "/#/journal/{txn}",

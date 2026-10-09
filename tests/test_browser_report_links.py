@@ -89,7 +89,7 @@ def test_ar_aging_and_income_by_customer_rows_open_the_customer_and_back_returns
             "() => document.getElementById('modal-title').textContent.startsWith('Customer — ')"
         )
         assert page.evaluate(TITLE) == "Customer — Salt & Pine Catering Co."
-        assert _hash(page) == "#/customers"
+        assert _hash(page) == f"#/customers/{books['customer']}"
         assert _history(page) == length + 1
 
         # Back: the report on its date, and the keyboard on the row it left
@@ -137,7 +137,7 @@ def test_ap_aging_and_1099_rows_open_the_vendor(browser, company, books):
             "() => document.getElementById('modal-title').textContent.startsWith('Vendor — ')"
         )
         assert page.evaluate(TITLE) == "Vendor — Cascade Flour Mill"
-        assert _hash(page) == "#/vendors"
+        assert _hash(page) == f"#/vendors/{books['vendor']}"
         page.go_back()
         _report(page)
         assert _hash(page) == url
@@ -240,7 +240,7 @@ def test_job_profitability_customer_cell_opens_the_customer_and_the_row_the_job(
             "() => document.getElementById('modal-title').textContent.startsWith('Customer — ')"
         )
         # the cell's click did not also open the job
-        assert _hash(page) == "#/customers"
+        assert _hash(page) == f"#/customers/{books['customer']}"
         page.go_back()
         _report(page)
         assert _hash(page) == url
@@ -413,6 +413,8 @@ def test_the_customer_page_invoice_rows_open_the_invoice_and_its_reports_open_fo
         )
         assert "Salt & Pine Catering Co. only" in body
         assert "Total — Salt & Pine Catering Co." in body
+        # the rows are the server's filter: none is "current" (R8 review)
+        assert page.locator('#report-content tr[aria-current="true"]').count() == 0
         assert "No job" not in body
         assert "Waterfront Gala" in body
         length = _history(page)
@@ -497,6 +499,122 @@ def test_a_read_only_sign_in_keeps_the_reports_rows(
             "1099 Summary",
             "A/P Aging",
         ]
+    finally:
+        page.close()
+
+
+ACTIVE_ID = "() => document.activeElement && document.activeElement.id"
+
+
+def test_a_period_change_from_the_keyboard_keeps_focus_on_the_period_select(
+    browser, company, books
+):
+    """The spotlighted row takes focus on the view's first render only: a
+    period change used to throw a keyboard user off the select onto the
+    row, so every next period needed Shift+Tab first (R8 review)."""
+    cid = books["customer"]
+    url = f"#/reports/ar-aging?customer_id={cid}&period=this_year_to_date"
+    page, handled = _open_at(browser, company, url)
+    try:
+        _report(page)
+        assert page.evaluate(FOCUSED_KEY) == f"customer:{cid}"
+        page.focus("#report-period-select")
+        page.keyboard.press("ArrowDown")
+        settle(page, handled)
+        _report(page)
+        q = _query(_hash(page))
+        assert q["period"] != "this_year_to_date" and q["customer_id"] == str(cid)
+        assert page.evaluate(ACTIVE_ID) == "report-period-select"
+        # the row is still picked out, just not focused
+        assert page.locator('#report-content tr[aria-current="true"]').count() == 1
+        page.keyboard.press("ArrowDown")
+        settle(page, handled)
+        _report(page)
+        assert _query(_hash(page))["period"] != q["period"]
+        assert page.evaluate(ACTIVE_ID) == "report-period-select"
+        page.select_option("#report-period-select", "last_month")
+        settle(page, handled)
+        _report(page)
+        assert page.evaluate(ACTIVE_ID) == "report-period-select"
+    finally:
+        page.close()
+
+    # the 1099 summary: Generate from the keyboard keeps focus on Generate
+    vid = books["vendor2"]
+    page, handled = _open_at(
+        browser, company, f"#/reports/1099-summary?year=2026&vendor_id={vid}"
+    )
+    try:
+        page.wait_for_selector("#report-1099-content table")
+        assert page.evaluate(FOCUSED_KEY) == f"vendor:{vid}"
+        generate = page.get_by_role("button", name="Generate")
+        generate.focus()
+        page.keyboard.press("Enter")
+        settle(page, handled)
+        page.wait_for_selector("#report-1099-content table")
+        assert page.evaluate("() => document.activeElement.textContent") == "Generate"
+        assert page.locator('#report-1099-content tr[aria-current="true"]').count() == 1
+    finally:
+        page.close()
+
+
+def test_back_from_a_report_opened_on_the_customer_or_vendor_page_returns_to_the_page(
+    browser, company, books
+):
+    """The page has an address of its own (#/customers/12): Back from the
+    report comes back to the page, not the list, and a reload keeps it."""
+    cid, vid = books["customer"], books["vendor"]
+    page, handled = _home(browser, company)
+    try:
+        _open_customer(page, handled, cid)
+        assert _hash(page) == f"#/customers/{cid}"
+        page.get_by_role("link", name="Income by Customer").click()
+        _report(page)
+        assert page.evaluate(TITLE) == "Income by Customer"
+        page.go_back()
+        page.wait_for_function(
+            "() => document.getElementById('modal-title').textContent.startsWith('Customer — ')"
+        )
+        settle(page, handled)
+        assert _hash(page) == f"#/customers/{cid}"
+        assert page.evaluate(TITLE) == "Customer — Salt & Pine Catering Co."
+        # Back again: the list, the page gone
+        page.go_back()
+        page.wait_for_function(
+            "() => document.getElementById('modal-overlay').classList.contains('hidden')"
+        )
+        assert _hash(page) == "#/customers"
+
+        _open_vendor(page, handled, vid)
+        assert _hash(page) == f"#/vendors/{vid}"
+        page.get_by_role("link", name="A/P Aging").click()
+        _report(page)
+        page.go_back()
+        page.wait_for_function(
+            "() => document.getElementById('modal-title').textContent.startsWith('Vendor — ')"
+        )
+        settle(page, handled)
+        assert _hash(page) == f"#/vendors/{vid}"
+        assert page.evaluate(TITLE) == "Vendor — Cascade Flour Mill"
+    finally:
+        page.close()
+
+    # a reload on the address: the page over its list
+    page, handled = _open_at(browser, company, f"#/customers/{cid}")
+    try:
+        page.wait_for_function(
+            "() => document.getElementById('modal-title').textContent.startsWith('Customer — ')"
+        )
+        assert page.locator("#customer-tbody").count() == 1
+        assert page.evaluate(TITLE) == "Customer — Salt & Pine Catering Co."
+    finally:
+        page.close()
+    page, handled = _open_at(browser, company, f"#/vendors/{vid}")
+    try:
+        page.wait_for_function(
+            "() => document.getElementById('modal-title').textContent.startsWith('Vendor — ')"
+        )
+        assert page.evaluate(TITLE) == "Vendor — Cascade Flour Mill"
     finally:
         page.close()
 

@@ -6,6 +6,11 @@ const App = {
     routes: {
         '/':              { page: 'dashboard',       label: 'Dashboard',          render: () => DashboardPage.render() },
         '/customers':     { page: 'customers',       label: 'Customer Center',    render: () => CustomersPage.render() },
+        // A customer's or a vendor's page (a dialog over its list) has an
+        // address of its own (#238, R8 review): a report opened from the
+        // page comes Back to the page, not the list, and a reload keeps it.
+        // The list row and the report rows go there (App.documentAddress).
+        '/customers/:id': { page: 'customers',       label: 'Customer',           render: (id) => App.withDocument(() => CustomersPage.render(), () => CustomersPage.showDetails(id)) },
         '/jobs':          { page: 'jobs',            label: 'Jobs',               render: () => JobsPage.render() },
         '/jobs/:id':      { page: 'jobs',            label: 'Job',                render: (id) => JobsPage.renderDetail(id) },
         '/job-costs':     { page: 'job-costs',       label: 'Job Cost Entries',   render: () => JobCostsPage.render() },
@@ -18,6 +23,7 @@ const App = {
         '/functional-allocations': { page: 'functional-allocations', label: 'Functional Allocations', nonprofit: true, render: () => AllocationsPage.render() },
         '/functional-allocations/:id': { page: 'functional-allocations', label: 'Functional Allocation', nonprofit: true, render: (id) => App.withDocument(() => AllocationsPage.render(), () => AllocationsPage.view(id)) },
         '/vendors':       { page: 'vendors',         label: 'Vendor Center',      render: () => VendorsPage.render() },
+        '/vendors/:id':   { page: 'vendors',         label: 'Vendor',             render: (id) => App.withDocument(() => VendorsPage.render(), () => VendorsPage.showDetails(id)) },
         '/items':         { page: 'items',           label: 'Item List',          render: () => ItemsPage.render() },
         '/invoices':      { page: 'invoices',        label: 'Create Invoices',    render: () => InvoicesPage.render() },
         // A posting's own address (#/invoices/12, #/deposits/31): the bank
@@ -114,6 +120,17 @@ const App = {
                 .catch(err => toast(err.message || 'Could not open this document', 'error'));
         }, 0);
         return html;
+    },
+
+    // A dialog that is a document (a customer's page opened from its list
+    // row): its address goes on the bar as a history entry of its own,
+    // recording where it was pushed from as App.navigate does, so Back
+    // from a report opened on the page returns to the page, and Back from
+    // the page to the list. Nothing happens when the address is already
+    // there (the page opened through its route).
+    documentAddress(hash) {
+        const here = location.hash || '#/';
+        if (here !== hash) history.pushState({ from: here }, '', hash);
     },
 
     // An address, taken apart: '#/reports/profit-loss?start_date=2026-07-01'

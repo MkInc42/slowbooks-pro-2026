@@ -187,6 +187,9 @@ const VendorsPage = {
                     </table>`}
             </div>`;
 
+        // The page's own address (#/vendors/3, App.routes): Back from a
+        // report opened below returns here, a reload keeps the page.
+        App.documentAddress(`#/vendors/${vendor.id}`);
         openModal(`Vendor — ${vendor.name}`, html);
     },
 

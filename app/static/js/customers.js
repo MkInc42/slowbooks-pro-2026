@@ -240,6 +240,9 @@ const CustomersPage = {
                 </div>
             </div>`;
 
+        // The page's own address (#/customers/12, App.routes): Back from a
+        // report opened below returns here, a reload keeps the page.
+        App.documentAddress(`#/customers/${customer.id}`);
         openModal(`${T('Customer')} — ${customer.name}`, html);
     },
 

@@ -29,26 +29,55 @@ JS = ROOT / "app" / "static" / "js"
 # ── the link map ─────────────────────────────────────────────────────────
 
 
-def _posted_source_types():
-    found = set()
+def _py_sources():
     for folder in ("app/services", "app/routes"):
         for path in (ROOT / folder).rglob("*.py"):
-            found |= set(
-                re.findall(
-                    r'source_type\s*=\s*"([a-z_]+)"', path.read_text(encoding="utf-8")
-                )
-            )
+            yield path.read_text(encoding="utf-8")
+
+
+# The void postings that are not written as source_type="…" literals:
+# the house void takes its type as an argument (void_document(db, txn,
+# "deposit_void")), two routes keep it in a constant (VOID_SOURCE_TYPE),
+# and the journal's void and the QBO import's reversals derive it from
+# the voided posting's own type (f"{txn.source_type}_void"). The review
+# of R11 found these had slipped past a literal-only grep, so an
+# expense_void line fell back to the void posting itself.
+DERIVED_VOID_BASES = ("qbo_ledger", "qbo_journal")
+
+
+def _posted_source_types():
+    found = set()
+    derived_sites = 0
+    for text in _py_sources():
+        found |= set(re.findall(r'source_type\s*=\s*"([a-z_]+)"', text))
+        found |= set(re.findall(r'void_document\([^)]*?"([a-z_]+)"\s*\)', text))
+        found |= set(re.findall(r'VOID_SOURCE_TYPE\s*=\s*"([a-z_]+)"', text))
+        derived_sites += text.count('f"{txn.source_type}_void"')
+    # the derived form is still in use (journal void, QBO reversals) — if it
+    # went away, so should DERIVED_VOID_BASES
+    assert derived_sites >= 3, derived_sites
+    found |= {f"{base}_void" for base in DERIVED_VOID_BASES}
     return found
 
 
-# A posting whose source_id is not a document's: the SPA opens its journal
-# entry (ReportsPage.openDrillDown's fallback, BankingPage's too).
-NO_DOCUMENT = {"payment_apply_void", "qbo_cogs_void"}
+# Every void posting links to the document it voided (its source_id is
+# that posting's id); none is left to the SPA's journal-entry fallback.
+NO_DOCUMENT = set()
 
 
 def test_every_source_type_the_app_posts_has_a_link():
     posted = _posted_source_types()
     assert "job_cost" in posted and "restriction_release" in posted
+    # the ones a literal-only grep missed (R11 review)
+    assert {
+        "expense_void",
+        "deposit_void",
+        "cc_charge_void",
+        "bank_entry_void",
+        "transfer_void",
+        "qbo_ledger_void",
+        "qbo_journal_void",
+    } <= posted
     unmapped = {t for t in posted if t not in bank_register._LINKS}
     assert unmapped == NO_DOCUMENT, sorted(unmapped)
 
@@ -66,6 +95,12 @@ def test_the_pages_with_a_viewer_link_by_document_id_and_the_rest_by_journal():
     # a void links to the document it voided
     assert by_id["invoice_void"] == by_id["invoice"]
     assert by_id["bill_void"] == by_id["bill"]
+    # a document addressed by its transaction id: its void (keyed by that
+    # id) links to the same page
+    for doc in ("expense", "deposit", "cc_charge", "transfer", "bank_entry"):
+        assert by_id[f"{doc}_void"] == by_txn[doc].replace("{txn}", "{id}"), doc
+    assert by_id["manual_void"] == "/#/journal/{id}"
+    assert by_id["payment_apply_void"] == "/#/journal/{id}"
     for kind in (
         "pto",
         "check",
@@ -106,6 +141,26 @@ def test_a_job_cost_a_credit_memo_and_a_void_link_to_their_pages(client, books):
     assert memo["source_link"] == f"/#/credit-memos/{books['memo']}"
     [void] = [e for e in ar["entries"] if e["source_type"] == "invoice_void"]
     assert void["source_link"] == f"/#/invoices/{books['void']}" and void["voided"]
+    # the voided expense (entered twice, 2026-09-03): its void line opens the
+    # expense, not the void posting (R11 review)
+    cash = client.get(
+        "/api/reports/account-transactions",
+        params={
+            "account_id": accounts["1000"]["id"],
+            "start_date": "2026-09-01",
+            "end_date": "2026-09-30",
+        },
+    ).json()
+    [expense_void] = [e for e in cash["entries"] if e["source_type"] == "expense_void"]
+    [expense] = [
+        e
+        for e in cash["entries"]
+        if e["source_type"] == "expense"
+        and e["transaction_id"] == expense_void["source_id"]
+    ]
+    assert expense["voided"]
+    assert expense["source_link"] == f"/#/expenses/{expense['transaction_id']}"
+    assert expense_void["source_link"] == expense["source_link"]
     # the register sends the same fields the drill-down now shows
     assert {"payee", "cleared", "reconciliation_id", "voided"} <= set(cost)
     assert "opening_balance" in drill and "period_debit" in drill
