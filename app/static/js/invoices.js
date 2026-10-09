@@ -472,6 +472,8 @@ const InvoicesPage = {
                 API.post(`/invoices/${id}/duplicate`, allow ? { allow_zero_total: true } : undefined));
             if (!inv) return;
             toast(`Duplicated as ${T('Invoice')} #${inv.invoice_number}`);
+            // another customer's job stored on the original was left off
+            if (inv.jobs_left_off && inv.jobs_left_off.length) toast(JobPicker.leftOffNote(inv.jobs_left_off), 'info');
             closeModal();
             App.navigate('#/invoices');
         } catch (err) { toast(err.message, 'error'); }
@@ -844,7 +846,9 @@ const InvoicesPage = {
                 quantity: parseFloat(row.querySelector('.line-qty')?.value) || 1,
                 is_taxable: row.querySelector('.line-taxable') ? row.querySelector('.line-taxable').checked : null,
                 rate: parseFloat(row.querySelector('.line-rate')?.value) || 0,
-                job_id: row.dataset.jobId ? parseInt(row.dataset.jobId) : null,
+                // a stored line job of another customer is dropped, so the
+                // save clears it (the server refuses one it is asked to keep)
+                job_id: JobPicker.ownJob(form, row.dataset.jobId ? parseInt(row.dataset.jobId) : null),
                 class_id: InvoicesPage.lineClassFromRow(row),
                 cost_code_id: row.dataset.costCodeId ? parseInt(row.dataset.costCodeId) : null,
                 line_order: i,

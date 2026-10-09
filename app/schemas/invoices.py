@@ -164,6 +164,10 @@ class InvoiceResponse(BaseModel):
     notes: Optional[str]
     class_id: Optional[int] = None
     job_id: Optional[int] = None
+    # Set by convert and duplicate only: the jobs of another customer the
+    # copy left off, as "Customer: Job" (a stored job from before the rule
+    # that an invoice carries its own customer's jobs). Empty otherwise.
+    jobs_left_off: list[str] = []
     is_sales_receipt: bool = False
     is_pledge: bool = False
     fair_value_amount: Optional[Decimal] = None

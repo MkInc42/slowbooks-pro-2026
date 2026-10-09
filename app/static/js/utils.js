@@ -656,6 +656,24 @@ const JobPicker = {
         if (!custSel || !custSel.id) return [];
         return Array.from(document.querySelectorAll(`select[data-customer-select="${CSS.escape(custSel.id)}"]`));
     },
+    // A line's stored job id, kept only if it is the form's customer's: a
+    // job of another customer stored on a line (books from before the rule
+    // that a document carries its own customer's jobs) is dropped, so the
+    // save clears it. A job the picker doesn't list (an inactive one) is
+    // kept — it can't be told apart from the customer's own.
+    ownJob(form, jobId) {
+        if (!jobId || !form.job_id || !form.customer_id || !form.customer_id.value) return jobId;
+        const opt = Array.from(form.job_id.options).find(o => o.value === String(jobId));
+        if (!opt || !opt.dataset.customer) return jobId;
+        return opt.dataset.customer === form.customer_id.value ? jobId : null;
+    },
+    // What to say when a copy (a converted estimate, a duplicated invoice)
+    // left another customer's jobs off: the server names them.
+    leftOffNote(names) {
+        if (!names || !names.length) return '';
+        const one = names.length === 1;
+        return `${T(one ? 'Job' : 'Jobs')} ${names.join(', ')} ${one ? "isn't" : "aren't"} this ${T('customer')}'s and ${one ? 'was' : 'were'} left off`;
+    },
 };
 
 // The select's own focus ran the filter, and the type-ahead box in front of

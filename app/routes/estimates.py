@@ -38,7 +38,11 @@ from app.services.accounting import (
     get_sales_tax_account_id,
 )
 from app.services.donor_documents import document_label
-from app.services.jobs_service import refuse_other_customers_jobs
+from app.services.jobs_service import (
+    own_job,
+    refuse_other_customers_jobs,
+    refuse_other_customers_jobs_on_edit,
+)
 from app.services.terminology import document_reference, terms_from_db
 
 router = APIRouter(prefix="/api/estimates", tags=["estimates"])
@@ -196,17 +200,10 @@ def update_estimate(
             raise HTTPException(status_code=404, detail="Customer not found")
         # a different customer, so their address
         changes.update(_customer_bill_to(customer))
-    # An edit that touches the customer, the job or the lines leaves the
-    # estimate on its customer's job, on its header and its lines (resent
-    # or kept) (NEW-36); one that touches none of them saves as it is.
-    if "customer_id" in changes or "job_id" in changes or data.lines is not None:
-        refuse_other_customers_jobs(
-            db,
-            changes.get("customer_id") or estimate.customer_id,
-            changes.get("job_id", estimate.job_id),
-            data.lines if data.lines is not None else estimate.lines,
-            "estimate",
-        )
+    # What the edit changes — the customer, the header's job, a line's job —
+    # must leave the estimate on its customer's jobs (NEW-36); what it
+    # leaves alone is not judged.
+    refuse_other_customers_jobs_on_edit(db, estimate, changes, data.lines, "estimate")
     for key, val in changes.items():
         setattr(estimate, key, val)
 
@@ -365,6 +362,10 @@ def convert_to_invoice(
             {f"ship_{k}": getattr(customer, f"ship_{k}") for k in _ADDRESS_PARTS}
         )
 
+    # The copy carries the customer's jobs only; another customer's job
+    # stored on the estimate (books from before the rule) is left off,
+    # and the response says which (NEW-36).
+    left_off: list[str] = []
     invoice = Invoice(
         invoice_number=invoice_number,
         customer_id=estimate.customer_id,
@@ -378,7 +379,7 @@ def convert_to_invoice(
         total=total,
         balance_due=total,
         class_id=estimate.class_id,
-        job_id=estimate.job_id,
+        job_id=own_job(db, estimate.customer_id, estimate.job_id, left_off),
         notes=estimate.notes or settings.get("invoice_notes") or None,
         **address,
     )
@@ -395,7 +396,7 @@ def convert_to_invoice(
             rate=eline.rate,
             amount=eline.amount,
             class_name=eline.class_name,
-            job_id=eline.job_id,
+            job_id=own_job(db, estimate.customer_id, eline.job_id, left_off),
             cost_code_id=eline.cost_code_id,
             is_taxable=cline.is_taxable,
             line_order=eline.line_order,
@@ -479,4 +480,5 @@ def convert_to_invoice(
     resp = InvoiceResponse.model_validate(invoice)
     if invoice.customer:
         resp.customer_name = invoice.customer.name
+    resp.jobs_left_off = left_off
     return resp

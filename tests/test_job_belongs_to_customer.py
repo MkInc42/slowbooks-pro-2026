@@ -20,9 +20,9 @@ import pytest
 
 from app.models.contacts import Customer
 from app.models.credit_memos import CreditMemo
-from app.models.estimates import Estimate
+from app.models.estimates import Estimate, EstimateLine
 from app.models.in_kind import InKindGift
-from app.models.invoices import Invoice
+from app.models.invoices import Invoice, InvoiceLine
 from app.models.payments import Payment
 from app.models.recurring import RecurringInvoice
 from app.models.transactions import Transaction
@@ -80,11 +80,14 @@ def _invoice_body(customer_id, **over):
     }
 
 
+HINT = " — clear the Job field or pick one of this customer's."
+
+
 def _refused(resp, document, where=""):
     assert resp.status_code == 400, resp.text
     detail = resp.json()["detail"]
     assert REFUSED in detail and detail.endswith(
-        f"than this {document}{where}."
+        f"than this {document}{where}{HINT}"
     ), detail
 
 
@@ -100,7 +103,8 @@ def test_an_invoice_takes_only_its_customers_job(
     )
     _refused(r, "invoice")
     assert r.json()["detail"] == (
-        "Job Roof belongs to a different customer than this invoice."
+        "Job Roof belongs to a different customer than this invoice — clear the "
+        "Job field or pick one of this customer's."
     )
     assert _count(TestSession) == before, "nothing was written"
 
@@ -213,7 +217,21 @@ def test_a_nonprofit_is_told_in_its_own_words(client, seed_accounts, two_jobs):
     )
     assert r.status_code == 400, r.text
     assert r.json()["detail"] == (
-        "Grant Roof belongs to a different donor than this pledge."
+        "Grant Roof belongs to a different donor than this pledge — clear the "
+        "Grant field or pick one of this donor's."
+    )
+    # and a move is refused in the same words
+    pledge = client.post(
+        "/api/invoices",
+        json=_invoice_body(two_jobs["birch"], job_id=two_jobs["roof"], is_pledge=True),
+    )
+    assert pledge.status_code == 201, pledge.text
+    r = client.put(
+        f"/api/jobs/{two_jobs['roof']}", json={"customer_id": two_jobs["alder"]}
+    )
+    assert r.status_code == 400, r.text
+    assert r.json()["detail"] == (
+        "Grant Roof is on 1 pledge for Birch Co; move those first."
     )
 
 
@@ -389,24 +407,39 @@ def test_an_in_kind_gift_takes_only_its_donors_grant(
     r = client.post("/api/in-kind-gifts", json={**body, "job_id": two_jobs["roof"]})
     assert r.status_code == 400, r.text
     assert r.json()["detail"] == (
-        "Grant Roof belongs to a different donor than this in-kind gift."
+        "Grant Roof belongs to a different donor than this in-kind gift — clear "
+        "the Grant field or pick one of this donor's."
     )
     r = client.post(
         "/api/in-kind-gifts",
         json={**body, "lines": [{**line, "job_id": two_jobs["roof"]}]},
     )
-    assert r.status_code == 400 and r.json()["detail"].endswith("(line 1).")
+    assert (
+        r.status_code == 400
+        and "(line 1) — clear the Grant field" in r.json()["detail"]
+    )
     assert _count(TestSession) == before
 
     r = client.post("/api/in-kind-gifts", json={**body, "job_id": two_jobs["kitchen"]})
     assert r.status_code == 201, r.text
+    # the gift carries the grant, so the grant stays with its donor
+    r = client.put(
+        f"/api/jobs/{two_jobs['kitchen']}", json={"customer_id": two_jobs["birch"]}
+    )
+    assert r.status_code == 400, r.text
+    assert r.json()["detail"] == (
+        "Grant Kitchen is on 1 in-kind gift for Alder Co; move those first."
+    )
 
 
 # ── books from before the rule ───────────────────────────────────────────
 # A document that already carries another customer's job (seeded by the old
-# fixture, or entered before 2.22.0) is kept as it is by an edit that does
-# not touch the customer, the job or the lines — a note, a date, the terms —
-# and refused by one that does. The mismatch is written straight into the
+# fixture, or entered before 2.22.0) is judged by what an edit CHANGES: a
+# new customer, a new header job, a line's new job. What the edit leaves
+# alone — the job sent back as stored, a note, a date, the terms — is not
+# judged, so the form, which sends every field, still saves it; and a
+# line's stored mismatch is cleared by sending the line without it, which
+# is what the form does. The mismatch is written straight into the
 # database, since the API will no longer create it.
 
 
@@ -416,39 +449,93 @@ def _stored_mismatch(db_session, model, doc_id, job_id):
     db_session.commit()
 
 
-def test_a_notes_only_edit_keeps_an_invoice_with_an_old_mismatch(
+def _by_job_income(client):
+    """Income by job over every date, the No job column under None."""
+    r = client.get(
+        "/api/reports/profit-loss-by-job?start_date=2020-01-01&end_date=2030-12-31"
+        "&include_empty=true"
+    )
+    assert r.status_code == 200, r.text
+    return {j["job_id"]: float(j["income"]) for j in r.json()["jobs"]}
+
+
+def test_the_forms_save_keeps_an_invoice_with_an_old_mismatch(
     client, db_session, seed_accounts, two_jobs
 ):
-    inv = client.post("/api/invoices", json=_invoice_body(two_jobs["alder"])).json()
+    inv = client.post(
+        "/api/invoices",
+        json=_invoice_body(two_jobs["alder"], lines=[_line(), _line(rate=40)]),
+    ).json()
+    # the old fixture's doing: Birch's job on Alder's invoice, header and line 2
     _stored_mismatch(db_session, Invoice, inv["id"], two_jobs["roof"])
+    _stored_mismatch(db_session, InvoiceLine, inv["lines"][1]["id"], two_jobs["roof"])
 
-    r = client.put(f"/api/invoices/{inv['id']}", json={"notes": "Paid at the counter"})
+    # what the form sends for a note: every field as stored, the line's
+    # foreign job dropped (the form knows the customer's jobs)
+    r = client.put(
+        f"/api/invoices/{inv['id']}",
+        json={
+            "customer_id": two_jobs["alder"],
+            "job_id": two_jobs["roof"],
+            "notes": "Paid at the counter",
+            "lines": [_line(), _line(rate=40)],
+        },
+    )
     assert r.status_code == 200, r.text
     assert r.json()["notes"] == "Paid at the counter"
-    assert r.json()["job_id"] == two_jobs["roof"], "the untouched job stays"
+    assert r.json()["job_id"] == two_jobs["roof"], "the untouched header job stays"
+    assert [ln["job_id"] for ln in r.json()["lines"]] == [None, None], "cleared"
     r = client.put(f"/api/invoices/{inv['id']}", json={"terms": "Net 60"})
     assert r.status_code == 200, r.text
 
-    # touched: the lines resent, the job named (even unchanged), a customer
-    # the job is not for
+    # a line sent back with its stored job is untouched too
+    lines = client.get(f"/api/invoices/{inv['id']}").json()["lines"]
+    _stored_mismatch(db_session, InvoiceLine, lines[1]["id"], two_jobs["roof"])
+    r = client.put(
+        f"/api/invoices/{inv['id']}",
+        json={"lines": [_line(), _line(rate=40, job_id=two_jobs["roof"])]},
+    )
+    assert r.status_code == 200, r.text
+    assert r.json()["lines"][1]["job_id"] == two_jobs["roof"]
+
+    # changed: a line's new job, a new line with one, another header job,
+    # a customer none of them are for
+    third = client.post("/api/customers", json={"name": "Cedar Co"}).json()
+    patio = client.post(
+        "/api/jobs", json={"customer_id": third["id"], "name": "Patio"}
+    ).json()
     _refused(
-        client.put(f"/api/invoices/{inv['id']}", json={"lines": [_line()]}), "invoice"
+        client.put(
+            f"/api/invoices/{inv['id']}",
+            json={"lines": [_line(job_id=patio["id"]), _line(rate=40)]},
+        ),
+        "invoice",
+        " (line 1)",
     )
     _refused(
-        client.put(f"/api/invoices/{inv['id']}", json={"job_id": two_jobs["roof"]}),
+        client.put(
+            f"/api/invoices/{inv['id']}",
+            json={"lines": [_line(), _line(rate=40), _line(job_id=patio["id"])]},
+        ),
+        "invoice",
+        " (line 3)",
+    )
+    _refused(
+        client.put(f"/api/invoices/{inv['id']}", json={"job_id": patio["id"]}),
         "invoice",
     )
-    third = client.post("/api/customers", json={"name": "Cedar Co"}).json()
     _refused(
         client.put(f"/api/invoices/{inv['id']}", json={"customer_id": third["id"]}),
         "invoice",
     )
-    # and the ways out: the job cleared, or the customer the job is for
+    # the ways out: the job cleared, or one of the customer's own
     r = client.put(f"/api/invoices/{inv['id']}", json={"job_id": None})
     assert r.status_code == 200 and r.json()["job_id"] is None, r.text
+    r = client.put(f"/api/invoices/{inv['id']}", json={"job_id": two_jobs["kitchen"]})
+    assert r.status_code == 200 and r.json()["job_id"] == two_jobs["kitchen"], r.text
 
 
-def test_a_notes_only_edit_keeps_an_estimate_with_an_old_mismatch(
+def test_the_forms_save_keeps_an_estimate_with_an_old_mismatch(
     client, db_session, seed_accounts, two_jobs
 ):
     est = client.post(
@@ -461,20 +548,34 @@ def test_a_notes_only_edit_keeps_an_estimate_with_an_old_mismatch(
         },
     ).json()
     _stored_mismatch(db_session, Estimate, est["id"], two_jobs["roof"])
+    _stored_mismatch(db_session, EstimateLine, est["lines"][0]["id"], two_jobs["roof"])
 
     r = client.put(f"/api/estimates/{est['id']}", json={"notes": "Valid 30 days"})
     assert r.status_code == 200, r.text
     assert r.json()["job_id"] == two_jobs["roof"]
+    # the form's save: every field as stored, its lines without jobs
     r = client.put(
-        f"/api/estimates/{est['id']}", json={"expiration_date": "2026-05-04"}
+        f"/api/estimates/{est['id']}",
+        json={
+            "customer_id": two_jobs["alder"],
+            "job_id": two_jobs["roof"],
+            "expiration_date": "2026-05-04",
+            "lines": [_line()],
+        },
     )
     assert r.status_code == 200, r.text
+    assert r.json()["lines"][0]["job_id"] is None, "the line's mismatch is cleared"
 
+    third = client.post("/api/customers", json={"name": "Cedar Co"}).json()
+    patio = client.post(
+        "/api/jobs", json={"customer_id": third["id"], "name": "Patio"}
+    ).json()
     _refused(
-        client.put(f"/api/estimates/{est['id']}", json={"lines": [_line()]}), "estimate"
+        client.put(f"/api/estimates/{est['id']}", json={"job_id": patio["id"]}),
+        "estimate",
     )
     _refused(
-        client.put(f"/api/estimates/{est['id']}", json={"job_id": two_jobs["roof"]}),
+        client.put(f"/api/estimates/{est['id']}", json={"customer_id": third["id"]}),
         "estimate",
     )
     # the customer the job is for makes it consistent again
@@ -488,7 +589,7 @@ def test_a_notes_only_edit_keeps_an_estimate_with_an_old_mismatch(
     )
 
 
-def test_a_notes_only_edit_keeps_a_schedule_with_an_old_mismatch(
+def test_the_forms_save_keeps_a_schedule_with_an_old_mismatch(
     client, db_session, seed_accounts, two_jobs
 ):
     rec = client.post(
@@ -505,19 +606,179 @@ def test_a_notes_only_edit_keeps_a_schedule_with_an_old_mismatch(
     r = client.put(f"/api/recurring/{rec['id']}", json={"notes": "Bill on the 1st"})
     assert r.status_code == 200, r.text
     assert r.json()["job_id"] == two_jobs["roof"]
-    r = client.put(f"/api/recurring/{rec['id']}", json={"end_date": "2026-12-01"})
-    assert r.status_code == 200, r.text
-
-    _refused(
-        client.put(
-            f"/api/recurring/{rec['id']}",
-            json={"lines": [{"description": "Retainer", "quantity": 1, "rate": "120"}]},
-        ),
-        "recurring invoice",
+    # the form's save: the job as stored, the lines resent
+    r = client.put(
+        f"/api/recurring/{rec['id']}",
+        json={
+            "job_id": two_jobs["roof"],
+            "end_date": "2026-12-01",
+            "lines": [{"description": "Retainer", "quantity": 1, "rate": "120"}],
+        },
     )
+    assert r.status_code == 200, r.text
+    assert r.json()["job_id"] == two_jobs["roof"]
+
+    r = client.put(f"/api/recurring/{rec['id']}", json={"job_id": None})
+    assert r.status_code == 200 and r.json()["job_id"] is None, r.text
+    # changed back to the other customer's job: refused
     _refused(
         client.put(f"/api/recurring/{rec['id']}", json={"job_id": two_jobs["roof"]}),
         "recurring invoice",
     )
     r = client.put(f"/api/recurring/{rec['id']}", json={"job_id": two_jobs["kitchen"]})
     assert r.status_code == 200 and r.json()["job_id"] == two_jobs["kitchen"], r.text
+
+
+# ── copies: convert, duplicate, generate ─────────────────────────────────
+# A copy of a document with an old mismatch carries the customer's jobs
+# only; the foreign job is left off, never minted again, and the copy is
+# never refused for it.
+
+
+def test_converting_an_estimate_leaves_another_customers_job_off(
+    client, db_session, seed_accounts, two_jobs
+):
+    est = client.post(
+        "/api/estimates",
+        json={
+            "customer_id": two_jobs["alder"],
+            "date": "2026-04-04",
+            "tax_rate": 0,
+            "lines": [_line(), _line(rate=40, job_id=two_jobs["kitchen"])],
+        },
+    ).json()
+    _stored_mismatch(db_session, Estimate, est["id"], two_jobs["roof"])
+    _stored_mismatch(db_session, EstimateLine, est["lines"][0]["id"], two_jobs["roof"])
+
+    r = client.post(f"/api/estimates/{est['id']}/convert")
+    assert r.status_code == 200, r.text
+    inv = r.json()
+    assert inv["job_id"] is None
+    assert [ln["job_id"] for ln in inv["lines"]] == [None, two_jobs["kitchen"]]
+    assert inv["jobs_left_off"] == ["Birch Co: Roof"]
+    income = _by_job_income(client)
+    assert income[two_jobs["roof"]] == 0, "nothing counted under Birch's job"
+    assert sum(income.values()) == 140, "and all of it counted for Alder"
+
+
+def test_duplicating_an_invoice_leaves_another_customers_job_off(
+    client, db_session, seed_accounts, two_jobs
+):
+    inv = client.post(
+        "/api/invoices", json=_invoice_body(two_jobs["alder"], lines=[_line()])
+    ).json()
+    _stored_mismatch(db_session, Invoice, inv["id"], two_jobs["roof"])
+    _stored_mismatch(db_session, InvoiceLine, inv["lines"][0]["id"], two_jobs["roof"])
+    counted_before = _by_job_income(client)[two_jobs["roof"]]
+
+    r = client.post(f"/api/invoices/{inv['id']}/duplicate")
+    assert r.status_code == 201, r.text
+    copy = r.json()
+    assert copy["job_id"] is None and copy["lines"][0]["job_id"] is None
+    assert copy["jobs_left_off"] == ["Birch Co: Roof"]
+    # an invoice carrying no foreign job: a plain copy, nothing left off
+    assert (
+        client.post(f"/api/invoices/{copy['id']}/duplicate").json()["jobs_left_off"]
+        == []
+    )
+    assert (
+        _by_job_income(client)[two_jobs["roof"]] == counted_before
+    ), "the copy added nothing under Birch's job"
+
+
+def test_a_generated_invoice_leaves_another_customers_job_off(
+    client, db_session, seed_accounts, two_jobs, caplog
+):
+    rec = client.post(
+        "/api/recurring",
+        json={
+            "customer_id": two_jobs["alder"],
+            "frequency": "monthly",
+            "start_date": "2026-01-01",
+            "lines": [{"description": "Retainer", "quantity": 1, "rate": "100"}],
+        },
+    ).json()
+    _stored_mismatch(db_session, RecurringInvoice, rec["id"], two_jobs["roof"])
+
+    with caplog.at_level("WARNING", logger="app.services.recurring_service"):
+        r = client.post("/api/recurring/generate?as_of=2026-01-01")
+    assert r.status_code == 200, r.text
+    assert r.json()["invoices_created"] == 1
+    made = client.get(f"/api/invoices/{r.json()['invoice_ids'][0]}").json()
+    assert made["recurring_invoice_id"] == rec["id"] and made["job_id"] is None
+    assert any(
+        "Birch Co: Roof" in m and "left off" in m for m in caplog.messages
+    ), caplog.messages
+    assert _by_job_income(client)[two_jobs["roof"]] == 0
+
+
+# ── moving a job to another customer ─────────────────────────────────────
+
+
+def test_a_job_moves_only_while_nothing_carries_it(client, seed_accounts, two_jobs):
+    kitchen, alder, birch = two_jobs["kitchen"], two_jobs["alder"], two_jobs["birch"]
+    inv = client.post("/api/invoices", json=_invoice_body(alder, job_id=kitchen)).json()
+    client.post(
+        "/api/sales-receipts",
+        json={
+            "customer_id": alder,
+            "date": "2026-04-03",
+            "method": "card",
+            "job_id": kitchen,
+            "lines": [_line()],
+        },
+    )
+    client.post(
+        "/api/credit-memos",
+        json={
+            "customer_id": alder,
+            "date": "2026-04-02",
+            "job_id": kitchen,
+            "lines": [{"description": "Credit", "quantity": 1, "rate": 50}],
+        },
+    )
+    client.post(
+        "/api/estimates",
+        json={
+            "customer_id": alder,
+            "date": "2026-04-04",
+            "tax_rate": 0,
+            "lines": [_line(job_id=kitchen)],  # on a line only
+        },
+    )
+    client.post(
+        "/api/recurring",
+        json={
+            "customer_id": alder,
+            "frequency": "monthly",
+            "start_date": "2026-01-01",
+            "job_id": kitchen,
+            "lines": [{"description": "Retainer", "quantity": 1, "rate": "100"}],
+        },
+    )
+    r = client.put(f"/api/jobs/{kitchen}", json={"customer_id": birch})
+    assert r.status_code == 400, r.text
+    assert r.json()["detail"] == (
+        "Job Kitchen is on 1 invoice, 1 sales receipt, 1 credit memo, 1 estimate "
+        "and 1 recurring invoice for Alder Co; move those first."
+    )
+    assert client.get(f"/api/jobs/{kitchen}").json()["customer_id"] == alder
+
+    # a void document can't be moved, so it isn't counted
+    assert client.post(f"/api/invoices/{inv['id']}/void").status_code == 200
+    r = client.put(f"/api/jobs/{kitchen}", json={"customer_id": birch})
+    assert r.json()["detail"].startswith("Job Kitchen is on 1 sales receipt, ")
+
+    # the same customer, or a rename, is not a move
+    r = client.put(
+        f"/api/jobs/{kitchen}", json={"customer_id": alder, "name": "Kitchen remodel"}
+    )
+    assert r.status_code == 200, r.text
+
+    # a job nothing carries still moves
+    patio = client.post(
+        "/api/jobs", json={"customer_id": alder, "name": "Patio"}
+    ).json()
+    r = client.put(f"/api/jobs/{patio['id']}", json={"customer_id": birch})
+    assert r.status_code == 200, r.text
+    assert r.json()["full_name"] == "Birch Co: Patio"

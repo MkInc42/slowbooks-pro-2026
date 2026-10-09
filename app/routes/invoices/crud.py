@@ -31,7 +31,10 @@ from app.routes.invoices.helpers import (
     _reverse_and_delete_journal,
 )
 from app.services.donor_documents import document_label
-from app.services.jobs_service import refuse_other_customers_jobs
+from app.services.jobs_service import (
+    refuse_other_customers_jobs,
+    refuse_other_customers_jobs_on_edit,
+)
 from app.services.terminology import document_reference, terms_from_db
 
 
@@ -265,24 +268,19 @@ def update_invoice(invoice_id: int, data: InvoiceUpdate, db: Session = Depends(g
     update_data = data.model_dump(
         exclude_unset=True, exclude={"lines", "allow_zero_total"}
     )
-    # An edit that touches the customer, the job or the lines leaves the
-    # invoice on its customer's job, on its header and its lines (resent or
-    # kept) (NEW-36). One that touches none of them — notes, dates, terms —
-    # saves as it is: a job the user didn't touch (books from before this
-    # rule) must not block a memo.
-    if (
-        "customer_id" in update_data
-        or "job_id" in update_data
-        or data.lines is not None
-    ):
-        refuse_other_customers_jobs(
-            db,
-            update_data.get("customer_id") or invoice.customer_id,
-            update_data.get("job_id", invoice.job_id),
-            data.lines if data.lines is not None else invoice.lines,
-            document_label(invoice, words).lower(),
-            words,
-        )
+    # What the edit changes — the customer, the header's job, a line's job —
+    # must leave the invoice on its customer's jobs (NEW-36); what it leaves
+    # alone is not judged, so a note saved over a job the user didn't touch
+    # (books from before the rule) goes through, from the form too, which
+    # sends every field as stored.
+    refuse_other_customers_jobs_on_edit(
+        db,
+        invoice,
+        update_data,
+        data.lines,
+        document_label(invoice, words).lower(),
+        words,
+    )
     # Checked against the dates the invoice will have after this edit; a
     # cleared due date is derived from the terms below, so it cannot be early.
     refuse_due_before_date(

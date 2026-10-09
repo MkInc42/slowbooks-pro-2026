@@ -3,6 +3,7 @@
 # Feature 2: Infrastructure C (background scheduler / cron)
 # ============================================================================
 
+import logging
 from datetime import date, timedelta
 from decimal import Decimal
 from dateutil.relativedelta import relativedelta
@@ -13,6 +14,7 @@ from sqlalchemy.exc import IntegrityError
 from app.models.recurring import RecurringInvoice
 from app.models.invoices import Invoice, InvoiceLine
 from app.models.items import Item
+from app.services.jobs_service import own_job
 from app.services.numbering import next_invoice_number
 from app.services.accounting import (
     taxed_copy_lines,
@@ -23,6 +25,8 @@ from app.services.accounting import (
     get_default_income_account_id,
     get_sales_tax_account_id,
 )
+
+logger = logging.getLogger(__name__)
 
 
 def _advance_next_due(current: date, frequency: str) -> date:
@@ -117,6 +121,21 @@ def generate_due_invoices(
         # back only this attempt — not the other invoices already generated
         # in this batch — and a template that can't get a number is simply
         # left for the next run instead of aborting the whole batch.
+        # The invoice carries the schedule's customer's job only: another
+        # customer's job stored on the schedule (books from before the
+        # rule) is left off rather than minted again every period, and the
+        # invoice is still generated (NEW-36).
+        left_off: list[str] = []
+        job_id = own_job(db, rec.customer_id, rec.job_id, left_off)
+        if left_off:
+            logger.warning(
+                "Recurring invoice %s for %s: job %s belongs to a different "
+                "customer and was left off the generated invoice",
+                rec.id,
+                rec.customer.name if rec.customer else rec.customer_id,
+                ", ".join(left_off),
+            )
+
         invoice = None
         invoice_number = None
         for _ in range(10):
@@ -134,7 +153,7 @@ def generate_due_invoices(
                 balance_due=total,
                 notes=rec.notes,
                 class_id=rec.class_id,
-                job_id=rec.job_id,
+                job_id=job_id,
                 recurring_invoice_id=rec.id,
                 is_pledge=nonprofit,
             )

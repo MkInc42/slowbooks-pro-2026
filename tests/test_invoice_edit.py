@@ -870,11 +870,11 @@ def test_the_invoice_form_sends_each_lines_dimensions_back():
         assert f'{attr}="${{dim(line.{field})}}"' in row, attr
     save = js[js.index("async save(e, id)") :]
     save = save[: save.index("const data = {")]
-    for field, key in (
-        ("job_id", "jobId"),
-        ("cost_code_id", "costCodeId"),
-    ):
-        assert f"{field}: row.dataset.{key}" in save, field
+    # the cost code as stored; the job as stored too, unless it is another
+    # customer's (books from before the rule that a document carries its
+    # own customer's jobs, 2.22.0 NEW-36), which the save clears
+    assert "cost_code_id: row.dataset.costCodeId" in save
+    assert "job_id: JobPicker.ownJob(form, row.dataset.jobId" in save
     # the class goes through the line's own cell since 2.22 (#243): the
     # cell's choice where one is drawn, else the stored class as before
     assert "class_id: InvoicesPage.lineClassFromRow(row)," in save

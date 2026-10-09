@@ -10,7 +10,9 @@ Now the customer's choice narrows the list the moment it is made, reaching
 the box does too, a chosen job of another customer is cleared when the
 customer changes, and the server refuses what slips past the form — on
 the invoice form, and on the estimate and sales receipt forms, which share
-the picker.
+the picker. And books from before the rule: a note saved from the form
+over an invoice carrying another customer's job (header and line) goes
+through, the line's foreign job dropped, and the job is then put right.
 
 Skipped, as one module, where playwright or its Chromium is not installed.
 """
@@ -19,6 +21,7 @@ import pytest
 
 pytest.importorskip("playwright.sync_api")
 
+from app.models.invoices import Invoice  # noqa: E402
 from tests.test_browser_grid import _open_at  # noqa: E402
 from tests.test_theme_contrast import (  # noqa: E402,F401  (the fixtures)
     books_fixture,
@@ -169,7 +172,8 @@ def test_the_servers_refusal_reaches_the_form(browser, company, books, jobs):
         page.close()
     assert forced == [str(jobs["gala"]), GALA]
     assert any(
-        t == "Job Waterfront Gala belongs to a different customer than this invoice."
+        t == "Job Waterfront Gala belongs to a different customer than this invoice"
+        " — clear the Job field or pick one of this customer's."
         for t in toasts
     ), toasts
     assert still_open, "the form stays, with what was typed"
@@ -211,3 +215,74 @@ def test_the_estimate_and_sales_receipt_forms_follow_the_customer_too(
         page.close()
     assert walk_in == [NO_JOB]
     assert sr_salt == [NO_JOB, GALA]
+
+
+def _by_job_income(company):
+    r = company.get(
+        "/api/reports/profit-loss-by-job?start_date=2026-09-01&end_date=2026-09-30"
+        "&include_empty=true"
+    )
+    assert r.status_code == 200, r.text
+    return {j["job_id"]: float(j["income"]) for j in r.json()["jobs"]}
+
+
+def test_a_note_saves_over_an_old_mismatch_and_the_job_is_put_right(
+    browser, company, books, jobs, db_session
+):
+    """The skeptic's case: an invoice carrying another customer's job on
+    its header and on a line (the old fixture's doing). A note saved from
+    the form goes through — the form sends every field, and the server
+    judges only what changed, while the form drops the line's foreign job;
+    then the user picks one of the customer's own jobs, and P&L by Job
+    counts the invoice there."""
+    inv = _ok(
+        company.post(
+            "/api/invoices",
+            json={
+                "customer_id": books["customer"],
+                "date": "2026-09-20",
+                "lines": [{"description": "Lanterns", "quantity": 1, "rate": 120}],
+            },
+        )
+    )
+    row = db_session.get(Invoice, inv["id"])
+    row.job_id = jobs["festival"]
+    row.lines[0].job_id = jobs["festival"]
+    db_session.commit()
+    before = _by_job_income(company)
+
+    page, handled = _form(
+        browser, company, "#/invoices", f"InvoicesPage.showForm({inv['id']})"
+    )
+    try:
+        # a note, nothing else touched
+        page.fill("#invoice-form textarea[name=notes]", "Deliver by Friday")
+        page.click("#invoice-form button[type=submit]")
+        page.wait_for_function(f"!({MODAL_SHOWN})()", timeout=5000)
+        settle(page, handled)
+        toasts_after_note = page.evaluate(TOASTS)
+        saved = _ok(company.get(f"/api/invoices/{inv['id']}"))
+
+        # then the job put right: the picker clears the foreign one on the
+        # way in and offers the customer's own
+        page.evaluate(f"async () => {{ await InvoicesPage.showForm({inv['id']}); }}")
+        page.wait_for_function(MODAL_SHOWN, timeout=5000)
+        settle(page, handled)
+        job = page.get_by_role("combobox", name="Job", exact=True)
+        _pick(page, job, "gala", GALA)
+        page.click("#invoice-form button[type=submit]")
+        page.wait_for_function(f"!({MODAL_SHOWN})()", timeout=5000)
+        settle(page, handled)
+        fixed = _ok(company.get(f"/api/invoices/{inv['id']}"))
+    finally:
+        page.close()
+    assert not any(
+        "belongs to a different" in t for t in toasts_after_note
+    ), toasts_after_note
+    assert saved["notes"] == "Deliver by Friday"
+    assert saved["job_id"] == jobs["festival"], "the header's job, untouched, stays"
+    assert saved["lines"][0]["job_id"] is None, "the line's foreign job is dropped"
+    assert fixed["job_id"] == jobs["gala"] and fixed["lines"][0]["job_id"] is None
+    after = _by_job_income(company)
+    assert after[jobs["gala"]] == before.get(jobs["gala"], 0) + 120
+    assert after.get(jobs["festival"], 0) == before.get(jobs["festival"], 0)
