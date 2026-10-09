@@ -139,7 +139,12 @@ jobs:
           # +1: tests/test_active_lists_browser.py (#210 Active/Inactive lists), the same.
           # +2: tests/test_vendor_page.py (#223 the vendor page) and
           # tests/test_bill_edit_browser.py (#225 editing a posted bill), the same.
-          MAX_SKIPS: "107"
+          # +11 for 2.22.0: five Chromium modules (test_browser_report_views,
+          # test_browser_grid, test_browser_classes, test_browser_class_filters,
+          # test_browser_report_links) at one each, test_theme_contrast's second
+          # module-level skip, and five new PDF tests that need WeasyPrint's
+          # native stack (the by-class, by-job and class P&L exports).
+          MAX_SKIPS: "113"
         shell: pwsh
         run: |
           # -v names each test as it starts, so a mid-run death is identified

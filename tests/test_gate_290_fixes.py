@@ -429,7 +429,7 @@ def test_desktop_fetches_get_inline_not_attachment(client, seed_accounts):
 
 
 def test_shim_never_returns_in_silence_when_the_bridge_is_missing():
-    src = open("app/static/js/desktop_shim.js").read()
+    src = open("app/static/js/desktop_shim.js", encoding="utf-8").read()
     assert src.count("bridgeMissing(") >= 3  # pdf, html, liveness check
     assert "pywebviewready" in src and "checkBridge" in src
     assert "save_document_file" in src
@@ -834,15 +834,15 @@ def test_ai_api_key_can_be_cleared_with_an_explicit_empty_string(client):
 
 
 def test_settings_page_never_round_trips_a_blank_ai_key():
-    src = open("app/static/js/settings.js").read()
+    src = open("app/static/js/settings.js", encoding="utf-8").read()
     assert "keyPayload" in src and "ai-settings-key-remove" in src
     assert "api_key: document.getElementById('ai-settings-key').value," not in src
 
 
 def test_nonprofit_vocabulary_on_analytics_aging_and_donor_card():
-    analytics = open("app/static/js/analytics.js").read()
+    analytics = open("app/static/js/analytics.js", encoding="utf-8").read()
     assert '_agingTable(data.ar_aging, T("Customer"))' in analytics
-    reports = open("app/static/js/reports.js").read()
+    reports = open("app/static/js/reports.js", encoding="utf-8").read()
     assert "Sales totals per donor" not in reports
     assert "Contribution totals per donor" in reports
 
