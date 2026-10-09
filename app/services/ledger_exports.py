@@ -66,19 +66,29 @@ def trial_balance_csv(data: dict, company: str) -> str:
     return out.getvalue()
 
 
-def general_ledger_csv(data: dict, company: str) -> str:
+def general_ledger_csv(data: dict, company: str, words=None) -> str:
     """One row per journal line, grouped by account as the screen is:
     Date | Reference | Description | Account number | Account name | Debit |
     Credit | Running balance | Source type | Class (#213, last so a sheet
     that reads the columns by position still lines up). Each account opens with its
     balance brought forward from before the period and closes with a
     period-total row; the period total's net equals that account's Net on
-    the trial balance for the same dates."""
+    the trial balance for the same dates. A ledger for one class says so
+    in its preamble, as the PDF's title does, and carries the class on its
+    brought-forward and period-total rows too, since those balances are
+    the class's alone (NEW-34)."""
     out = io.StringIO()
     w = _SafeWriter(out)
-    _preamble(
-        w, company, "General Ledger", f"{data['start_date']} to {data['end_date']}"
-    )
+    say = words or str
+    cls = data.get("class_name") or ""
+    period = f"{data['start_date']} to {data['end_date']}"
+    if cls:
+        period += (
+            f" ({say('Class')}: {cls} only — each balance brought forward and"
+            f" running balance counts this {say('class').lower()}'s lines alone,"
+            " not the account's whole balance)"
+        )
+    _preamble(w, company, "General Ledger" + (f" — {cls}" if cls else ""), period)
     w.writerow(
         [
             "Date",
@@ -106,7 +116,7 @@ def general_ledger_csv(data: dict, company: str) -> str:
                 "",
                 _money(a["opening_balance"]),
                 "opening",
-                "",
+                cls,
             ]
         )
         for e in a["entries"]:
@@ -135,7 +145,7 @@ def general_ledger_csv(data: dict, company: str) -> str:
                 _money(a["total_credit"]),
                 _money(a["closing_balance"]),
                 "total",
-                "",
+                cls,
             ]
         )
     return out.getvalue()

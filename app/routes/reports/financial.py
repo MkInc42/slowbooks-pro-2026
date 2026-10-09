@@ -1359,7 +1359,7 @@ def general_ledger_csv_route(
 
     data = general_ledger(start_date, end_date, account_id, db, class_id=class_id)
     return _csv_download(
-        general_ledger_csv(data, _company_name(db)),
+        general_ledger_csv(data, _company_name(db), terms_from_db(db)),
         f"general-ledger_{data['start_date']}_{data['end_date']}.csv",
         request,
     )
