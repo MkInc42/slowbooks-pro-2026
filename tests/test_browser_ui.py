@@ -868,9 +868,12 @@ def test_a_general_ledger_account_opens_its_register(browser):
             page.locator("#modal button:has-text('Back to P&L by Class')").count() == 0
         )
 
+        # back through the browser's history (R7): the ledger as it was
+        # left, its period preset and the same dates
         page.click("#modal button:has-text('Back to General Ledger')")
         page.wait_for_selector("#report-content h3 a")
-        assert page.input_value("#report-period-select") == "custom"
+        assert page.input_value("#report-period-select") == "this_year_to_date"
         assert page.input_value("#report-custom-start") == start
+        assert page.evaluate("location.hash").startswith("#/reports/general-ledger?")
     finally:
         page.close()
