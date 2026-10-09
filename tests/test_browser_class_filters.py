@@ -26,6 +26,8 @@ Skipped, as one module, where playwright or its Chromium is not installed
 the API and the sources).
 """
 
+import datetime as dt
+
 import pytest
 
 pytest.importorskip("playwright.sync_api")
@@ -259,5 +261,83 @@ def test_the_register_filters_by_dates_and_class(browser, company, books, classe
         settle(page, handled)
         page.wait_for_function(f"(n) => ({REG_ROWS})().length === n", arg=all_rows)
         assert _hash(page) == f"#/banking/{bank}"
+    finally:
+        page.close()
+
+
+# ── #240: the Chart of Accounts opens the register; accounts in search ──
+
+
+def test_chart_rows_open_the_register_and_the_filter_box_keeps_the_grouping(
+    browser, company, books
+):
+    accounts = {a["account_number"]: a for a in _ok(company.get("/api/accounts"))}
+    year = dt.date.today().year
+    page, handled = _open_at(browser, company, "#/accounts")
+    try:
+        page.wait_for_selector("#page-content tbody tr")
+        checking = page.locator("#page-content tbody a", has_text="Checking").first
+        assert checking.get_attribute("href") == f"#/banking/{accounts['1000']['id']}"
+        rent = page.locator(
+            "#page-content tbody a", has_text=accounts["6000"]["name"]
+        ).first
+        q = _query(rent.get_attribute("href"))
+        assert rent.get_attribute("href").startswith("#/reports/account-transactions?")
+        assert q["account_id"] == str(accounts["6000"]["id"])
+        assert q["period"] == "this_year"
+        assert (q["start_date"], q["end_date"]) == (f"{year}-01-01", f"{year}-12-31")
+
+        # the filter box, by keyboard: typing narrows the rows, the type
+        # headings of the rows left stay, the others go
+        box = page.get_by_label("Filter accounts")
+        box.focus()
+        page.keyboard.type("6000")
+        page.wait_for_function(
+            "() => [...document.querySelectorAll('#page-content tbody tr')].filter(r => r.offsetParent !== null).length < 6"
+        )
+        shown = page.evaluate(
+            "() => [...document.querySelectorAll('#page-content tbody tr')].filter(r => r.offsetParent !== null).map(r => r.textContent.replace(/\\s+/g, ' ').trim())"
+        )
+        assert any("6000" in r for r in shown) and any(
+            r == "Expenses" for r in shown
+        ), shown
+        assert not any(r == "Assets" for r in shown), shown
+        page.keyboard.press("Control+A")
+        page.keyboard.type("checking")
+        page.wait_for_function(
+            "() => [...document.querySelectorAll('#page-content tbody tr')].filter(r => r.offsetParent !== null).some(r => /Assets/.test(r.textContent))"
+        )
+
+        # the expense account's link opens the drill-down for this year
+        box.fill("")
+        rent = page.locator(
+            "#page-content tbody a", has_text=accounts["6000"]["name"]
+        ).first
+        rent.focus()
+        page.keyboard.press("Enter")
+        page.wait_for_selector("#drilldown-body table")
+        assert page.evaluate(TITLE) == f"Drill-down — {accounts['6000']['name']}"
+        page.go_back()
+        page.wait_for_selector("#page-content tbody tr")
+        assert _hash(page) == "#/accounts"
+        assert not page.evaluate(MODAL_SHOWN)
+
+        # the bank account's link is the bank register
+        page.locator("#page-content tbody a", has_text="Checking").first.click()
+        page.wait_for_selector("#page-content .page-header h2")
+        assert _hash(page) == f"#/banking/{accounts['1000']['id']}"
+
+        # the search: an account by number, opening its register
+        _visit(page, handled, "#/")
+        page.fill("#global-search", "6000")
+        page.wait_for_selector(
+            "#search-results .search-section:has-text('Accounts')", timeout=5000
+        )
+        settle(page, handled)
+        page.locator(
+            "#search-results .search-item", has_text=accounts["6000"]["name"]
+        ).first.click()
+        page.wait_for_selector("#drilldown-body table")
+        assert _query(_hash(page))["account_id"] == str(accounts["6000"]["id"])
     finally:
         page.close()

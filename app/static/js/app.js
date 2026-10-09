@@ -523,6 +523,46 @@ const App = {
         App.navigate('#/accounts');
     },
 
+    // Where an account's register is (#240): the bank register for a bank or
+    // card account (its page knows feeds, reconciliations, Entry and
+    // Transfer), the drill-down for this year for every other account — the
+    // period shell on it widens the dates. An inactive account opens too:
+    // its history is still there.
+    accountRegisterHref(account) {
+        if (account.bank_kind) return `#/banking/${Number(account.id)}`;
+        const year = new Date().getFullYear();
+        return ReportsPage.viewUrl('account-transactions', {
+            account_id: Number(account.id), period: 'this_year', start_date: `${year}-01-01`, end_date: `${year}-12-31`,
+        });
+    },
+
+    openAccountRegister(id, isBank) {
+        App.navigate(App.accountRegisterHref({ id, bank_kind: isBank ? 'bank' : null }));
+    },
+
+    // The chart's filter box: typed text keeps the rows whose number or
+    // name contains it, and the type headings of the rows left; the rest
+    // are hidden, not removed, so clearing the box brings everything back.
+    _accountsFilter: '',
+
+    filterAccounts(text) {
+        App._accountsFilter = text || '';
+        const needle = App._accountsFilter.trim().toLowerCase();
+        const groups = {};
+        $$('tr[data-account-row]').forEach(tr => {
+            const shown = !needle || (tr.dataset.accountRow || '').includes(needle);
+            tr.hidden = !shown;
+            const type = tr.dataset.accountType;
+            groups[type] = (groups[type] || 0) + (shown ? 1 : 0);
+        });
+        $$('tr[data-account-group]').forEach(tr => { tr.hidden = !(groups[tr.dataset.accountGroup] || 0); });
+        const note = $('#accounts-filter-note');
+        if (note) {
+            const n = Object.values(groups).reduce((a, b) => a + b, 0);
+            note.textContent = needle ? `${n} account${n === 1 ? '' : 's'} match` : '';
+        }
+    },
+
     async renderAccounts() {
         const accounts = await API.get('/accounts');
         const grouped = {};
@@ -541,12 +581,15 @@ const App = {
         let html = `
             <div class="page-header">
                 <h2>Chart of Accounts</h2>
-                <div>
+                <div style="display:flex; gap:8px; align-items:center; flex-wrap:wrap;">
+                    <input type="search" id="accounts-filter" aria-label="Filter accounts" placeholder="Filter by number or name" value="${escapeHtml(App._accountsFilter)}" style="width:200px;" oninput="App.filterAccounts(this.value)">
+                    <span id="accounts-filter-note" style="font-size:11px; color:var(--gray-500);"></span>
                     ${inactiveCount ? `<button class="btn btn-sm btn-secondary" onclick="App.toggleInactiveAccounts()">${App._showInactiveAccounts ? 'Hide' : 'Show'} ${inactiveCount} inactive</button> ` : ''}
                     <button class="btn btn-secondary" data-write onclick="App.showChartImport()">Import…</button>
                     <button class="btn btn-primary" onclick="App.showAccountForm()">New Account</button>
                 </div>
             </div>
+            <p style="font-size:11px; color:var(--gray-500); margin:-4px 0 8px;">An account's name opens its register: the bank register for a bank or card account, this year's transactions for the rest.</p>
             <div class="table-container"><table>
                 <thead><tr><th scope="col" style="width:80px;">Number</th><th scope="col">Name</th><th scope="col" style="width:100px;">Type</th><th scope="col" class="amount" style="width:100px;">Balance</th><th scope="col" style="width:190px;">Actions</th></tr></thead>
                 <tbody>`;
@@ -554,12 +597,13 @@ const App = {
         for (const type of typeOrder) {
             const accts = grouped[type] || [];
             if (accts.length === 0) continue;
-            html += `<tr style="background:linear-gradient(180deg, #e8ecf2 0%, #dde2ea 100%);"><td colspan="5" style="font-weight:700; color:var(--qb-navy); font-size:11px; padding:4px 10px;">${typeNames[type]}</td></tr>`;
+            html += `<tr data-account-group="${type}" style="background:linear-gradient(180deg, #e8ecf2 0%, #dde2ea 100%);"><td colspan="5" style="font-weight:700; color:var(--qb-navy); font-size:11px; padding:4px 10px;">${typeNames[type]}</td></tr>`;
             for (const a of accts) {
                 const inactive = a.is_active === false;
-                html += `<tr${inactive ? ' class="row--dim"' : ''}>
+                const haystack = escapeHtml(`${a.account_number || ''} ${a.name}`.toLowerCase());
+                html += `<tr${inactive ? ' class="row--dim"' : ''} data-account-row="${haystack}" data-account-type="${type}">
                     <td style="font-family:var(--font-mono);">${escapeHtml(a.account_number || '')}</td>
-                    <td><strong>${escapeHtml(a.name)}</strong>${a.is_control ? ` <span class="badge-control" title="${escapeHtml(a.control_purpose || 'the software finds this account by its number')}">control</span>` : ''}${inactive ? ' <span class="badge badge-draft">inactive</span>' : ''}</td>
+                    <td><a href="${escapeHtml(App.accountRegisterHref(a))}" style="font-weight:700; color:var(--text-link); text-decoration:none;" title="Open the register">${escapeHtml(a.name)}</a>${a.is_control ? ` <span class="badge-control" title="${escapeHtml(a.control_purpose || 'the software finds this account by its number')}">control</span>` : ''}${inactive ? ' <span class="badge badge-draft">inactive</span>' : ''}</td>
                     <td>${a.account_type}</td>
                     <td class="amount">${formatCurrency(a.balance)}</td>
                     <td class="actions">
@@ -573,6 +617,8 @@ const App = {
             }
         }
         html += `</tbody></table></div>`;
+        // a filter typed before a re-render (Show inactive, a save) still applies
+        if (App._accountsFilter) setTimeout(() => App.filterAccounts(App._accountsFilter), 0);
         return html;
     },
 
@@ -780,6 +826,10 @@ const App = {
                     { key: 'customers', label: T('Customers'), onClick: (item) => `App.navigate('#/customers');closeSearchDropdown();` },
                     { key: 'vendors', label: 'Vendors', onClick: (item) => `App.navigate('#/vendors');closeSearchDropdown();` },
                     { key: 'items', label: 'Items', onClick: (item) => `App.navigate('#/items');closeSearchDropdown();` },
+                    // an account opens its register (#240): the bank register for a
+                    // bank or card account, the drill-down for the rest
+                    { key: 'accounts', label: 'Accounts', onClick: (item) => `App.openAccountRegister(${Number(item.id)}, ${item.bank_kind ? 1 : 0});closeSearchDropdown();`,
+                      text: (a) => `${a.account_number || ''} ${a.name}${a.is_active === false ? ' (inactive)' : ''}`.trim() },
                     // a class opens its own page (#234); only the id crosses into the attribute
                     { key: 'classes', label: T('Classes'), onClick: (item) => `App.navigate('#/classes/${Number(item.id)}');closeSearchDropdown();`,
                       text: (c) => c.is_archived ? `${c.name} (archived)` : c.name },
