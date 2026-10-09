@@ -154,13 +154,29 @@ def test_the_line_cell_is_for_every_company_and_the_function_cell_for_nonprofits
 
 def test_the_invoice_form_has_the_cell_and_keeps_a_stored_class():
     src = (JS / "invoices.js").read_text(encoding="utf-8")
-    assert "await Nonprofit.loadFunds();" in src
-    assert '${Nonprofit.classHeadHtml()}<th scope="col" class="col-qty">Qty</th>' in src
-    assert "${Nonprofit.classCellHtml('line-class', line.class_id)}" in src
+    # the cell comes from the shared helper, behind a guard: the form still
+    # renders where utils.js is not loaded (the node probes of
+    # test_js_node_suites.py and test_discount_item_in_form.py build a bare
+    # page from invoices.js alone)
     assert (
-        "class_id: row.querySelector('.line-class-fund')\n"
-        "                    ? Nonprofit.fundFromRow(row, 'line-class')\n"
-        "                    : (row.dataset.classId ? parseInt(row.dataset.classId) : null),"
+        "lineClasses() { return typeof Nonprofit !== 'undefined' "
+        "&& !!Nonprofit.classCellHtml; }" in src
+    )
+    assert "if (InvoicesPage.lineClasses()) await Nonprofit.loadFunds();" in src
+    assert (
+        "${InvoicesPage.lineClasses() ? Nonprofit.classHeadHtml() : ''}"
+        '<th scope="col" class="col-qty">Qty</th>' in src
+    )
+    assert (
+        "${InvoicesPage.lineClasses() ? "
+        "Nonprofit.classCellHtml('line-class', line.class_id) : ''}" in src
+    )
+    # the payload: the cell's choice where one is drawn, else the stored class
+    assert "class_id: InvoicesPage.lineClassFromRow(row)," in src
+    assert (
+        "if (row.querySelector('.line-class-fund')) "
+        "return Nonprofit.fundFromRow(row, 'line-class');\n"
+        "        return row.dataset.classId ? parseInt(row.dataset.classId) : null;"
         in src
     )
 

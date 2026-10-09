@@ -559,7 +559,7 @@ const App = {
         const note = $('#accounts-filter-note');
         if (note) {
             const n = Object.values(groups).reduce((a, b) => a + b, 0);
-            note.textContent = needle ? `${n} account${n === 1 ? '' : 's'} match` : '';
+            note.textContent = needle ? (n === 1 ? '1 account matches' : `${n} accounts match`) : '';
         }
     },
 
@@ -583,7 +583,7 @@ const App = {
                 <h2>Chart of Accounts</h2>
                 <div style="display:flex; gap:8px; align-items:center; flex-wrap:wrap;">
                     <input type="search" id="accounts-filter" aria-label="Filter accounts" placeholder="Filter by number or name" value="${escapeHtml(App._accountsFilter)}" style="width:200px;" oninput="App.filterAccounts(this.value)">
-                    <span id="accounts-filter-note" style="font-size:11px; color:var(--gray-500);"></span>
+                    <span id="accounts-filter-note" role="status" style="font-size:11px; color:var(--gray-500);"></span>
                     ${inactiveCount ? `<button class="btn btn-sm btn-secondary" onclick="App.toggleInactiveAccounts()">${App._showInactiveAccounts ? 'Hide' : 'Show'} ${inactiveCount} inactive</button> ` : ''}
                     <button class="btn btn-secondary" data-write onclick="App.showChartImport()">Import…</button>
                     <button class="btn btn-primary" onclick="App.showAccountForm()">New Account</button>
@@ -810,6 +810,23 @@ const App = {
 
     // Feature 4: Unified Global Search
     _searchTimeout: null,
+    // The hits take the keyboard: ArrowDown from the search box lands on
+    // the first, the arrows walk them, Enter or Space opens one, Escape
+    // goes back to the box. A search is the only way from anywhere to a
+    // class page or an account register, so it cannot be mouse-only.
+    searchFocusFirst() {
+        const first = document.querySelector('#search-results:not(.hidden) .search-item[tabindex]');
+        if (first) first.focus();
+        return !!first;
+    },
+    searchItemKey(e) {
+        const items = $$('#search-results .search-item[tabindex]');
+        const i = items.indexOf(e.currentTarget);
+        if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); e.currentTarget.click(); }
+        else if (e.key === 'ArrowDown' && items[i + 1]) { e.preventDefault(); items[i + 1].focus(); }
+        else if (e.key === 'ArrowUp') { e.preventDefault(); (i > 0 ? items[i - 1] : $('#global-search')).focus(); }
+        else if (e.key === 'Escape') { e.preventDefault(); closeSearchDropdown(); $('#global-search')?.focus(); }
+    },
     async globalSearch(query) {
         const dropdown = $('#search-results');
         if (!dropdown) return;
@@ -852,7 +869,7 @@ const App = {
                         html += `<div class="search-section">${sec.label}</div>`;
                         items.forEach(item => {
                             const label = sec.text ? sec.text(item) : (item.display || item.name || item.invoice_number || `#${item.id}`);
-                            html += `<div class="search-item" onclick="${sec.onClick(item)}">${escapeHtml(label)}</div>`;
+                            html += `<div class="search-item" tabindex="0" onclick="${sec.onClick(item)}" onkeydown="App.searchItemKey(event)">${escapeHtml(label)}</div>`;
                         });
                     }
                 }

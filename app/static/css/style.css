@@ -1376,8 +1376,14 @@ tr.clickable { cursor: pointer; }
     border-bottom: 1px solid #f0f0f0;
 }
 
-.search-item:hover {
+.search-item:hover,
+.search-item:focus-visible {
     background: var(--primary-light, #e8f0f8);
+}
+
+.search-item:focus-visible {
+    outline: 2px solid var(--qb-blue, #2a6fb4);
+    outline-offset: -2px;
 }
 
 /* ========================================================================

@@ -303,11 +303,20 @@ def test_the_dropdown_opens_the_class_page_by_id_with_the_name_escaped():
     js = (JS / "app.js").read_text(encoding="utf-8")
     assert "key: 'classes'" in js
     assert "App.navigate('#/classes/${Number(item.id)}')" in js
-    # every result's text goes through escapeHtml
+    # every result's text goes through escapeHtml, and a hit takes the
+    # keyboard (tabindex, Enter/Space/arrows through App.searchItemKey)
     assert (
-        'html += `<div class="search-item" onclick="${sec.onClick(item)}">${escapeHtml(label)}</div>`;'
-        in js
+        'html += `<div class="search-item" tabindex="0" onclick="${sec.onClick(item)}" '
+        'onkeydown="App.searchItemKey(event)">${escapeHtml(label)}</div>`;' in js
     )
+    keys = js[js.index("    searchItemKey(e) {") :]
+    keys = keys[: keys.index("\n    },")]
+    assert (
+        "if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); e.currentTarget.click(); }"
+        in keys
+    )
+    assert "else if (e.key === 'ArrowDown' && items[i + 1])" in keys
+    assert "else if (e.key === 'ArrowUp')" in keys
 
 
 # ── R12's substitute: BillPaymentCreate.class_id ──────────────────────────

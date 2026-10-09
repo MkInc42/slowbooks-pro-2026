@@ -19,7 +19,10 @@ of tests/test_browser_classes.py:
   mode, and the setting that warns when a document is saved without a
   class: with it on the header picker starts blank and Save asks first
   (Cancel keeps the form open, OK saves to Uncategorized); with it off the
-  picker starts on Uncategorized and nothing asks.
+  picker starts on Uncategorized and nothing asks; Make Deposits, whose
+  class picker is its own toolbar control, does the same;
+- the search's hits take the keyboard (ArrowDown from the box, Enter opens
+  one) and the chart's filter count is a status region.
 
 Skipped, as one module, where playwright or its Chromium is not installed
 (tests/test_gl_class_filter.py and tests/test_class_warn_setting.py check
@@ -302,6 +305,9 @@ def test_chart_rows_open_the_register_and_the_filter_box_keeps_the_grouping(
             r == "Expenses" for r in shown
         ), shown
         assert not any(r == "Assets" for r in shown), shown
+        note = page.locator("#accounts-filter-note")
+        assert note.get_attribute("role") == "status"
+        assert note.inner_text() == "1 account matches"
         page.keyboard.press("Control+A")
         page.keyboard.type("checking")
         page.wait_for_function(
@@ -339,6 +345,34 @@ def test_chart_rows_open_the_register_and_the_filter_box_keeps_the_grouping(
         ).first.click()
         page.wait_for_selector("#drilldown-body table")
         assert _query(_hash(page))["account_id"] == str(accounts["6000"]["id"])
+        page.evaluate("() => closeModal()")
+
+        # ... and by keyboard: ArrowDown from the box lands on the first hit,
+        # Enter opens it (a search is the only way from anywhere to an
+        # account register or a class page, so it cannot be mouse-only)
+        _visit(page, handled, "#/")
+        page.fill("#global-search", "6000")
+        page.wait_for_selector(
+            "#search-results .search-section:has-text('Accounts')", timeout=5000
+        )
+        settle(page, handled)
+        page.focus("#global-search")
+        page.keyboard.press("ArrowDown")
+        focused = page.evaluate(
+            "() => [document.activeElement.className, document.activeElement.textContent]"
+        )
+        assert focused[0] == "search-item" and accounts["6000"]["name"] in focused[1]
+        # ArrowUp from the first hit is back to the box; ArrowDown returns
+        page.keyboard.press("ArrowUp")
+        assert page.evaluate("() => document.activeElement.id") == "global-search"
+        page.keyboard.press("ArrowDown")
+        assert page.evaluate("() => document.activeElement.textContent") == focused[1]
+        page.keyboard.press("Enter")
+        page.wait_for_selector("#drilldown-body table")
+        assert _query(_hash(page))["account_id"] == str(accounts["6000"]["id"])
+        assert page.evaluate(
+            "() => document.getElementById('search-results').classList.contains('hidden')"
+        )
     finally:
         page.close()
 
@@ -583,6 +617,104 @@ def test_the_warn_setting_asks_before_saving_without_a_class(
             )
             settle(page, handled)
             assert _ok(company.get("/api/settings"))["class_warn_blank"] == "false"
+        finally:
+            page.close()
+    finally:
+        _ok(company.put("/api/settings", json={"class_warn_blank": "false"}))
+
+
+def test_the_warn_setting_starts_the_deposit_picker_blank_and_asks(
+    browser, company, books, classed
+):
+    # Make Deposits keeps its class picker on its own toolbar, not in a form,
+    # and used to preselect Uncategorized whatever the setting said, so the
+    # deposit never asked (R14 review).
+    uncat = classed["uncat"]
+    customer = _ok(company.get("/api/customers"))[0]["id"]
+    inv = _ok(
+        company.post(
+            "/api/invoices",
+            json={
+                "customer_id": customer,
+                "date": "2026-09-25",
+                "tax_rate": 0,
+                "lines": [{"description": "Wedding cake", "quantity": 1, "rate": 95}],
+            },
+        )
+    )
+    _ok(
+        company.post(
+            "/api/payments",
+            json={
+                "customer_id": customer,
+                "date": "2026-09-26",
+                "amount": 95,
+                "method": "Check",
+                "check_number": "4410",
+                "allocations": [{"invoice_id": inv["id"], "amount": 95}],
+            },
+        )
+    )
+    pending = _ok(company.get("/api/deposits/pending"))
+    mine = next(p for p in pending if float(p["amount"]) == 95)
+    box = f"input.dep-check[data-lineid='{mine['transaction_line_id']}']"
+    dialogs = []
+
+    def on_dialog(d):
+        dialogs.append(d.message)
+        (d.dismiss if len(dialogs) == 1 else d.accept)()
+
+    # off: the picker starts on Uncategorized
+    page, handled = _open_at(browser, company, "#/deposits")
+    try:
+        page.wait_for_selector("#deposit-class")
+        assert page.evaluate(
+            "() => document.getElementById('deposit-class').value"
+        ) == str(uncat["id"])
+    finally:
+        page.close()
+
+    _ok(company.put("/api/settings", json={"class_warn_blank": "true"}))
+    try:
+        page, handled = _open_at(browser, company, "#/deposits")
+        page.on("dialog", on_dialog)
+        try:
+            page.wait_for_selector("#deposit-class")
+            picker = page.locator("#deposit-class")
+            assert picker.evaluate("el => el.value") == ""
+            assert "choose a class" in picker.evaluate(
+                "el => el.options[0].textContent"
+            )
+            # named: the label's `for` moves to the type-ahead box (2.19)
+            named = page.get_by_label("Class:")
+            assert named.count() == 1
+            assert named.evaluate("el => el.id") in (
+                "deposit-class",
+                "deposit-class-box",
+            )
+            page.check(box)
+            deposited_before = len(_ok(company.get("/api/deposits?limit=50")))
+            # Cancel: nothing is deposited and the page stays
+            page.get_by_role("button", name="Make Deposit").click()
+            settle(page, handled)
+            assert len(dialogs) == 1 and "reported under Uncategorized" in dialogs[0]
+            assert len(_ok(company.get("/api/deposits?limit=50"))) == deposited_before
+            assert page.is_checked(box)
+            # OK: deposited, under Uncategorized
+            page.get_by_role("button", name="Make Deposit").click()
+            settle(page, handled)
+            page.wait_for_function(
+                f'() => !document.querySelector("{box}")', timeout=5000
+            )
+            assert len(dialogs) == 2
+            entries = _ok(company.get(f"/api/classes/{uncat['id']}/transactions"))[
+                "entries"
+            ]
+            assert any(
+                e["source_type"] == "deposit"
+                and e["date"] == dt.date.today().isoformat()
+                for e in entries
+            ), "the deposit is reported under Uncategorized"
         finally:
             page.close()
     finally:
