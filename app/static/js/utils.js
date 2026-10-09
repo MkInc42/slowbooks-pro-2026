@@ -196,6 +196,7 @@ function _tabTo(el) {
 // dialog clipped the last columns of that table with no scrollbar (#174).
 function openModal(title, html, opts) {
     _modalOpener = document.activeElement;
+    const wasOpen = !$('#modal-overlay').classList.contains('hidden');
     $('#modal-title').textContent = title;
     $('#modal-body').innerHTML = html;
     // A read-only sign-in sees the form locked, not a 403 after filling it
@@ -208,7 +209,13 @@ function openModal(title, html, opts) {
     // No address of its own until the router gives it one (a document, a
     // page, a report view: App.dialogAddressed); over a plain form the
     // toolbar's Back is inert, and sits under the overlay (App.syncBack).
-    delete modal.dataset.address;
+    // A mark that is the opener's own stays: one found while no dialog was
+    // open (set since the last close, so by this opener, its fetch awaited
+    // or not), or one set in this very task over an open dialog (a view
+    // that put its address on the bar and opens at once). Any other — a
+    // form over an addressed dialog — goes.
+    const own = modal.dataset.address === (location.hash || '#/') && (!wasOpen || !!(window.App && window.App._marking));
+    if (!own) delete modal.dataset.address;
     if (window.App && typeof window.App.syncBack === 'function') window.App.syncBack();
     // The first control takes focus once the dialog's own enhancements (the
     // type-ahead boxes) are in place. Never a control that undoes (Void,

@@ -1063,3 +1063,69 @@ def test_a_radio_group_is_one_stop_as_the_browser_has_it(browser, company, books
         )
     finally:
         page.close()
+
+
+# ── Review, round 3: Back is live over every report view ─────────────────
+
+VIEW_STATE = """() => ({ shown: !document.getElementById('modal-overlay').classList.contains('hidden'),
+    mark: document.getElementById('modal').dataset.address || null, hash: location.hash,
+    allowed: App.backAllowed(), editing: App.editingDialog() })"""
+
+
+def _views_live(page, handled):
+    """Every registered view opened by its own call, as its Report Center
+    card does: each that shows a dialog has its address as the dialog's
+    mark, and Back live over it. Returns the views shown, and the silent."""
+    live, silent = [], []
+    for name in page.evaluate("() => Object.keys(ReportsPage._VIEWS)"):
+        page.evaluate("() => closeModal()")
+        err = page.evaluate(
+            "async (n) => { try { await ReportsPage._VIEWS[n].open({}); return null; } catch (e) { return String(e); } }",
+            name,
+        )
+        settle(page, handled)
+        state = page.evaluate(VIEW_STATE)
+        if not state["shown"]:
+            silent.append((name, err))
+            continue
+        assert state["mark"] == state["hash"], (name, state, err)
+        assert state["allowed"] and not state["editing"], (name, state, err)
+        live.append(name)
+    page.evaluate("() => closeModal()")
+    return live, silent
+
+
+def test_back_is_live_over_every_report_view_the_company_has(browser, company, books):
+    """Including the views that put their address on the bar before they
+    open (the statement picker, the 1099 summary, the fixed-asset
+    reconciliation), where openModal used to clear the mark."""
+    page, handled = _open(browser, company)
+    try:
+        _no_splash(page)
+        _sidebar(page, handled, "#/reports")
+        live, silent = _views_live(page, handled)
+        for name in (
+            "profit-loss",
+            "customer-statement",
+            "1099-summary",
+            "fixed-asset-reconciliation",
+            "profit-loss-by-class",
+            "general-ledger",
+        ):
+            assert name in live, (name, silent)
+        assert len(live) > 10, (live, silent)
+    finally:
+        page.close()
+
+
+def test_back_is_live_over_a_nonprofits_report_views_too(
+    browser, client, nonprofit  # noqa: F811  (the fixture, imported above)
+):
+    page, handled = _open(browser, client)
+    try:
+        _no_splash(page)
+        _sidebar(page, handled, "#/reports")
+        live, silent = _views_live(page, handled)
+        assert "giving-statements" in live, (live, silent)
+    finally:
+        page.close()

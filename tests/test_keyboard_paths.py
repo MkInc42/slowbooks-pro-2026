@@ -275,9 +275,19 @@ def test_back_is_inert_over_a_dialog_with_no_address_of_its_own():
     assert "App.dialogAddressed();  // the view's own address" in _src(
         "reports.js"
     )  # setAddress
-    # a plain form clears the mark, and the button follows
+    # a plain form clears the mark, and the button follows; a mark the
+    # opener itself set (its address first, then openModal) stays
     utils = _src("utils.js")
-    assert utils.count("delete modal.dataset.address;") == 1  # openModal
+    assert "const wasOpen = !$('#modal-overlay').classList.contains('hidden');" in utils
+    assert (
+        "const own = modal.dataset.address === (location.hash || '#/') && (!wasOpen || !!(window.App && window.App._marking));"
+        in utils
+    )
+    assert utils.count("if (!own) delete modal.dataset.address;") == 1  # openModal
+    assert (
+        "App._marking = true;\n        setTimeout(() => { App._marking = false; }, 0);"
+        in app
+    )
     assert utils.count("delete $('#modal').dataset.address;") == 1  # closeModal
     assert utils.count("window.App.syncBack();") == 2
     assert "btn.classList.toggle('tb-back--under', App.editingDialog());" in app

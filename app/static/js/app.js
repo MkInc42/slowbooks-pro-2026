@@ -164,6 +164,12 @@ const App = {
     dialogAddressed() {
         const m = $('#modal');
         if (m) m.dataset.address = location.hash || '#/';
+        // An opener that puts its address on the bar first and opens next
+        // (the statement picker, the 1099 summary: ReportsPage.setAddress,
+        // then openModal): its mark survives the open for this task
+        // (utils.js openModal reads _marking).
+        App._marking = true;
+        setTimeout(() => { App._marking = false; }, 0);
         App.addressShown();
     },
     editingDialog() {
