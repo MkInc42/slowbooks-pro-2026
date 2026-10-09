@@ -213,8 +213,37 @@ def test_the_class_page_ties_to_the_report_and_back_returns_to_the_tab_it_left(
         acct = page.locator("#class-tab-body tbody a", has_text="Advertising")
         assert acct.count() == 1
         q = _query(acct.get_attribute("href"))
-        assert q["class_id"] == str(site["id"]) and q["from"] == "profit-loss-class"
+        assert q["class_id"] == str(site["id"]) and q["from"] == "classes"
         assert (q["start_date"], q["end_date"]) == SEPT
+        # … and its "Back to <class>" returns to the page as it was left,
+        # through history (the hop pushed one entry; Back takes it back)
+        left = _hash(page)
+        length = _history(page)
+        acct.click()
+        page.wait_for_function(
+            "() => document.getElementById('modal-title').textContent.startsWith('Drill-down')"
+        )
+        page.wait_for_selector("#drilldown-body table")
+        assert _hash(page).startswith("#/reports/account-transactions?")
+        assert _query(_hash(page))["from"] == "classes"
+        assert _history(page) == length + 1
+        back = page.get_by_role("button", name="Back to Site Prep")
+        assert back.count() == 1
+        back.click()
+        page.wait_for_selector("#class-stats")
+        assert _hash(page) == left
+        assert _history(page) == length + 1  # back through history, no new entry
+        assert not page.evaluate(MODAL_SHOWN)
+        # the keyboard reaches the account link and the way back alike
+        acct = page.locator("#class-tab-body tbody a", has_text="Advertising")
+        acct.focus()
+        page.keyboard.press("Enter")
+        page.wait_for_selector("#drilldown-body table")
+        page.get_by_role("button", name="Back to Site Prep").focus()
+        page.keyboard.press("Enter")
+        page.wait_for_selector("#class-stats")
+        assert _hash(page) == left
+        assert not page.evaluate(MODAL_SHOWN)
 
         # Transactions: the tab is pressed, the address replaced
         length = _history(page)

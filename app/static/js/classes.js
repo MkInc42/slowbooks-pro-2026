@@ -303,11 +303,16 @@ const ClassesPage = {
         const stat = (label, value, color, title) => `<div style="min-width:130px;" title="${escapeHtml(title || '')}">
             <div style="font-size:11px;color:var(--text-muted);text-transform:uppercase;letter-spacing:.05em">${label}</div>
             <div style="font-size:18px;font-weight:700;${color ? `color:${color}` : ''}">${value}</div></div>`;
+        // An account opens its drill-down for this class, with the page as
+        // the way back (from=classes): the hop goes through App.navigate so
+        // the entry records the page as it was left, and the drill-down's
+        // "Back to <class>" returns here through history. The href stays
+        // for a new tab, a copied link or the keyboard.
         const drill = (i) => escapeHtml(ReportsPage.viewUrl('account-transactions', {
-            account_id: i.account_id, class_id: c.id, start_date: s.start, end_date: s.end, from: 'profit-loss-class',
+            account_id: i.account_id, class_id: c.id, start_date: s.start, end_date: s.end, from: 'classes',
         }));
         const section = (items) => items.length
-            ? items.map(i => `<tr><td style="padding-left:24px;"><a href="${drill(i)}" style="color:var(--text-link); text-decoration:none;">${i.account_number ? escapeHtml(i.account_number) + ' - ' : ''}${escapeHtml(i.account_name)}</a></td><td class="amount">${ClassesPage.money(i.amount)}</td></tr>`).join('')
+            ? items.map(i => `<tr><td style="padding-left:24px;"><a href="${drill(i)}" onclick="event.preventDefault(); App.navigate(this.getAttribute('href'))" style="color:var(--text-link); text-decoration:none;">${i.account_number ? escapeHtml(i.account_number) + ' - ' : ''}${escapeHtml(i.account_name)}</a></td><td class="amount">${ClassesPage.money(i.amount)}</td></tr>`).join('')
             : '<tr><td colspan="2" style="padding-left:24px; color:var(--gray-400);">None</td></tr>';
         const subtotal = (title, amount) => `<tr style="font-weight:600; background:var(--gray-50);"><td>${title}</td><td class="amount">${ClassesPage.money(amount)}</td></tr>`;
         const share = d.company_net_income

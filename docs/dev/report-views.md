@@ -32,7 +32,7 @@ view → push (recording `from`; a note in memory would go stale on Back, Forwar
    every render, `params` ahead of them, and `prefill` (the query) sets the starting period and dates. A plain-modal
    view calls `ReportsPage.setAddress('name', { … })` itself before `openModal`.
 3. Opening a drill-down *from* the view: `ReportsPage.openDrillDown(accountId, name, start, end, classId, className, from)`
-   with `from` = your view name gives it "Back to <your label>" and `&from=<name>`; a page route (`#/classes/:id?…`) reads its query the same way.
+   with `from` = your view name gives it "Back to <your label>" and `&from=<name>`; a page route (`#/classes/:id?…`, `#/banking/:id?…`) reads its query the same way, replaces its address on a change inside it (`history.replaceState(history.state, '', url)`) and sends a hop through `App.navigate(href)` from an anchor's onclick (a plain `<a href>` records no `from`); `from=classes` with a `class_id` makes the drill-down's way back the class's page, "Back to <class name>" via `ReportsPage.backToPage('/classes/<id>', dates)` — through history when pushed from it, else by address.
 
 Saved reports: `report_type` is the view name with underscores (`profit_loss_by_class`) and `parameters` the query; `openSaved`
 navigates to `ReportsPage.viewUrl(view, parameters)` — the builder of any link to a report (empty values and `period=custom` are

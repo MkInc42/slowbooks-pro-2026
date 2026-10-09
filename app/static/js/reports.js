@@ -94,6 +94,27 @@ const ReportsPage = {
         App.navigate(ReportsPage.viewUrl(name, params));
     },
 
+    // Back to a page with an address of its own (#/classes/:id, #234), by
+    // the same rule: through history when this entry was pushed from that
+    // page (its "from" is the page as it was left — its tab, its period),
+    // else by opening the page on the dates the view was on.
+    backToPage(path, params) {
+        const from = history.state && history.state.from;
+        if (from && App.parseHash(from).path === path) {
+            history.back();
+            return;
+        }
+        const qs = new URLSearchParams();
+        for (const [k, v] of Object.entries(params || {})) if (v !== null && v !== undefined && v !== '') qs.set(k, String(v));
+        const q = qs.toString();
+        App.navigate(`#${path}${q ? `?${q}` : ''}`);
+    },
+
+    _backPageButton(key, path, params, label) {
+        const call = escapeHtml(`ReportsPage.backToPage(${JSON.stringify(path)}, ${JSON.stringify(params || {})})`);
+        return `<button type="button" class="btn btn-secondary" data-back-to="${escapeHtml(key)}" onclick="${call}">Back to ${escapeHtml(label)}</button>`;
+    },
+
     // `detail` names which one, after the view's label, where the view is
     // a filtered one ("Back to Profit & Loss — Side Gig").
     _backButton(name, params, detail = '') {
@@ -325,6 +346,11 @@ const ReportsPage = {
         classId = classId ? parseInt(classId, 10) || null : null;
         if (classId && !from) from = 'profit-loss-by-class';
         const back = ReportsPage._view(from) ? from : null;
+        // The class's own page (#/classes/:id, #234) opens a drill-down for
+        // its class too: `from=classes` names it as the way back, so the
+        // button says "Back to Site Prep" and returns to the page as it was
+        // left, not to a report the user never opened.
+        const backPage = !back && from === 'classes' && classId ? `/classes/${classId}` : null;
         const params = new URLSearchParams();
         params.set('account_id', accountId);
         if (startDate) params.set('start_date', startDate);
@@ -332,7 +358,7 @@ const ReportsPage = {
         if (classId) params.set('class_id', classId);
 
         ReportsPage.setAddress('account-transactions', {
-            account_id: accountId, start_date: startDate, end_date: endDate, class_id: classId, from: back,
+            account_id: accountId, start_date: startDate, end_date: endDate, class_id: classId, from: back || (backPage ? 'classes' : null),
         });
 
         // The way back carries the dates the view was on (one as-of date
@@ -346,6 +372,8 @@ const ReportsPage = {
             const backParams = v.asOf ? { as_of_date: endDate } : { start_date: startDate, end_date: endDate };
             if ((v.keep || []).includes('class_id') && classId) backParams.class_id = classId;
             backBtn = ReportsPage._backButton(back, backParams, backToClass ? (className || T('Class')) : '');
+        } else if (backPage) {
+            backBtn = ReportsPage._backPageButton('classes', backPage, { start_date: startDate, end_date: endDate }, className || T('Class'));
         }
 
         const title = (name, cls) => `Drill-down — ${name || `account ${accountId}`}${cls ? ` · ${cls}` : ''}`;
@@ -366,6 +394,10 @@ const ReportsPage = {
             if (backToClass && !className && data.class_name) {
                 const btn = $('#modal-body [data-back-to="profit-loss-class"]');
                 if (btn) btn.textContent = ReportsPage._backText(back, data.class_name);
+            }
+            if (backPage && !className && data.class_name) {
+                const btn = $('#modal-body [data-back-to="classes"]');
+                if (btn) btn.textContent = `Back to ${data.class_name}`;
             }
             const rows = (data.entries || []).map(e => {
                 const src = e.source_link

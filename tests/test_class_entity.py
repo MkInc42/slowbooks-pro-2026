@@ -385,6 +385,12 @@ def test_the_page_is_wired_in():
     assert "history.replaceState(history.state, '', url)" in src
     assert "ReportsPage.viewUrl('profit-loss-class'" in src
     assert "ReportsPage.viewUrl('profit-loss-by-class'" in src
-    assert re.search(r"from: 'profit-loss-class'", src)
+    # an account's drill-down names the page as its way back, through a
+    # push that records the page as it was left
+    assert re.search(r"from: 'classes'", src)
+    assert "App.navigate(this.getAttribute('href'))" in src
+    reports = (JS / "reports.js").read_text(encoding="utf-8")
+    assert "from === 'classes' && classId" in reports
+    assert "backToPage(path, params)" in reports
     # the settings link says where rename and archive live
     assert "settings_focus', 'settings-h-classes'" in src
