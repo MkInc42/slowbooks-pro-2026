@@ -691,12 +691,23 @@ def test_p_and_l_by_class_opens_the_transactions_behind_an_amount(browser):
         assert "Side Gig" in page.inner_text("#modal-title")
         assert "side gig" in page.inner_text("#drilldown-body")
 
-        # back to the report, on the dates the drill-down was opened with
-        start = parse_qs(urlsplit(asked[-1]).query)["start_date"][0]
+        # back to the report, on the dates the drill-down was opened with:
+        # through the browser's history since R7, so the report comes back
+        # as it was left (its period preset, the same dates), with the
+        # drill-down's own address behind it
+        q = parse_qs(urlsplit(asked[-1]).query)
+        start, end = q["start_date"][0], q["end_date"][0]
+        assert page.evaluate("location.hash").startswith(
+            "#/reports/account-transactions?account_id=40"
+        )
         page.click("#modal button:has-text('Back to P&L by Class')")
         page.wait_for_selector("#report-content table")
-        assert page.input_value("#report-period-select") == "custom"
+        assert page.input_value("#report-period-select") == "this_year_to_date"
         assert page.input_value("#report-custom-start") == start
+        assert page.input_value("#report-custom-end") == end
+        assert page.evaluate("location.hash").startswith(
+            "#/reports/profit-loss-by-class?"
+        )
 
         page.click("#report-content thead a:has-text('Side Gig')")
         page.wait_for_selector("#class-pl-body table")
