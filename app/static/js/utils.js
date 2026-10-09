@@ -616,9 +616,11 @@ function classIdFromForm(form) {
 // ---------------------------------------------------------------------------
 // Job-costing dimension — shared "Customer: Job" dropdown for entry forms.
 // Lists every active job; when the form has a customer select (pass its id),
-// the list narrows to that customer's jobs each time the picker gets focus,
-// so the customer can be changed at any point and the jobs follow. Returns
-// '' when the company has no jobs yet — the field simply doesn't exist.
+// the list narrows to that customer's jobs — the moment the customer is
+// chosen, and whenever the picker is reached — so the customer can be
+// changed at any point and the jobs follow, and a chosen job of another
+// customer is cleared. Returns '' when the company has no jobs yet — the
+// field simply doesn't exist.
 // ---------------------------------------------------------------------------
 async function jobFormGroupHtml(selectedId, customerSelectId) {
     let jobs = [];
@@ -627,24 +629,53 @@ async function jobFormGroupHtml(selectedId, customerSelectId) {
     const opts = jobs.map(j =>
         `<option value="${j.id}" data-customer="${j.customer_id}" ${selectedId === j.id ? 'selected' : ''}>${escapeHtml(j.full_name || j.name)}</option>`
     ).join('');
-    const bind = customerSelectId ? `data-customer-select="${customerSelectId}" onfocus="JobPicker.sync(this)"` : '';
+    const bind = customerSelectId ? `data-customer-select="${customerSelectId}"` : '';
     return `<div class="form-group"><label>${T('Job')}</label>
         <select name="job_id" ${bind}><option value="">— No job —</option>${opts}</select></div>`;
 }
 
 const JobPicker = {
-    // Hide jobs that belong to other customers than the one selected.
+    // Hide jobs that belong to other customers than the one selected, and
+    // clear a chosen one that does. No customer yet: every job; a customer
+    // being quick-added ("+ New Customer") has none; a form whose blank
+    // choice stands for a customer (the sales receipt's walk-in, or
+    // "__new__" until there is one) says so with data-blank-customer on
+    // its customer select.
     sync(select) {
         const custSel = document.getElementById(select.dataset.customerSelect);
-        const cid = custSel ? custSel.value : '';
+        const cid = custSel ? (custSel.value || custSel.dataset.blankCustomer || '') : '';
         for (const opt of select.options) {
             if (!opt.value) continue;
-            const mine = !cid || cid === '__new__' || opt.dataset.customer === cid;
+            const mine = !cid || (cid !== '__new__' && opt.dataset.customer === cid);
             opt.hidden = !mine;
             if (!mine && opt.selected) select.value = '';
         }
     },
+    // The job pickers a customer select narrows.
+    boundTo(custSel) {
+        if (!custSel || !custSel.id) return [];
+        return Array.from(document.querySelectorAll(`select[data-customer-select="${CSS.escape(custSel.id)}"]`));
+    },
 };
+
+// The select's own focus ran the filter, and the type-ahead box in front of
+// it (combobox.js) never gives it that, so the list was never narrowed
+// (2.22.0 gate, NEW-36). Now: the customer's choice narrows it as it is
+// made, and reaching the picker — its box or the select itself — does too.
+// (The node probes load this file with a bare document.)
+if (typeof document !== 'undefined' && document.body && typeof document.addEventListener === 'function') {
+    document.addEventListener('change', (e) => {
+        if (e.target instanceof HTMLSelectElement) JobPicker.boundTo(e.target).forEach(s => JobPicker.sync(s));
+    });
+    document.addEventListener('focusin', (e) => {
+        const el = e.target;
+        if (!(el instanceof Element)) return;
+        const wrap = el.closest('.cbx');
+        const sel = el.matches('select[data-customer-select]') ? el
+            : wrap ? wrap.querySelector('select[data-customer-select]') : null;
+        if (sel) JobPicker.sync(sel);
+    });
+}
 
 // ---------------------------------------------------------------------------
 // Cost codes — the job-costing chart, chosen per LINE on cost forms.

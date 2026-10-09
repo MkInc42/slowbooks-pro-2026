@@ -38,6 +38,7 @@ from app.services.accounting import (
     get_sales_tax_account_id,
 )
 from app.services.donor_documents import document_label
+from app.services.jobs_service import refuse_other_customers_jobs
 from app.services.terminology import document_reference, terms_from_db
 
 router = APIRouter(prefix="/api/estimates", tags=["estimates"])
@@ -99,6 +100,8 @@ def create_estimate(data: EstimateCreate, db: Session = Depends(get_db)):
     customer = db.query(Customer).filter(Customer.id == data.customer_id).first()
     if not customer:
         raise HTTPException(status_code=404, detail="Customer not found")
+    # The job, on the header or a line, is this customer's (NEW-36).
+    refuse_other_customers_jobs(db, customer.id, data.job_id, data.lines, "estimate")
 
     cust_id = customer.id
     cust_name = customer.name
@@ -193,6 +196,15 @@ def update_estimate(
             raise HTTPException(status_code=404, detail="Customer not found")
         # a different customer, so their address
         changes.update(_customer_bill_to(customer))
+    # The job the estimate carries after this edit, on its header and its
+    # lines (resent or kept), is the customer's it has after it (NEW-36).
+    refuse_other_customers_jobs(
+        db,
+        changes.get("customer_id") or estimate.customer_id,
+        changes.get("job_id", estimate.job_id),
+        data.lines if data.lines is not None else estimate.lines,
+        "estimate",
+    )
     for key, val in changes.items():
         setattr(estimate, key, val)
 

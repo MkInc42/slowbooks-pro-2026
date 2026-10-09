@@ -7,6 +7,7 @@ from datetime import date
 from decimal import Decimal
 from typing import Optional
 
+from fastapi import HTTPException
 from sqlalchemy import func as sqlfunc
 from sqlalchemy.orm import Session
 
@@ -14,6 +15,7 @@ from app.models.accounts import Account, AccountType
 from app.models.contacts import Customer
 from app.models.jobs import Job
 from app.models.transactions import Transaction, TransactionLine
+from app.services.terminology import Terms, terms_from_db
 
 NO_JOB_LABEL = "No job"
 
@@ -105,6 +107,51 @@ def resolve_customer_and_job(
     if not job and create:
         job = get_or_create_job(db, customer.id, job_name)
     return customer, job
+
+
+def refuse_other_customers_jobs(
+    db: Session,
+    customer_id: int,
+    job_id: Optional[int],
+    lines=(),
+    document: str = "invoice",
+    terms: Optional[Terms] = None,
+) -> None:
+    """A customer document carries its own customer's jobs only: the job on
+    its header and the job on each of its lines.
+
+    An invoice could be saved with another customer's job (2.22.0 gate,
+    NEW-36): the form hid other customers' jobs on the hidden select's
+    focus, which the type-ahead in front of it never gives it, and the API
+    checked nothing, so P&L by Job, the job page and Job Profitability
+    counted the invoice under a job that was not the customer's. Refused
+    with 400 the way a payment to another customer's invoice is (#189); a
+    job that does not exist is 404.
+
+    `lines` are the request's line models or the stored rows, either with
+    a job_id; `document` is the document's name for the message, in the
+    company's own words ("pledge", "donation" for a nonprofit).
+    """
+    t = terms or terms_from_db(db)
+    checks = [(job_id, "")]
+    checks += [
+        (getattr(line, "job_id", None), f" (line {n})")
+        for n, line in enumerate(lines, start=1)
+    ]
+    for wanted, where in checks:
+        if wanted is None:
+            continue
+        job = db.get(Job, wanted)
+        if job is None:
+            raise HTTPException(status_code=404, detail=f"{t('Job')} not found")
+        if job.customer_id != customer_id:
+            raise HTTPException(
+                status_code=400,
+                detail=(
+                    f"{t('Job')} {job.name} belongs to a different {t('customer')} "
+                    f"than this {document}{where}."
+                ),
+            )
 
 
 def job_attribution():

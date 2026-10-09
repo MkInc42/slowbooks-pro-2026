@@ -12,6 +12,7 @@ from app.models.contacts import Customer
 from app.models.in_kind import InKindGift, InKindGiftLine
 from app.schemas.in_kind import InKindGiftCreate, InKindGiftResponse, InKindLineResponse
 from app.services.closing_date import check_closing_date
+from app.services.jobs_service import refuse_other_customers_jobs
 from app.services.in_kind import (
     build_lines,
     next_in_kind_number,
@@ -84,6 +85,10 @@ def create_in_kind_gift(data: InKindGiftCreate, db: Session = Depends(get_db)):
     check_closing_date(db, data.date)
     if not db.get(Customer, data.customer_id):
         raise HTTPException(status_code=404, detail="Donor not found")
+    # The job (grant), on the header or a line, is this donor's (NEW-36).
+    refuse_other_customers_jobs(
+        db, data.customer_id, data.job_id, data.lines, "in-kind gift"
+    )
     gift = InKindGift(
         number=next_in_kind_number(db),
         customer_id=data.customer_id,

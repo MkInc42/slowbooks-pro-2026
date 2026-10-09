@@ -31,6 +31,7 @@ from app.routes.invoices.helpers import (
     _reverse_and_delete_journal,
 )
 from app.services.donor_documents import document_label
+from app.services.jobs_service import refuse_other_customers_jobs
 from app.services.terminology import document_reference, terms_from_db
 
 
@@ -116,6 +117,9 @@ def create_invoice(data: InvoiceCreate, db: Session = Depends(get_db)):
     customer = db.query(Customer).filter(Customer.id == data.customer_id).first()
     if not customer:
         raise HTTPException(status_code=404, detail="Customer not found")
+    noun = document_label(SimpleNamespace(is_pledge=data.is_pledge), words).lower()
+    # The job, on the header or a line, is this customer's (NEW-36).
+    refuse_other_customers_jobs(db, customer.id, data.job_id, data.lines, noun, words)
 
     # Parse terms for due date (explicit due_date wins; else derive from terms)
     due_date = data.due_date or _due_date_from_terms(data.date, data.terms)
@@ -123,11 +127,7 @@ def create_invoice(data: InvoiceCreate, db: Session = Depends(get_db)):
     refuse_negative_lines(db, data.lines)
     resolve_line_taxable(db, data.lines, customer)
     subtotal, tax_amount, total = _compute_totals(data.lines, data.tax_rate)
-    confirm_zero_total(
-        total,
-        data.allow_zero_total,
-        document_label(SimpleNamespace(is_pledge=data.is_pledge), words).lower(),
-    )
+    confirm_zero_total(total, data.allow_zero_total, noun)
     _check_fair_value(data.fair_value_amount, total)
 
     # Capture every customer field we need post-flush, because we may have to
@@ -260,9 +260,20 @@ def update_invoice(invoice_id: int, data: InvoiceUpdate, db: Session = Depends(g
     if invoice.status == InvoiceStatus.VOID:
         raise HTTPException(status_code=400, detail="Cannot edit voided invoice")
     check_closing_date(db, invoice.date)
+    words = terms_from_db(db)
 
     update_data = data.model_dump(
         exclude_unset=True, exclude={"lines", "allow_zero_total"}
+    )
+    # The job the invoice carries after this edit, on its header and its
+    # lines (resent or kept), is the customer's it has after it (NEW-36).
+    refuse_other_customers_jobs(
+        db,
+        update_data.get("customer_id") or invoice.customer_id,
+        update_data.get("job_id", invoice.job_id),
+        data.lines if data.lines is not None else invoice.lines,
+        document_label(invoice, words).lower(),
+        words,
     )
     # Checked against the dates the invoice will have after this edit; a
     # cleared due date is derived from the terms below, so it cannot be early.
@@ -338,9 +349,7 @@ def update_invoice(invoice_id: int, data: InvoiceUpdate, db: Session = Depends(g
         if kept is not None:
             tax_amount, total = kept, _q(subtotal + kept)
         confirm_zero_total(
-            total,
-            data.allow_zero_total,
-            document_label(invoice, terms_from_db(db)).lower(),
+            total, data.allow_zero_total, document_label(invoice, words).lower()
         )
         if total < invoice.amount_paid:
             raise HTTPException(

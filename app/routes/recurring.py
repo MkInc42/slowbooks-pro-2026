@@ -13,6 +13,7 @@ from app.models.recurring import RecurringInvoice, RecurringInvoiceLine
 from app.models.contacts import Customer
 from app.schemas.recurring import RecurringCreate, RecurringUpdate, RecurringResponse
 from app.services.accounting import compute_line_totals
+from app.services.jobs_service import refuse_other_customers_jobs
 from app.services.recurring_service import generate_due_invoices
 from app.services.terminology import terms_from_db
 
@@ -71,6 +72,8 @@ def create_recurring(data: RecurringCreate, db: Session = Depends(get_db)):
     if not customer:
         raise HTTPException(status_code=404, detail="Customer not found")
     _refuse_end_before_start(data.start_date, data.end_date)
+    # The job is this customer's (NEW-36); the schedule's lines carry none.
+    refuse_other_customers_jobs(db, customer.id, data.job_id, (), _schedule_noun(db))
 
     # Refused here rather than skipped at every run: a template that adds up
     # to nothing generated $0.00 invoices that then showed as overdue.
@@ -123,6 +126,14 @@ def update_recurring(rec_id: int, data: RecurringUpdate, db: Session = Depends(g
         raise HTTPException(status_code=404, detail="Recurring invoice not found")
     if "end_date" in data.model_fields_set:
         _refuse_end_before_start(rec.start_date, data.end_date)
+    # The job the schedule carries after this edit is its customer's (NEW-36).
+    refuse_other_customers_jobs(
+        db,
+        rec.customer_id,
+        data.job_id if "job_id" in data.model_fields_set else rec.job_id,
+        (),
+        _schedule_noun(db),
+    )
 
     if data.lines is not None:
         resolve_line_taxable(db, data.lines, rec.customer)
