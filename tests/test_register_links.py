@@ -53,7 +53,22 @@ def test_every_register_link_opens_a_view():
         kind: pattern.format(id=7, txn=7).removeprefix("/")
         for kind, pattern in bank_register._LINKS.items()
     }
-    shown = _node("app_routes_probe.js", json.dumps(sorted(set(links.values()))))
+    # a nonprofit's postings (a release, an allocation, an in-kind gift)
+    # open in a nonprofit company; elsewhere the page says it is theirs
+    nonprofit = {"restriction_release", "functional_allocation", "in_kind_gift"}
+    business = [
+        link
+        for kind, link in links.items()
+        if not any(kind.startswith(n) for n in nonprofit)
+    ]
+    shown = _node("app_routes_probe.js", json.dumps(sorted(set(business))))
+    shown.update(
+        _node(
+            "app_routes_probe.js",
+            json.dumps(sorted(set(links.values()) - set(business))),
+            "--nonprofit",
+        )
+    )
     for kind, link in links.items():
         page = shown[link]
         assert page["page"] != "<p>Page not found</p>", (kind, link)

@@ -499,3 +499,233 @@ def test_a_read_only_sign_in_keeps_the_reports_rows(
         ]
     finally:
         page.close()
+
+
+# ── R11: the drill-down re-dates and re-scopes in place ──────────────────
+
+
+def _account(company, number):
+    [a] = [
+        x for x in company.get("/api/accounts").json() if x["account_number"] == number
+    ]
+    return a
+
+
+def _drill(page):
+    page.wait_for_selector("#drilldown-body table")
+
+
+def test_the_drill_down_re_dates_in_place_and_its_selects_re_scope_it(
+    browser, company, books
+):
+    cogs = _account(company, "5000")
+    url = (
+        f"#/reports/account-transactions?account_id={cogs['id']}"
+        f"&start_date={SEPT[0]}&end_date={SEPT[1]}&from=profit-loss"
+    )
+    page, handled = _open_at(browser, company, url)
+    try:
+        _drill(page)
+        assert page.evaluate(TITLE) == f"Drill-down — {cogs['name']}"
+        assert _hash(page) == url
+        assert page.input_value("#report-period-select") == "custom"
+        assert page.input_value("#report-custom-start") == SEPT[0]
+        # the toolbar: named selects, Previous/Next, where in the report
+        assert page.get_by_label("Class", exact=True).count() == 1
+        assert page.get_by_label("Account", exact=True).count() == 1
+        assert page.get_by_role("button", name="Previous account").count() == 1
+        assert page.get_by_role("button", name="Next account").count() == 1
+        assert re.fullmatch(r"\d+ of \d+", page.text_content("#drill-position").strip())
+        accounts = page.eval_on_selector_all(
+            "#drill-account option", "os => os.map(o => [o.value, o.textContent])"
+        )
+        assert len(accounts) > 1 and page.input_value("#drill-account") == str(
+            cogs["id"]
+        )
+        length = _history(page)
+
+        # a new period: the same view, re-rendered, the address replaced
+        page.select_option("#report-period-select", "this_year_to_date")
+        settle(page, handled)
+        _drill(page)
+        q = _query(_hash(page))
+        assert q["account_id"] == str(cogs["id"]) and q["from"] == "profit-loss"
+        assert q["period"] == "this_year_to_date"
+        assert q["start_date"] == f"{dt.date.today().year}-01-01"
+        assert _history(page) == length
+        assert "Jan 1, " in page.text_content("#drilldown-body p")
+
+        # Next: the report's next account, in place
+        page.get_by_role("button", name="Next account").click()
+        settle(page, handled)
+        _drill(page)
+        i = [v for v, _ in accounts].index(str(cogs["id"]))
+        following = accounts[i + 1]
+        assert _query(_hash(page))["account_id"] == following[0]
+        assert (
+            page.evaluate(TITLE) == f"Drill-down — {following[1].split(' - ', 1)[-1]}"
+        )
+        assert _history(page) == length
+        page.get_by_role("button", name="Previous account").click()
+        settle(page, handled)
+        _drill(page)
+        assert _query(_hash(page))["account_id"] == str(cogs["id"])
+        # the ends are disabled
+        page.select_option("#drill-account", accounts[-1][0])
+        settle(page, handled)
+        _drill(page)
+        assert page.get_by_role("button", name="Next account").is_disabled()
+        assert not page.get_by_role("button", name="Previous account").is_disabled()
+
+        # the class: the same account, that class's lines, named in the title
+        [uncat] = [
+            c for c in company.get("/api/classes").json() if c["is_system_default"]
+        ]
+        page.select_option("#drill-account", str(cogs["id"]))
+        settle(page, handled)
+        page.select_option("#drill-class", str(uncat["id"]))
+        settle(page, handled)
+        _drill(page)
+        assert _query(_hash(page))["class_id"] == str(uncat["id"])
+        assert page.evaluate(TITLE) == f"Drill-down — {cogs['name']} · {uncat['name']}"
+        assert _history(page) == length
+        page.select_option("#drill-class", "")
+        settle(page, handled)
+        _drill(page)
+        assert "class_id" not in _query(_hash(page))
+
+        # the way back is still the report it came from, on its own dates
+        page.get_by_role("button", name="Back to Profit & Loss").click()
+        _report(page)
+        assert page.evaluate(TITLE) == "Profit & Loss"
+        q = _query(_hash(page))
+        assert (q["start_date"], q["end_date"]) == SEPT
+    finally:
+        page.close()
+
+
+def test_the_drill_down_shows_what_the_register_sends_and_links_a_job_cost(
+    browser, company, books
+):
+    ar = _account(company, "1100")
+    page, handled = _open_at(
+        browser,
+        company,
+        f"#/reports/account-transactions?account_id={ar['id']}&start_date={SEPT[0]}&end_date={SEPT[1]}",
+    )
+    try:
+        _drill(page)
+        heads = page.eval_on_selector_all(
+            "#drilldown-body thead th",
+            "els => els.map(e => e.getAttribute('aria-label') || e.textContent.trim())",
+        )
+        assert heads == [
+            "Date",
+            "Payee",
+            "Ref",
+            "Description",
+            "Source",
+            "Debit",
+            "Credit",
+            "Running",
+            "Cleared",
+        ]
+        body = page.text_content("#drilldown-body")
+        assert "Balance brought forward" in body and "Period total" in body
+        assert "Opening:" in page.text_content("#drilldown-body p")
+        assert "Salt & Pine Catering Co." in body  # the payee
+        # the voided invoice: struck through, badged, still linked
+        void = page.locator("#drilldown-body tr.row--void")
+        assert void.count() >= 1
+        assert void.first.locator(".badge-void").text_content().strip() == "void"
+        assert void.first.locator('a[href^="/#/invoices/"]').count() == 1
+        # a credit memo links to its own page
+        assert (
+            page.locator(
+                f'#drilldown-body a[href="/#/credit-memos/{books["memo"]}"]'
+            ).count()
+            >= 1
+        )
+    finally:
+        page.close()
+
+    # the reconciled January statement: R on the bank's lines
+    bank = _account(company, "1000")
+    page, handled = _open_at(
+        browser,
+        company,
+        f"#/reports/account-transactions?account_id={bank['id']}&start_date=2026-01-01&end_date=2026-01-31",
+    )
+    try:
+        _drill(page)
+        marks = page.eval_on_selector_all(
+            "#drilldown-body tbody tr td:last-child",
+            "els => els.map(e => e.textContent.trim())",
+        )
+        assert "R" in marks
+    finally:
+        page.close()
+
+    # a job cost line opens the entry at its own address; Back returns
+    cogs = _account(company, "5000")
+    url = f"#/reports/account-transactions?account_id={cogs['id']}&start_date={SEPT[0]}&end_date={SEPT[1]}"
+    page, handled = _open_at(browser, company, url)
+    try:
+        _drill(page)
+        link = page.locator(
+            f'#drilldown-body a[href="/#/job-costs/{books["job_cost"]}"]'
+        )
+        assert link.count() == 1
+        assert link.text_content().strip() == f"job_cost #{books['job_cost']}"
+        link.click()
+        page.wait_for_function(
+            "() => document.getElementById('modal-title').textContent.startsWith('Job Cost ')"
+        )
+        assert _hash(page) == f"#/job-costs/{books['job_cost']}"
+        page.go_back()
+        _drill(page)
+        assert _hash(page) == url
+    finally:
+        page.close()
+
+
+def test_a_saved_drill_down_reopens_with_its_account_and_period(
+    browser, company, books
+):
+    cogs = _account(company, "5000")
+    url = f"#/reports/account-transactions?account_id={cogs['id']}&period=last_month&from=trial-balance"
+    page, handled = _open_at(browser, company, url)
+    try:
+        _drill(page)
+        assert page.input_value("#report-period-select") == "last_month"
+        page.once("dialog", lambda d: d.accept("COGS, last month"))
+        page.get_by_role("button", name="Add to Saved Reports…").click()
+        page.wait_for_function(
+            "() => [...document.querySelectorAll('#page-content .saved-report-row')].some(r => r.textContent.includes('COGS, last month'))"
+        )
+        [saved] = [
+            s
+            for s in company.get("/api/saved-reports").json()
+            if s["name"] == "COGS, last month"
+        ]
+        assert saved["report_type"] == "account_transactions"
+        p = saved["parameters"]
+        assert (p["account_id"], p["from"], p["period"]) == (
+            cogs["id"],
+            "trial-balance",
+            "last_month",
+        )
+        assert p["start_date"] and p["end_date"]
+
+        _visit(page, handled, "#/reports")
+        page.locator(".saved-report-row", has_text="COGS, last month").get_by_role(
+            "button", name="Open"
+        ).click()
+        _drill(page)
+        assert page.evaluate(TITLE) == f"Drill-down — {cogs['name']}"
+        q = _query(_hash(page))
+        assert q["account_id"] == str(cogs["id"]) and q["period"] == "last_month"
+        assert page.input_value("#report-period-select") == "last_month"
+        assert page.get_by_role("button", name="Back to Trial Balance").count() == 1
+    finally:
+        page.close()

@@ -45,7 +45,7 @@ def test_the_drill_down_offers_the_way_back_to_the_ledger():
     # it goes back to the ledger on the drill-down's dates
     drill = _method(
         "async openDrillDown(accountId, accountName, startDate, endDate, "
-        "classId = null, className = null, from = null)"
+        "classId = null, className = null, from = null, period = null)"
     )
     # the view is looked up by its own name (never _VIEWS[from]: 'constructor'
     # is not a report)

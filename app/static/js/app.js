@@ -9,8 +9,14 @@ const App = {
         '/jobs':          { page: 'jobs',            label: 'Jobs',               render: () => JobsPage.render() },
         '/jobs/:id':      { page: 'jobs',            label: 'Job',                render: (id) => JobsPage.renderDetail(id) },
         '/job-costs':     { page: 'job-costs',       label: 'Job Cost Entries',   render: () => JobCostsPage.render() },
+        // A posting's own page where it has one (#241): the drill-down and
+        // the register link a job cost, a pay run, a credit memo, an in-kind
+        // gift, a release or an allocation to the document over its list.
+        '/job-costs/:id': { page: 'job-costs',       label: 'Job Cost Entry',     render: (id) => App.withDocument(() => JobCostsPage.render(), () => JobCostsPage.view(id)) },
         '/releases':      { page: 'releases',        label: 'Releases from Restriction', nonprofit: true, render: () => ReleasesPage.render() },
+        '/releases/:id':  { page: 'releases',        label: 'Release from Restriction', nonprofit: true, render: (id) => App.withDocument(() => ReleasesPage.render(), () => ReleasesPage.view(id)) },
         '/functional-allocations': { page: 'functional-allocations', label: 'Functional Allocations', nonprofit: true, render: () => AllocationsPage.render() },
+        '/functional-allocations/:id': { page: 'functional-allocations', label: 'Functional Allocation', nonprofit: true, render: (id) => App.withDocument(() => AllocationsPage.render(), () => AllocationsPage.view(id)) },
         '/vendors':       { page: 'vendors',         label: 'Vendor Center',      render: () => VendorsPage.render() },
         '/items':         { page: 'items',           label: 'Item List',          render: () => ItemsPage.render() },
         '/invoices':      { page: 'invoices',        label: 'Create Invoices',    render: () => InvoicesPage.render() },
@@ -23,6 +29,7 @@ const App = {
         '/invoices/:id':      { page: 'invoices',   label: 'Invoice',       render: (id) => App.withDocument(() => InvoicesPage.render(), () => InvoicesPage.view(id)) },
         '/sales-receipts': { page: 'sales-receipts', label: 'Enter Sales Receipts', render: () => SalesReceiptsPage.render() },
         '/in-kind-gifts': { page: 'in-kind-gifts',   label: 'In-Kind Gifts',      nonprofit: true, render: () => InKindPage.render() },
+        '/in-kind-gifts/:id': { page: 'in-kind-gifts', label: 'In-Kind Gift',     nonprofit: true, render: (id) => App.withDocument(() => InKindPage.render(), () => InKindPage.view(id)) },
         '/estimates':     { page: 'estimates',       label: 'Create Estimates',   render: () => EstimatesPage.render() },
         '/payments':      { page: 'payments',        label: 'Receive Payments',   render: () => PaymentsPage.render() },
         '/payments/:id':      { page: 'payments',   label: 'Payment',       render: (id) => App.withDocument(() => PaymentsPage.render(), () => PaymentsPage.view(id)) },
@@ -48,6 +55,7 @@ const App = {
         '/bills/:id':         { page: 'bills',      label: 'Bill',          render: (id) => App.withDocument(() => BillsPage.render(), () => BillsPage.view(id)) },
         '/bill-payments/:id': { page: 'bills',      label: 'Bill Payment',  render: (id) => App.withDocument(() => BillsPage.render(), () => BillsPage.viewPayment(id)) },
         '/credit-memos':  { page: 'credit-memos',    label: 'Credit Memos',       render: () => CreditMemosPage.render() },
+        '/credit-memos/:id': { page: 'credit-memos', label: 'Credit Memo',        render: (id) => App.withDocument(() => CreditMemosPage.render(), () => CreditMemosPage.view(id)) },
         '/vendor-credits':{ page: 'vendor-credits',  label: 'Vendor Credits',     render: () => VendorCreditsPage.render() },
         '/vendor-credits/:id': { page: 'vendor-credits', label: 'Vendor Credit',  render: (id) => VendorCreditsPage.view(id) },
         // Phase 3: Productivity
@@ -63,6 +71,7 @@ const App = {
         '/companies':     { page: 'companies',       label: 'Companies',          render: () => CompaniesPage.render() },
         '/employees':     { page: 'employees',       label: 'Employees',          render: () => EmployeesPage.render() },
         '/payroll':       { page: 'payroll',         label: 'Payroll',            render: () => PayrollPage.render() },
+        '/payroll/:id':   { page: 'payroll',         label: 'Pay Run',            render: (id) => App.withDocument(() => PayrollPage.render(), () => PayrollPage.view(id)) },
         // Tier 1/2/3: Payroll & HR
         '/hr/onboarding':   { page: 'hr-onboarding',   label: 'Onboarding',       render: () => OnboardingPage.render() },
         '/hr/time-entries': { page: 'hr-time-entries', label: 'Time Entries',      render: () => TimeEntriesPage.render() },
@@ -1078,6 +1087,14 @@ const App = {
 
     init() {
         window.addEventListener('hashchange', () => App.navigate(location.hash));
+        // Back or Forward: the dialog over the page left closes as the
+        // history moves, before the page gone to renders (App.navigate
+        // closes it too; this is sooner, so nothing of the view left is
+        // still showing while the next one loads).
+        window.addEventListener('popstate', () => {
+            const overlay = $('#modal-overlay');
+            if (overlay && !overlay.classList.contains('hidden')) closeModal();
+        });
 
         // Load saved theme
         App.loadTheme();

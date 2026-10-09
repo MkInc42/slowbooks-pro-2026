@@ -27,12 +27,12 @@ view → push (recording `from`; a note in memory would go stale on Back, Forwar
    `'profit-loss-by-job': { label: 'P&L by Job', open: (p) => ReportsPage.profitLossByJob(p) }`
    — `open(params)` is what the address runs; `label` is the "Back to …" wording (a function returning `T(term)` where nonprofit mode renames it);
    `asOf: true` for a view dated by one `as_of_date`; `keep: ['class_id']` for drill-down params that ride back.
-2. Put the address on the bar from the opener. A report that uses `openPeriodModal` passes
-   `{ view: 'profit-loss-by-job', params: { job_id }, prefill }` in its opts — the period and dates are written on
-   every render, `params` ahead of them, and `prefill` (the query) sets the starting period and dates. A plain-modal
-   view calls `ReportsPage.setAddress('name', { … })` itself before `openModal`.
-3. Opening a drill-down *from* the view: `ReportsPage.openDrillDown(accountId, name, start, end, classId, className, from)`
-   with `from` = your view name gives it "Back to <your label>" and `&from=<name>`; a page route (`#/classes/:id?…`) reads its query the same way.
+2. Put the address on the bar from the opener. A report that uses `openPeriodModal` passes `{ view: 'profit-loss-by-job', params: { job_id }, prefill }`
+   in its opts — the period and dates are written on every render, `params` ahead of them, and `prefill` (the query) sets the starting period and dates.
+   `params` is the one object the address, the saved report and `ReportsPage.setParam(key, value)` share: a filter changed inside the view (a select in
+   `opts.toolbar`, the HTML beside the period select) sets it and re-renders in place, replacing the address. A plain-modal view calls `ReportsPage.setAddress('name', { … })` itself before `openModal`.
+3. Opening a drill-down *from* the view: `ReportsPage.openDrillDown(accountId, name, start, end, classId, className, from)` with `from` = your view name gives it
+   "Back to <your label>" and `&from=<name>`; `ReportsPage.profitLossOfClass(classId, name, start, end, from)` likewise opens a class's P&L with the way back to your view; a page route (`#/classes/:id?…`) reads its query the same way.
 
 Saved reports: `report_type` is the view name with underscores (`profit_loss_by_class`) and `parameters` the query; `openSaved`
 navigates to `ReportsPage.viewUrl(view, parameters)` — the builder of any link to a report (empty values and `period=custom` are

@@ -395,9 +395,13 @@ def _sweep_pages(browser, client, role, books):
         routes = [f"#{p}" for p in paths if p not in REDIRECTS]
         routes += [f"#/jobs/{books['job']}", f"#/banking/{books['checking']}"]
         # payroll and HR: the administrator's pages
+        # (a document route, #/payroll/:id, is swept through no address)
         admin_only = {
-            f"#{p}" for p in page.evaluate("""() => Object.keys(App.routes).filter(k =>
-                    App.ADMIN_ONLY_PAGES.includes(App.routes[k].page))""")
+            f"#{p}"
+            for p in page.evaluate(
+                """() => Object.keys(App.routes).filter(k =>
+                    !k.includes('/:') && App.ADMIN_ONLY_PAGES.includes(App.routes[k].page))"""
+            )
         }
         for route in routes:
             _visit(page, handled, route)
