@@ -196,15 +196,17 @@ def update_estimate(
             raise HTTPException(status_code=404, detail="Customer not found")
         # a different customer, so their address
         changes.update(_customer_bill_to(customer))
-    # The job the estimate carries after this edit, on its header and its
-    # lines (resent or kept), is the customer's it has after it (NEW-36).
-    refuse_other_customers_jobs(
-        db,
-        changes.get("customer_id") or estimate.customer_id,
-        changes.get("job_id", estimate.job_id),
-        data.lines if data.lines is not None else estimate.lines,
-        "estimate",
-    )
+    # An edit that touches the customer, the job or the lines leaves the
+    # estimate on its customer's job, on its header and its lines (resent
+    # or kept) (NEW-36); one that touches none of them saves as it is.
+    if "customer_id" in changes or "job_id" in changes or data.lines is not None:
+        refuse_other_customers_jobs(
+            db,
+            changes.get("customer_id") or estimate.customer_id,
+            changes.get("job_id", estimate.job_id),
+            data.lines if data.lines is not None else estimate.lines,
+            "estimate",
+        )
     for key, val in changes.items():
         setattr(estimate, key, val)
 

@@ -126,14 +126,16 @@ def update_recurring(rec_id: int, data: RecurringUpdate, db: Session = Depends(g
         raise HTTPException(status_code=404, detail="Recurring invoice not found")
     if "end_date" in data.model_fields_set:
         _refuse_end_before_start(rec.start_date, data.end_date)
-    # The job the schedule carries after this edit is its customer's (NEW-36).
-    refuse_other_customers_jobs(
-        db,
-        rec.customer_id,
-        data.job_id if "job_id" in data.model_fields_set else rec.job_id,
-        (),
-        _schedule_noun(db),
-    )
+    # An edit that touches the job or the lines leaves the schedule on its
+    # customer's job (NEW-36); one that touches neither saves as it is.
+    if "job_id" in data.model_fields_set or data.lines is not None:
+        refuse_other_customers_jobs(
+            db,
+            rec.customer_id,
+            data.job_id if "job_id" in data.model_fields_set else rec.job_id,
+            (),
+            _schedule_noun(db),
+        )
 
     if data.lines is not None:
         resolve_line_taxable(db, data.lines, rec.customer)

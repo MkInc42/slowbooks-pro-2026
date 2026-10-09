@@ -10,8 +10,11 @@ refused with (#189), and writes nothing: invoices (create and edit, the
 header's job and each line's), sales receipts (a counter sale is the
 walk-in customer's), credit memos, estimates (create and edit), recurring
 schedules (create and edit) and in-kind gifts. A job that does not exist
-is 404. Deposits, bank entries, bills, time entries and journal entries
-carry a job with no customer, so they are not in this rule."""
+is 404. An edit is judged when it touches the customer, the job or the
+lines; one that touches none of them saves a document as it is, even one
+carrying a mismatch from before the rule. Deposits, bank entries, bills,
+time entries and journal entries carry a job with no customer, so they are
+not in this rule."""
 
 import pytest
 
@@ -397,3 +400,124 @@ def test_an_in_kind_gift_takes_only_its_donors_grant(
 
     r = client.post("/api/in-kind-gifts", json={**body, "job_id": two_jobs["kitchen"]})
     assert r.status_code == 201, r.text
+
+
+# ── books from before the rule ───────────────────────────────────────────
+# A document that already carries another customer's job (seeded by the old
+# fixture, or entered before 2.22.0) is kept as it is by an edit that does
+# not touch the customer, the job or the lines — a note, a date, the terms —
+# and refused by one that does. The mismatch is written straight into the
+# database, since the API will no longer create it.
+
+
+def _stored_mismatch(db_session, model, doc_id, job_id):
+    row = db_session.get(model, doc_id)
+    row.job_id = job_id
+    db_session.commit()
+
+
+def test_a_notes_only_edit_keeps_an_invoice_with_an_old_mismatch(
+    client, db_session, seed_accounts, two_jobs
+):
+    inv = client.post("/api/invoices", json=_invoice_body(two_jobs["alder"])).json()
+    _stored_mismatch(db_session, Invoice, inv["id"], two_jobs["roof"])
+
+    r = client.put(f"/api/invoices/{inv['id']}", json={"notes": "Paid at the counter"})
+    assert r.status_code == 200, r.text
+    assert r.json()["notes"] == "Paid at the counter"
+    assert r.json()["job_id"] == two_jobs["roof"], "the untouched job stays"
+    r = client.put(f"/api/invoices/{inv['id']}", json={"terms": "Net 60"})
+    assert r.status_code == 200, r.text
+
+    # touched: the lines resent, the job named (even unchanged), a customer
+    # the job is not for
+    _refused(
+        client.put(f"/api/invoices/{inv['id']}", json={"lines": [_line()]}), "invoice"
+    )
+    _refused(
+        client.put(f"/api/invoices/{inv['id']}", json={"job_id": two_jobs["roof"]}),
+        "invoice",
+    )
+    third = client.post("/api/customers", json={"name": "Cedar Co"}).json()
+    _refused(
+        client.put(f"/api/invoices/{inv['id']}", json={"customer_id": third["id"]}),
+        "invoice",
+    )
+    # and the ways out: the job cleared, or the customer the job is for
+    r = client.put(f"/api/invoices/{inv['id']}", json={"job_id": None})
+    assert r.status_code == 200 and r.json()["job_id"] is None, r.text
+
+
+def test_a_notes_only_edit_keeps_an_estimate_with_an_old_mismatch(
+    client, db_session, seed_accounts, two_jobs
+):
+    est = client.post(
+        "/api/estimates",
+        json={
+            "customer_id": two_jobs["alder"],
+            "date": "2026-04-04",
+            "tax_rate": 0,
+            "lines": [_line()],
+        },
+    ).json()
+    _stored_mismatch(db_session, Estimate, est["id"], two_jobs["roof"])
+
+    r = client.put(f"/api/estimates/{est['id']}", json={"notes": "Valid 30 days"})
+    assert r.status_code == 200, r.text
+    assert r.json()["job_id"] == two_jobs["roof"]
+    r = client.put(
+        f"/api/estimates/{est['id']}", json={"expiration_date": "2026-05-04"}
+    )
+    assert r.status_code == 200, r.text
+
+    _refused(
+        client.put(f"/api/estimates/{est['id']}", json={"lines": [_line()]}), "estimate"
+    )
+    _refused(
+        client.put(f"/api/estimates/{est['id']}", json={"job_id": two_jobs["roof"]}),
+        "estimate",
+    )
+    # the customer the job is for makes it consistent again
+    r = client.put(
+        f"/api/estimates/{est['id']}", json={"customer_id": two_jobs["birch"]}
+    )
+    assert r.status_code == 200, r.text
+    assert (r.json()["customer_id"], r.json()["job_id"]) == (
+        two_jobs["birch"],
+        two_jobs["roof"],
+    )
+
+
+def test_a_notes_only_edit_keeps_a_schedule_with_an_old_mismatch(
+    client, db_session, seed_accounts, two_jobs
+):
+    rec = client.post(
+        "/api/recurring",
+        json={
+            "customer_id": two_jobs["alder"],
+            "frequency": "monthly",
+            "start_date": "2026-01-01",
+            "lines": [{"description": "Retainer", "quantity": 1, "rate": "100"}],
+        },
+    ).json()
+    _stored_mismatch(db_session, RecurringInvoice, rec["id"], two_jobs["roof"])
+
+    r = client.put(f"/api/recurring/{rec['id']}", json={"notes": "Bill on the 1st"})
+    assert r.status_code == 200, r.text
+    assert r.json()["job_id"] == two_jobs["roof"]
+    r = client.put(f"/api/recurring/{rec['id']}", json={"end_date": "2026-12-01"})
+    assert r.status_code == 200, r.text
+
+    _refused(
+        client.put(
+            f"/api/recurring/{rec['id']}",
+            json={"lines": [{"description": "Retainer", "quantity": 1, "rate": "120"}]},
+        ),
+        "recurring invoice",
+    )
+    _refused(
+        client.put(f"/api/recurring/{rec['id']}", json={"job_id": two_jobs["roof"]}),
+        "recurring invoice",
+    )
+    r = client.put(f"/api/recurring/{rec['id']}", json={"job_id": two_jobs["kitchen"]})
+    assert r.status_code == 200 and r.json()["job_id"] == two_jobs["kitchen"], r.text

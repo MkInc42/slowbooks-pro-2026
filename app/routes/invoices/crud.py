@@ -265,16 +265,24 @@ def update_invoice(invoice_id: int, data: InvoiceUpdate, db: Session = Depends(g
     update_data = data.model_dump(
         exclude_unset=True, exclude={"lines", "allow_zero_total"}
     )
-    # The job the invoice carries after this edit, on its header and its
-    # lines (resent or kept), is the customer's it has after it (NEW-36).
-    refuse_other_customers_jobs(
-        db,
-        update_data.get("customer_id") or invoice.customer_id,
-        update_data.get("job_id", invoice.job_id),
-        data.lines if data.lines is not None else invoice.lines,
-        document_label(invoice, words).lower(),
-        words,
-    )
+    # An edit that touches the customer, the job or the lines leaves the
+    # invoice on its customer's job, on its header and its lines (resent or
+    # kept) (NEW-36). One that touches none of them — notes, dates, terms —
+    # saves as it is: a job the user didn't touch (books from before this
+    # rule) must not block a memo.
+    if (
+        "customer_id" in update_data
+        or "job_id" in update_data
+        or data.lines is not None
+    ):
+        refuse_other_customers_jobs(
+            db,
+            update_data.get("customer_id") or invoice.customer_id,
+            update_data.get("job_id", invoice.job_id),
+            data.lines if data.lines is not None else invoice.lines,
+            document_label(invoice, words).lower(),
+            words,
+        )
     # Checked against the dates the invoice will have after this edit; a
     # cleared due date is derived from the terms below, so it cannot be early.
     refuse_due_before_date(
