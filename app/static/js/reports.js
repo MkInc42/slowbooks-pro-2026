@@ -17,7 +17,7 @@ const ReportsPage = {
         'profit-loss':          { label: () => T('Profit & Loss'),      open: (p) => ReportsPage.profitLoss(p) },
         'balance-sheet':        { label: () => T('Balance Sheet'),      open: (p) => ReportsPage.balanceSheet(p), asOf: true },
         'profit-loss-by-class': { label: () => T('P&L by Class'),       open: (p) => ReportsPage.profitLossByClass(p) },
-        'profit-loss-class':    { label: () => T('Profit & Loss'),      open: (p) => ReportsPage.profitLossOfClass(p.class_id, null, p.start_date, p.end_date), keep: ['class_id'] },
+        'profit-loss-class':    { label: () => T('Profit & Loss'),      open: (p) => ReportsPage.profitLossOfClass(p.class_id, null, p), keep: ['class_id'] },
         'account-transactions': { label: 'Drill-down',         open: (p) => ReportsPage.openDrillDown(p.account_id, null, p.start_date, p.end_date, p.class_id || null, null, p.from || null) },
         'ar-aging':             { label: () => T('Accounts Receivable Aging'), open: (p) => ReportsPage.arAging(p), asOf: true },
         'ap-aging':             { label: 'Accounts Payable Aging',    open: (p) => ReportsPage.apAging(p), asOf: true },
@@ -525,9 +525,21 @@ const ReportsPage = {
         // opts.view (string) — the view's address name (ReportsPage._VIEWS):
         // each render puts the period and dates on the address bar, with
         // opts.params (an object: class_id, account_id, …) ahead of them.
+        // opts.params is kept by reference and read on every render: a
+        // control in the toolbar changes it through ReportsPage.setParam
+        // and the view redraws on the new address. It rides into a saved
+        // report's parameters too, so a class, a job or a column choice
+        // reopens with the dates.
+        // opts.toolbar (html) — controls drawn once, beside the period
+        // select, that stay as the report redraws (a class picker, Prev /
+        // Next, a column chooser); the report's own body is redrawn by
+        // loadContent(period, range, params) on every change.
+        // opts.wide — the wide dialog (openModal's), for a grid with a
+        // column per class or job.
         const reportType = opts.reportType || null;
         const prefill = opts.prefill || {};
         const view = opts.view || null;
+        const params = opts.params || {};
 
         const currentYear = new Date().getFullYear();
         const defaultCustomStart = prefill.start_date || `${currentYear}-01-01`;
@@ -541,11 +553,12 @@ const ReportsPage = {
             : '';
 
         openModal(title, `
-            <div class="form-grid" style="margin-bottom:4px;">
+            <div class="form-grid report-toolbar" style="margin-bottom:4px;">
                 <div class="form-group">
-                    <label>${label}</label>
+                    <label for="report-period-select">${label}</label>
                     <select id="report-period-select">${ReportsPage.periodOptions(startingPeriod)}</select>
                 </div>
+                ${opts.toolbar || ''}
             </div>
             ${ReportsPage.customRangeHtml(defaultCustomStart, defaultCustomEnd)}
             <div id="report-content">
@@ -554,7 +567,7 @@ const ReportsPage = {
             <div class="form-actions">
                 ${saveBtn}
                 <button class="btn btn-secondary" onclick="closeModal()">Close</button>
-            </div>`);
+            </div>`, { wide: !!opts.wide });
 
         const select = $("#report-period-select");
         const startInput = $("#report-custom-start");
@@ -582,18 +595,21 @@ const ReportsPage = {
                 if (useAsOfOnly) {
                     const asOfDate = ReportsPage.getAsOfDate(select.value, endInput.value || todayISO());
                     currentParams = { period: select.value, as_of_date: asOfDate };
-                    if (view) ReportsPage.setAddress(view, { ...(opts.params || {}), ...currentParams });
-                    content.innerHTML = await loadContent(select.value, { as_of_date: asOfDate });
+                    if (view) ReportsPage.setAddress(view, { ...params, ...currentParams });
+                    content.innerHTML = await loadContent(select.value, { as_of_date: asOfDate }, params);
                 } else {
                     const range = ReportsPage.getDateRange(select.value, startInput.value, endInput.value);
                     currentParams = { period: select.value, start_date: range.start, end_date: range.end };
-                    if (view) ReportsPage.setAddress(view, { ...(opts.params || {}), ...currentParams });
-                    content.innerHTML = await loadContent(select.value, range);
+                    if (view) ReportsPage.setAddress(view, { ...params, ...currentParams });
+                    content.innerHTML = await loadContent(select.value, range, params);
                 }
             } catch (err) {
                 content.innerHTML = `<div class="empty-state"><p>${escapeHtml(err.message)}</p></div>`;
             }
         };
+        // The open report, for its toolbar's controls (ReportsPage.setParam,
+        // ReportsPage.refresh): one period dialog is open at a time.
+        ReportsPage._live = { view, params, render, select };
 
         select.addEventListener("change", render);
         startInput.addEventListener("change", () => { if (select.value === "custom" && !useAsOfOnly) render(); });
@@ -602,11 +618,27 @@ const ReportsPage = {
         if (reportType) {
             const sb = $("#report-save-btn");
             if (sb) sb.addEventListener("click", () => {
-                ReportsPage.saveCurrent(reportType, currentParams);
+                ReportsPage.saveCurrent(reportType, { ...params, ...currentParams });
             });
         }
 
         await render();
+    },
+
+    // Redraw the open report on its current period and params: what a
+    // toolbar control does after changing something.
+    refresh() {
+        if (ReportsPage._live) ReportsPage._live.render();
+    },
+
+    // Set one of the open report's params (a class, a job, a column
+    // choice) and redraw; an empty value removes it from the address.
+    setParam(key, value, redraw = true) {
+        const live = ReportsPage._live;
+        if (!live) return;
+        if (value === null || value === undefined || value === '') delete live.params[key];
+        else live.params[key] = value;
+        if (redraw) live.render();
     },
 
     async profitLoss(prefill) {
@@ -1072,83 +1104,235 @@ const ReportsPage = {
     },
 };
 
+// ---------------------------------------------------------------------------
+// The wide grid: P&L accounts down the side, one column per class (or job)
+// across, a Total column (R1, #231; R13, #242). The Account column and the
+// header row stay put while the rest scrolls sideways inside its container,
+// so the Total column is reachable however many columns there are. Above
+// the table: a "Go to" picker (the type-ahead attaches to it), ‹ Prev /
+// Next ›, and a status line a screen reader hears ("Column 4 of 12: Site
+// Prep"). With the grid or the picker focused, ←/→ move one column, Home
+// and End go to the first and last, Enter opens the column's own report.
+// Nothing of the jump state reaches the address, a saved report or an
+// export: it is a place in the table, not a filter.
+// ---------------------------------------------------------------------------
+ReportsPage._grid = { current: -1, count: 0, names: [] };
+
+// spec: { title, noun (lowercase, T()'d), kind ('class' | 'job': the
+// picker's name, so the type-ahead knows it lists them), columns
+// [{id, name, income, cogs, gross_profit, expenses, net_income}], accounts
+// {income, cogs, expenses} with amounts[] aligned to columns, totals
+// {income, cogs, gross_profit, expenses, net_income}, drill(account, col)
+// → call for an amount, head(col) → call for a heading, sum(col, key) →
+// call for a subtotal cell (or null), note (html above the table),
+// totalLabel }
+ReportsPage._pivotGrid = function (spec) {
+    const cols = spec.columns;
+    const n = cols.length;
+    const totals = spec.totals;
+    const link = (call, text) => `<a href="javascript:void(0)" class="grid-link" style="color:var(--text-link); text-decoration:none;" onclick="${escapeHtml(call)}">${text}</a>`;
+    const empties = cols.map((_, i) => `<td data-col="${i}"></td>`).join('') + '<td></td>';
+    const label = a => `${a.account_number ? escapeHtml(a.account_number) + ' - ' : ''}${escapeHtml(a.account_name)}`;
+    const cell = (a, i) => {
+        const amount = a.amounts[i];
+        if (!amount) return `<td class="amount" data-col="${i}"></td>`;
+        return `<td class="amount" data-col="${i}">${link(spec.drill(a, cols[i]), formatCurrency(amount))}</td>`;
+    };
+    const section = (title, rows) => `<tr class="grid-section"><th scope="row">${title}</th>${empties}</tr>`
+        + (rows.length
+            ? rows.map(a => `<tr><th scope="row" style="padding-left:24px;">${label(a)}</th>${cols.map((_, i) => cell(a, i)).join('')}<td class="amount">${formatCurrency(a.total)}</td></tr>`).join('')
+            : `<tr><td style="padding-left:24px; color:var(--gray-400);">None</td>${empties}</tr>`);
+    const sum = (title, key, style) => `<tr style="${style}"><th scope="row">${title}</th>${cols.map((c, i) => {
+        const text = formatCurrency(c[key]);
+        const call = spec.sum ? spec.sum(c, key) : null;
+        return `<td class="amount" data-col="${i}">${call ? link(call, text) : text}</td>`;
+    }).join('')}<td class="amount">${formatCurrency(totals[key])}</td></tr>`;
+    const subtotal = 'font-weight:600; background:var(--gray-50);';
+    const heads = cols.map((c, i) => {
+        const call = spec.head ? spec.head(c) : null;
+        return `<th scope="col" class="amount" data-col="${i}">${call ? link(call, escapeHtml(c.name)) : escapeHtml(c.name)}</th>`;
+    }).join('');
+    const jumpOpts = cols.map((c, i) => `<option value="${i}">${escapeHtml(c.name)}</option>`).join('');
+    ReportsPage._grid = { current: -1, count: n, names: cols.map(c => c.name) };
+    return `
+        <div class="grid-toolbar" id="grid-toolbar" onkeydown="ReportsPage.gridKey(event)">
+            <label for="grid-jump">Go to ${escapeHtml(spec.noun)}</label>
+            <select id="grid-jump" name="${spec.kind}_jump" onchange="if (this.value !== '') ReportsPage.gridGo(parseInt(this.value, 10))"><option value="">Type a ${escapeHtml(spec.noun)}…</option>${jumpOpts}</select>
+            <button type="button" class="btn btn-sm btn-secondary" aria-label="Previous ${escapeHtml(spec.noun)}" onclick="ReportsPage.gridStep(-1)">&lsaquo; Prev</button>
+            <button type="button" class="btn btn-sm btn-secondary" aria-label="Next ${escapeHtml(spec.noun)}" onclick="ReportsPage.gridStep(1)">Next &rsaquo;</button>
+            <span id="grid-live" class="grid-live" role="status" aria-live="polite"></span>
+        </div>
+        ${spec.note || ''}
+        <div class="table-container table-container--scroll grid-scroll" id="grid-scroll" tabindex="0" role="region" aria-label="${escapeHtml(spec.title)}" onkeydown="ReportsPage.gridKey(event)">
+            <table class="pivot-grid">
+                <thead><tr><th scope="col">Account</th>${heads}<th scope="col" class="amount">${escapeHtml(spec.totalLabel || 'Total')}</th></tr></thead>
+                <tbody>
+                    ${section(T('Income'), spec.accounts.income)}
+                    ${sum(T('Total Income'), 'income', subtotal)}
+                    ${section('Cost of Goods Sold', spec.accounts.cogs)}
+                    ${sum('Gross Profit', 'gross_profit', subtotal)}
+                    ${section('Expenses', spec.accounts.expenses)}
+                    ${sum('Total Expenses', 'expenses', subtotal)}
+                    ${sum(T('Net Income'), 'net_income', 'font-weight:700; background:var(--primary-light);')}
+                </tbody>
+            </table>
+        </div>`;
+};
+
+// Column i of the open grid: scrolled into view (the frozen Account
+// column allowed for), highlighted, named in the picker and said aloud.
+ReportsPage.gridGo = function (i) {
+    const g = ReportsPage._grid;
+    if (!g.count) return;
+    i = Math.max(0, Math.min(g.count - 1, i));
+    g.current = i;
+    $$('#report-content .pivot-grid .is-current').forEach(el => el.classList.remove('is-current'));
+    $$(`#report-content .pivot-grid [data-col="${i}"]`).forEach(el => el.classList.add('is-current'));
+    const th = $(`#report-content .pivot-grid thead th[data-col="${i}"]`);
+    const box = $('#grid-scroll');
+    if (th && box) {
+        // the last column brings the Total column beside it into view
+        const fixed = box.querySelector('thead th:first-child');
+        const edgeCell = i === g.count - 1 ? box.querySelector('thead th:last-child') : th;
+        const b = box.getBoundingClientRect();
+        const edge = b.left + (fixed ? fixed.getBoundingClientRect().width : 0);
+        const right = edgeCell.getBoundingClientRect().right;
+        if (right > b.right) box.scrollLeft += right - b.right;
+        const left = th.getBoundingClientRect().left;
+        if (left < edge) box.scrollLeft += left - edge;
+    }
+    const sel = $('#grid-jump');
+    if (sel && sel.value !== String(i)) {
+        sel.value = String(i);
+        if (sel._cbx) sel._cbx.sync();
+    }
+    const live = $('#grid-live');
+    if (live) live.textContent = `Column ${i + 1} of ${g.count}: ${g.names[i]}`;
+};
+
+ReportsPage.gridStep = function (delta) {
+    const g = ReportsPage._grid;
+    if (!g.count) return;
+    if (g.current < 0) ReportsPage.gridGo(delta < 0 ? g.count - 1 : 0);
+    else ReportsPage.gridGo(g.current + delta);
+};
+
+// ←/→ one column, Home/End the first and last, Enter the column's own
+// report. In the picker's box the arrows are the caret's while its list
+// is open; closed, they move the column.
+ReportsPage.gridKey = function (e) {
+    const g = ReportsPage._grid;
+    if (!g.count) return;
+    const t = e.target;
+    if (t && t.getAttribute && t.getAttribute('aria-expanded') === 'true') return;
+    const inText = t && t.tagName === 'INPUT' && t.getAttribute('role') !== 'combobox';
+    if (inText) return;
+    switch (e.key) {
+        case 'ArrowLeft': e.preventDefault(); ReportsPage.gridStep(-1); return;
+        case 'ArrowRight': e.preventDefault(); ReportsPage.gridStep(1); return;
+        case 'Home': e.preventDefault(); ReportsPage.gridGo(0); return;
+        case 'End': e.preventDefault(); ReportsPage.gridGo(g.count - 1); return;
+        case 'Enter': {
+            if (t && t.getAttribute && t.getAttribute('role') === 'combobox') return;
+            if (t && (t.tagName === 'BUTTON' || t.tagName === 'A')) return;
+            if (g.current < 0) return;
+            const a = $(`#report-content .pivot-grid thead th[data-col="${g.current}"] a`);
+            if (a) { e.preventDefault(); a.click(); }
+            return;
+        }
+        default:
+    }
+};
+
 // Class tracking: Profit & Loss split by the class dimension.
 ReportsPage.profitLossByClass = async function (prefill) {
-    await ReportsPage.openPeriodModal(T("P&L by Class"), "this_year_to_date", async (_period, range) => {
-        const data = await API.get(`/reports/profit-loss-by-class?start_date=${range.start}&end_date=${range.end}`);
+    await ReportsPage.openPeriodModal(T("P&L by Class"), "this_year_to_date", async (period, range) => {
+        const qs = `start_date=${range.start}&end_date=${range.end}`;
+        const data = await API.get(`/reports/profit-loss-by-class?${qs}`);
         const classes = data.classes;
         if (!classes.length) {
             return `<div class="empty-state"><p>No activity in this period</p></div>`;
         }
         // Accounts down the side and a column per class, as QuickBooks
         // lays it out; an amount opens the transactions behind it, and a
-        // class's heading opens its own P&L (#213).
-        const width = classes.length + 2;
+        // class's heading opens its own P&L (#213), on the report's period.
         const args = (...xs) => xs.map(x => JSON.stringify(x)).join(',');
-        const label = a => `${a.account_number ? escapeHtml(a.account_number) + ' - ' : ''}${escapeHtml(a.account_name)}`;
-        const cell = (a, i) => {
-            const amount = a.amounts[i];
-            if (!amount) return '<td class="amount"></td>';
-            const c = classes[i];
-            const call = escapeHtml(`ReportsPage.openDrillDown(${args(a.account_id, a.account_name, range.start, range.end, c.class_id, c.class_name)})`);
-            return `<td class="amount"><a href="javascript:void(0)" style="color:var(--text-link); text-decoration:none;" onclick="${call}">${formatCurrency(amount)}</a></td>`;
-        };
-        const section = (title, rows) => `<tr><td colspan="${width}"><strong>${title}</strong></td></tr>`
-            + (rows.length
-                ? rows.map(a => `<tr><td style="padding-left:24px;">${label(a)}</td>${classes.map((_, i) => cell(a, i)).join('')}<td class="amount">${formatCurrency(a.total)}</td></tr>`).join('')
-                : `<tr><td colspan="${width}" style="color:var(--gray-400);">None</td></tr>`);
-        const sum = (title, key, total, style) => `<tr style="${style}"><td>${title}</td>${classes.map(c => `<td class="amount">${formatCurrency(c[key])}</td>`).join('')}<td class="amount">${formatCurrency(total)}</td></tr>`;
-        const subtotal = 'font-weight:600; background:var(--gray-50);';
-        const heads = classes.map(c => {
-            const call = escapeHtml(`ReportsPage.profitLossOfClass(${args(c.class_id, c.class_name, range.start, range.end)})`);
-            return `<th scope="col" class="amount"><a href="javascript:void(0)" style="color:var(--text-link); text-decoration:none;" onclick="${call}">${escapeHtml(c.class_name)}</a></th>`;
-        }).join('');
+        const dates = { period, start_date: range.start, end_date: range.end };
         return `
             <div style="font-size:11px; color:var(--gray-500); margin-bottom:8px;">
                 ${escapeHtml(data.start_date)} — ${escapeHtml(data.end_date)}. Click an amount for the transactions behind it, or a heading for that column's own report.
             </div>
-            <div class="table-container"><table>
-                <thead><tr><th scope="col">Account</th>${heads}<th scope="col" class="amount">Total</th></tr></thead>
-                <tbody>
-                    ${section(T('Income'), data.accounts.income)}
-                    ${sum(T('Total Income'), 'income', data.total_income, subtotal)}
-                    ${section('Cost of Goods Sold', data.accounts.cogs)}
-                    ${sum('Gross Profit', 'gross_profit', data.total_gross_profit, subtotal)}
-                    ${section('Expenses', data.accounts.expenses)}
-                    ${sum('Total Expenses', 'expenses', data.total_expenses, subtotal)}
-                    ${sum(T('Net Income'), 'net_income', data.total_net_income, 'font-weight:700; background:var(--primary-light);')}
-                </tbody>
-            </table></div>`;
-    }, "Dates", false, { view: 'profit-loss-by-class', prefill });
+            ${ReportsPage._pivotGrid({
+                title: T('P&L by Class'),
+                noun: T('class'),
+                kind: 'class',
+                columns: classes.map(c => ({ ...c, id: c.class_id, name: c.class_name })),
+                accounts: data.accounts,
+                totals: { income: data.total_income, cogs: data.total_cogs, gross_profit: data.total_gross_profit, expenses: data.total_expenses, net_income: data.total_net_income },
+                drill: (a, c) => `ReportsPage.openDrillDown(${args(a.account_id, a.account_name, range.start, range.end, c.class_id, c.class_name, 'profit-loss-by-class')})`,
+                head: (c) => `ReportsPage.profitLossOfClass(${args(c.class_id, c.class_name, dates)})`,
+            })}`;
+    }, "Dates", false, { view: 'profit-loss-by-class', prefill, wide: true });
 };
 
 // One class's own P&L (#213): the P&L by Class column, account by account,
-// each opening its transactions for that class.
-// Its address is #/reports/profit-loss-class?class_id=…&start_date=…&end_date=…
-// (R7): opened from it, the class's name comes from the server.
-ReportsPage.profitLossOfClass = async function (classId, className, startDate, endDate) {
+// each opening its transactions for that class. A report in its own right
+// since R5 (#235): the period shell, a class picker with ‹ Prev / Next ›
+// through the classes, Save and export. Its address is
+// #/reports/profit-loss-class?class_id=…&start_date=…&end_date=… (R7):
+// opened from it, the class's name comes from the server. `prefill` is the
+// query (period, start_date, end_date) the view starts on.
+ReportsPage.profitLossOfClass = async function (classId, className, prefill) {
     classId = parseInt(classId, 10);
     if (!classId) { toast(`No ${T('class')} on this column`, 'error'); return; }
-    ReportsPage.setAddress('profit-loss-class', { class_id: classId, start_date: startDate, end_date: endDate });
-    openModal(`${T('Profit & Loss')} — ${className || T('Class')}`, `
-        <div id="class-pl-body" style="font-size:11px; color:var(--gray-500);">Loading…</div>
-        <div class="form-actions">
-            ${ReportsPage._backButton('profit-loss-by-class', { start_date: startDate, end_date: endDate })}
-            <button type="button" class="btn btn-secondary" onclick="closeModal()">Close</button>
-        </div>`);
-    try {
-        const data = await API.get(`/reports/profit-loss?start_date=${startDate}&end_date=${endDate}&class_id=${classId}`);
-        if (!className) $('#modal-title').textContent = `${T('Profit & Loss')} — ${data.class_name}`;
+    prefill = prefill || {};
+    // The picker lists every active class, and this one if it is archived
+    // (history keeps it); the type-ahead attaches to it by its name.
+    let classes = [];
+    try { classes = await API.get('/classes?include_archived=true'); } catch (e) { classes = []; }
+    const listed = classes.filter(c => !c.is_archived || c.id === classId);
+    if (!listed.some(c => c.id === classId)) listed.unshift({ id: classId, name: className || `${T('Class')} ${classId}` });
+    const pickOpts = listed.map(c =>
+        `<option value="${c.id}" ${c.id === classId ? 'selected' : ''}>${escapeHtml(c.name)}${c.is_archived ? ' (archived)' : ''}</option>`
+    ).join('');
+    const noun = T('class');
+    const toolbar = `
+        <div class="form-group">
+            <label for="class-pl-pick">${T('Class')}</label>
+            <select id="class-pl-pick" name="class_id" onchange="ReportsPage.setParam('class_id', parseInt(this.value, 10))">${pickOpts}</select>
+        </div>
+        <div class="form-group grid-step full-width">
+            <span class="grid-step__buttons">
+                <button type="button" class="btn btn-sm btn-secondary" aria-label="Previous ${escapeHtml(noun)}" onclick="ReportsPage.stepClass(-1)">&lsaquo; Prev ${escapeHtml(noun)}</button>
+                <button type="button" class="btn btn-sm btn-secondary" aria-label="Next ${escapeHtml(noun)}" onclick="ReportsPage.stepClass(1)">Next ${escapeHtml(noun)} &rsaquo;</button>
+                <span id="class-pl-where" class="grid-live" role="status" aria-live="polite"></span>
+            </span>
+        </div>`;
+    const params = { class_id: classId };
+    await ReportsPage.openPeriodModal(`${T('Profit & Loss')} — ${className || T('Class')}`, "this_year_to_date", async (period, range, p) => {
+        const id = parseInt(p.class_id, 10) || classId;
+        const qs = `start_date=${range.start}&end_date=${range.end}&class_id=${id}`;
+        const data = await API.get(`/reports/profit-loss?${qs}`);
+        $('#modal-title').textContent = `${T('Profit & Loss')} — ${data.class_name}`;
+        const pick = $('#class-pl-pick');
+        if (pick && pick.value !== String(id)) { pick.value = String(id); if (pick._cbx) pick._cbx.sync(); }
+        const at = listed.findIndex(c => c.id === id);
+        const where = $('#class-pl-where');
+        if (where) where.textContent = at >= 0 ? `${data.class_name}: ${at + 1} of ${listed.length}` : '';
         const args = (...xs) => xs.map(x => JSON.stringify(x)).join(',');
         const section = items => items.length
             ? items.map(i => {
-                const call = escapeHtml(`ReportsPage.openDrillDown(${args(i.account_id, i.account_name, startDate, endDate, classId, className, 'profit-loss-class')})`);
+                const call = escapeHtml(`ReportsPage.openDrillDown(${args(i.account_id, i.account_name, range.start, range.end, id, data.class_name, 'profit-loss-class')})`);
                 return `<tr><td style="padding-left:24px;"><a href="javascript:void(0)" style="color:var(--text-link); text-decoration:none;" onclick="${call}">${escapeHtml(i.account_name)}</a></td><td class="amount">${formatCurrency(i.amount)}</td></tr>`;
             }).join('')
             : '<tr><td colspan="2" style="color:var(--gray-400);">None</td></tr>';
         const subtotal = (title, amount) => `<tr style="font-weight:600; background:var(--gray-50);"><td>${title}</td><td class="amount">${formatCurrency(amount)}</td></tr>`;
-        $('#class-pl-body').innerHTML = `
-            <p style="margin-bottom:12px; color:var(--gray-500); font-size:12px;">${T('Class')}: <strong>${escapeHtml(data.class_name)}</strong> &middot; ${formatDate(data.start_date)} &mdash; ${formatDate(data.end_date)}</p>
+        return `<div id="class-pl-body">
+            <div style="display:flex; align-items:center; gap:8px; margin-bottom:6px;">
+                ${ReportsPage._backButton('profit-loss-by-class', { period, start_date: range.start, end_date: range.end })}
+                ${ReportsPage._exportButtons('profit-loss', qs)}
+            </div>
+            <p style="margin-bottom:12px; color:var(--gray-500); font-size:12px;">${T('Class')}: <strong>${escapeHtml(data.class_name)}</strong> &middot; ${formatDate(data.start_date)} &mdash; ${formatDate(data.end_date)} &middot; this ${escapeHtml(noun)} only, not the company total</p>
             <div class="table-container"><table>
                 <thead><tr><th scope="col">Account</th><th scope="col" class="amount">Amount</th></tr></thead>
                 <tbody>
@@ -1163,10 +1347,19 @@ ReportsPage.profitLossOfClass = async function (classId, className, startDate, e
                     ${subtotal('Total Expenses', data.total_expenses)}
                     <tr style="font-weight:700; font-size:15px; background:var(--primary-light);"><td>${T('Net Income')}</td><td class="amount">${formatCurrency(data.net_income)}</td></tr>
                 </tbody>
-            </table></div>`;
-    } catch (err) {
-        $('#class-pl-body').innerHTML = `<div class="empty-state"><p>${escapeHtml(err.message || 'Failed to load the report')}</p></div>`;
-    }
+            </table></div></div>`;
+    }, "Dates", false, { reportType: 'profit_loss_class', view: 'profit-loss-class', params, prefill, toolbar });
+};
+
+// ‹ Prev / Next › through the class picker's list.
+ReportsPage.stepClass = function (delta) {
+    const pick = $('#class-pl-pick');
+    if (!pick || !pick.options.length) return;
+    const i = Math.max(0, Math.min(pick.options.length - 1, pick.selectedIndex + delta));
+    if (i === pick.selectedIndex) return;
+    pick.selectedIndex = i;
+    if (pick._cbx) pick._cbx.sync();
+    ReportsPage.setParam('class_id', parseInt(pick.value, 10));
 };
 
 // Back to P&L by Class / the General Ledger, on the dates each was opened
