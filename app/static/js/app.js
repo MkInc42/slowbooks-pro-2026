@@ -157,9 +157,10 @@ const App = {
     isMac() { return typeof navigator !== 'undefined' && /Mac|iP(hone|ad|od)/.test(navigator.platform || ''); },
     canGoBack() { return !!(history.state && history.state.from); },
     goBack() { if (App.canGoBack()) history.back(); },
-    // ⌘[ on a Mac (the key, or where the layout puts "["), Alt+← elsewhere
+    // ⌘[ on a Mac (the key, or where the layout puts "["; ⌘⌥[ is not it),
+    // Alt+← elsewhere
     isBackKey(e) {
-        if (App.isMac()) return e.metaKey && !e.ctrlKey && !e.shiftKey && (e.code === 'BracketLeft' || e.key === '[');
+        if (App.isMac()) return e.metaKey && !e.ctrlKey && !e.altKey && !e.shiftKey && (e.code === 'BracketLeft' || e.key === '[');
         return e.altKey && !e.ctrlKey && !e.metaKey && !e.shiftKey && e.code === 'ArrowLeft';
     },
     // The toolbar's Back follows the entry shown: after every push, stamp
@@ -1248,13 +1249,19 @@ const App = {
         App.loadTheme();
 
         // Keyboard shortcuts. The Alt letters go by the key's place
-        // (e.code: KeyD is the D key on any layout) with Alt alone held,
-        // not by the character typed: on a Mac, Option-D types "∂",
-        // Option-H "˙" and Option-Q "œ", and e.key carried those, so none
-        // of the documented shortcuts fired (macOS gate NEW-41). Ctrl+Alt
-        // is left alone: it is AltGr on some layouts, typing a character.
+        // (e.code: KeyD is the D key on any layout) with Alt alone held
+        // (Ctrl+Alt is AltGr on some layouts, Shift another shortcut), not
+        // by the character typed: on a Mac, Option-D types "∂", Option-H
+        // "˙" and Option-Q "œ", and e.key carried those, so none of the
+        // documented shortcuts fired (macOS gate NEW-41). Inside a field,
+        // though, that character is what the Mac is typing — "∂", or the
+        // dead key of Option-N's tilde — and it must go through: there the
+        // plain letter alone is the shortcut, which is what Windows and
+        // Linux send for Alt+N (NEW-41 review).
         document.addEventListener('keydown', (e) => {
-            const alt = e.altKey && !e.ctrlKey && !e.metaKey;
+            const alt = e.altKey && !e.ctrlKey && !e.metaKey && !e.shiftKey;
+            const editing = !!(e.target && e.target.closest && e.target.closest('input, textarea, select, [contenteditable]:not([contenteditable="false"])'));
+            const letter = (code, key) => alt && e.code === code && (!editing || String(e.key).toLowerCase() === key);
             // Back: ⌘[ on a Mac, Alt+← elsewhere, while an app page is
             // behind (the Mac app's window has no Back of its own, NEW-30)
             if (App.isBackKey(e) && App.canGoBack()) { e.preventDefault(); App.goBack(); return; }
@@ -1270,19 +1277,20 @@ const App = {
             }
             // Alt+N / Alt+P / Alt+Q start new entries: a read-only sign-in is
             // told why nothing opens, rather than handed a blank locked form
-            if (alt && ['KeyN', 'KeyP', 'KeyQ'].includes(e.code) && App.isReadOnly()) {
+            const entry = letter('KeyN', 'n') || letter('KeyP', 'p') || letter('KeyQ', 'q');
+            if (entry && App.isReadOnly()) {
                 toast(App.READ_ONLY_MESSAGE, 'info'); e.preventDefault(); return;
             }
             // Alt+N: new invoice
-            if (alt && e.code === 'KeyN') { InvoicesPage.showForm(); e.preventDefault(); }
+            if (letter('KeyN', 'n')) { InvoicesPage.showForm(); e.preventDefault(); }
             // Alt+P: receive payment
-            if (alt && e.code === 'KeyP') { PaymentsPage.showForm(); e.preventDefault(); }
+            if (letter('KeyP', 'p')) { PaymentsPage.showForm(); e.preventDefault(); }
             // Alt+Q: quick entry
-            if (alt && e.code === 'KeyQ') { App.navigate('#/quick-entry'); e.preventDefault(); }
+            if (letter('KeyQ', 'q')) { App.navigate('#/quick-entry'); e.preventDefault(); }
             // Alt+H: home/dashboard
-            if (alt && e.code === 'KeyH') { App.navigate('#/'); e.preventDefault(); }
+            if (letter('KeyH', 'h')) { App.navigate('#/'); e.preventDefault(); }
             // Alt+D: toggle dark mode (Feature 12)
-            if (alt && e.code === 'KeyD') { App.toggleTheme(); e.preventDefault(); }
+            if (letter('KeyD', 'd')) { App.toggleTheme(); e.preventDefault(); }
             // Escape: close modal (not the Escape that closes a date
             // field's calendar: utils.js escapeLeavesPicker, NEW-33)
             if (e.key === 'Escape' && !escapeLeavesPicker(e)) { closeModal(); }

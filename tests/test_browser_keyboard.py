@@ -779,3 +779,65 @@ def test_the_drill_downs_position_is_a_status_that_names_the_account(
         assert page.locator("#drill-next").is_disabled()
     finally:
         page.close()
+
+
+# ── Review, round 2: the Alt letters inside a field ──────────────────────
+
+KEY_AT = """([sel, key, code, mods]) => document.querySelector(sel).dispatchEvent(new KeyboardEvent('keydown',
+    { key, code, bubbles: true, cancelable: true, ...mods }))"""
+MAC = """(on) => { Object.defineProperty(Navigator.prototype, 'platform',
+    { get: () => on ? 'MacIntel' : 'Linux x86_64', configurable: true }); App.labelBack(); }"""
+
+
+def test_inside_a_field_an_alt_letter_is_the_plain_letter_alone(
+    browser, company, books
+):
+    """A Mac's Option types a character in a field ("∂", or a dead key for
+    Option-N's tilde): it goes through, and no shortcut fires. The plain
+    letter with Alt (Windows, Linux) fires as before; outside a field the
+    key's position is enough; Shift makes it another shortcut."""
+    page, handled = _open(browser, company)
+    try:
+        _no_splash(page)
+        _visit(page, handled, "#/invoices")
+        _open_dialog(page, handled, "InvoicesPage.showForm()", "#inv-lines tr")
+        page.fill("#modal textarea", "a note being typed")
+        page.focus("#modal textarea")
+        was = page.evaluate(THEME)
+        # Option-N in the Notes: the tilde's dead key, not a new invoice
+        page.evaluate(KEY_AT, ["#modal textarea", "Dead", "KeyN", {"altKey": True}])
+        page.wait_for_timeout(100)
+        assert page.input_value("#modal textarea") == "a note being typed"
+        assert page.evaluate("() => document.activeElement.tagName") == "TEXTAREA"
+        # Option-D in the Notes types "∂": no theme change
+        page.evaluate(KEY_AT, ["#modal textarea", "∂", "KeyD", {"altKey": True}])
+        assert page.evaluate(THEME) == was
+        # Shift+Alt+D anywhere is not the shortcut either
+        page.evaluate(KEY, ["D", "KeyD", {"altKey": True, "shiftKey": True}])
+        assert page.evaluate(THEME) == was
+        # the plain letter with Alt, as Windows and Linux send it, fires
+        # from a field: the form is opened afresh (its default note back)
+        page.evaluate(KEY_AT, ["#modal textarea", "n", "KeyN", {"altKey": True}])
+        page.wait_for_function(
+            "() => document.querySelector('#modal textarea').value !== 'a note being typed'"
+        )
+        settle(page, handled)
+        assert page.evaluate(TITLE).startswith("New Invoice")
+        page.evaluate("() => closeModal()")
+        # outside a field the key's position is enough, dead key or not
+        page.evaluate("() => document.body.focus()")
+        page.evaluate(KEY, ["Dead", "KeyN", {"altKey": True}])
+        page.wait_for_function(MODAL_SHOWN)
+        assert page.evaluate(TITLE).startswith("New Invoice")
+        page.evaluate("() => closeModal()")
+        # on a Mac, ⌘⌥[ is not Back; ⌘[ is
+        _sidebar(page, handled, "#/customers")
+        page.evaluate(MAC, True)
+        page.evaluate(KEY, ["[", "BracketLeft", {"metaKey": True, "altKey": True}])
+        page.wait_for_timeout(100)
+        assert page.evaluate("location.hash") == "#/customers"
+        page.evaluate(KEY, ["[", "BracketLeft", {"metaKey": True}])
+        page.wait_for_function(AT, arg="#/invoices")  # the page before Customers
+        page.evaluate(MAC, False)
+    finally:
+        page.close()

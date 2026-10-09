@@ -78,10 +78,35 @@ def test_the_alt_shortcuts_compare_the_keys_position_and_cmd_k_finds():
     app = _src("app.js")
     keys = app[app.index("// Keyboard shortcuts.") :]
     keys = keys[: keys.index("// Close search dropdown")]
-    assert "const alt = e.altKey && !e.ctrlKey && !e.metaKey;" in keys
-    for code in ("KeyN", "KeyP", "KeyQ", "KeyH", "KeyD"):
-        assert f"if (alt && e.code === '{code}')" in keys, code
-    assert "['KeyN', 'KeyP', 'KeyQ'].includes(e.code) && App.isReadOnly()" in keys
+    assert "const alt = e.altKey && !e.ctrlKey && !e.metaKey && !e.shiftKey;" in keys
+    # inside a field the plain letter alone (a Mac's Option types a
+    # character, or a dead key, that must go through); outside, the key
+    assert (
+        "e.target.closest('input, textarea, select, [contenteditable]:not([contenteditable=\"false\"])')"
+        in keys
+    )
+    assert (
+        "const letter = (code, key) => alt && e.code === code && (!editing || String(e.key).toLowerCase() === key);"
+        in keys
+    )
+    for code, key in (
+        ("KeyN", "n"),
+        ("KeyP", "p"),
+        ("KeyQ", "q"),
+        ("KeyH", "h"),
+        ("KeyD", "d"),
+    ):
+        assert f"if (letter('{code}', '{key}'))" in keys, code
+    assert (
+        "const entry = letter('KeyN', 'n') || letter('KeyP', 'p') || letter('KeyQ', 'q');"
+        in keys
+    )
+    assert "if (entry && App.isReadOnly())" in keys
+    # ⌘⌥[ is not Back
+    assert (
+        "e.metaKey && !e.ctrlKey && !e.altKey && !e.shiftKey && (e.code === 'BracketLeft' || e.key === '[')"
+        in app
+    )
     assert not re.search(r"(?<!!)e\.altKey && e\.key === '[a-z]'", keys)
     assert "((e.ctrlKey || e.metaKey) && !e.altKey && e.key === 'k')" in keys
 
@@ -118,7 +143,9 @@ def test_the_toolbar_has_a_back_that_knows_whether_there_is_somewhere_to_go():
         "if (App.isBackKey(e) && App.canGoBack()) { e.preventDefault(); App.goBack(); return; }"
         in app
     )
-    assert "(e.code === 'BracketLeft' || e.key === '[')" in app
+    assert (
+        "!e.altKey && !e.shiftKey && (e.code === 'BracketLeft' || e.key === '[')" in app
+    )
     assert (
         "e.altKey && !e.ctrlKey && !e.metaKey && !e.shiftKey && e.code === 'ArrowLeft'"
         in app
