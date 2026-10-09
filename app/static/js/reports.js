@@ -94,16 +94,46 @@ const ReportsPage = {
 
     // Focus back on the row the view was left from, once; a later render
     // of the same view (a period change) leaves focus where the user has
-    // it.
+    // it. True when it did.
     _refocusRow(root) {
         const key = history.state && history.state.focus;
-        if (!key || !root) return;
+        if (!key || !root) return false;
         const el = key.startsWith('n:')
             ? document.querySelectorAll('#modal-body a[href], #modal-body button')[parseInt(key.slice(2), 10)]
             : root.querySelector(`[data-row-key="${CSS.escape(key)}"]`);
-        if (!el) return;
+        if (!el) return false;
         history.replaceState({ ...history.state, focus: null }, '', location.hash || '#/');
         try { el.focus(); } catch (e) { /* not focusable after all */ }
+        return true;
+    },
+
+    // A report opened for one customer or vendor from their page (#238):
+    // the row is marked and scrolled to, and takes focus unless Back just
+    // put it elsewhere. The report is still the whole company's — only
+    // the row is picked out — so nothing about its totals changes.
+    _spotlight(root, params, focused) {
+        const key = params.customer_id ? `customer:${params.customer_id}`
+            : params.vendor_id ? `vendor:${params.vendor_id}` : null;
+        if (!key || !root) return;
+        const el = root.querySelector(`[data-row-key="${CSS.escape(key)}"]`);
+        const row = el && el.closest('tr');
+        if (!row) return;
+        row.setAttribute('aria-current', 'true');
+        row.style.background = 'var(--primary-light)';
+        row.scrollIntoView({ block: 'center' });
+        if (!focused) { try { el.focus(); } catch (e) { /* nothing */ } }
+    },
+
+    // A change inside the open period report that is not its dates — a
+    // filter dropped, the drill-down's class or account — goes into the
+    // address's params and re-renders in place (the address is replaced,
+    // not pushed, as a period change is).
+    _params: null,
+    setParam(key, value) {
+        if (!ReportsPage._params) return;
+        ReportsPage._params[key] = value === '' ? null : value;
+        const select = $('#report-period-select');
+        if (select) select.dispatchEvent(new Event('change'));
     },
 
     // A row's link to where it goes: the onclick payload is built outside
@@ -576,6 +606,10 @@ const ReportsPage = {
         const reportType = opts.reportType || null;
         const prefill = opts.prefill || {};
         const view = opts.view || null;
+        // The params ride in the address ahead of the dates, are saved with
+        // the report, and ReportsPage.setParam changes one in place.
+        const params = opts.params || (opts.params = {});
+        ReportsPage._params = params;
 
         const currentYear = new Date().getFullYear();
         const defaultCustomStart = prefill.start_date || `${currentYear}-01-01`;
@@ -638,7 +672,7 @@ const ReportsPage = {
                     if (view) ReportsPage.setAddress(view, { ...(opts.params || {}), ...currentParams });
                     content.innerHTML = await loadContent(select.value, range);
                 }
-                ReportsPage._refocusRow(content);
+                ReportsPage._spotlight(content, params, ReportsPage._refocusRow(content));
             } catch (err) {
                 content.innerHTML = `<div class="empty-state"><p>${escapeHtml(err.message)}</p></div>`;
             }
@@ -651,7 +685,7 @@ const ReportsPage = {
         if (reportType) {
             const sb = $("#report-save-btn");
             if (sb) sb.addEventListener("click", () => {
-                ReportsPage.saveCurrent(reportType, currentParams);
+                ReportsPage.saveCurrent(reportType, { ...params, ...currentParams });
             });
         }
 
@@ -852,7 +886,7 @@ const ReportsPage = {
                     <thead><tr><th scope="col">${T('Customer')}</th><th scope="col" class="amount">${T('Invoices')}</th><th scope="col" class="amount">Sales</th><th scope="col" class="amount">Sales Tax</th><th scope="col" class="amount">Paid</th><th scope="col" class="amount">Balance</th></tr></thead>
                     <tbody>${rows || '<tr><td colspan="6" style="text-align:center; color:var(--gray-400);">No sales data</td></tr>'}</tbody>
                 </table></div>`;
-        }, "Dates", false, { reportType: 'income_by_customer', view: 'income-by-customer', prefill });
+        }, "Dates", false, { reportType: 'income_by_customer', view: 'income-by-customer', params: { customer_id: (prefill || {}).customer_id || null }, prefill });
     },
 
     async customerStatementPicker() {
@@ -930,7 +964,7 @@ const ReportsPage = {
                     </tr></thead>
                     <tbody>${rows || '<tr><td colspan="7" style="text-align:center; color:var(--gray-400);">No outstanding receivables</td></tr>'}</tbody>
                 </table></div>`;
-        }, "As Of", true, { reportType: 'ar_aging', view: 'ar-aging', prefill });
+        }, "As Of", true, { reportType: 'ar_aging', view: 'ar-aging', params: { customer_id: (prefill || {}).customer_id || null }, prefill });
     },
 
     async apAging(prefill) {
@@ -965,7 +999,7 @@ const ReportsPage = {
                     </tr></thead>
                     <tbody>${rows || '<tr><td colspan="6" style="text-align:center; color:var(--gray-400);">No outstanding payables</td></tr>'}</tbody>
                 </table></div>`;
-        }, "As Of", true, { reportType: 'ap_aging', view: 'ap-aging', prefill });
+        }, "As Of", true, { reportType: 'ap_aging', view: 'ap-aging', params: { vendor_id: (prefill || {}).vendor_id || null }, prefill });
     },
 
     async trialBalance(prefill) {
@@ -1045,10 +1079,13 @@ const ReportsPage = {
 
     // #/reports/1099-summary?year=2025 opens the year's summary straight
     // away (R7); the address takes the year when Generate is clicked.
+    // With vendor_id (from the vendor's page, #238) that vendor's row is
+    // picked out; it rides on the content element and in the address.
     async report1099(prefill) {
         const currentYear = new Date().getFullYear();
         const year = /^\d{4}$/.test((prefill || {}).year || '') ? prefill.year : null;
-        ReportsPage.setAddress('1099-summary', { year });
+        const vendorId = parseInt((prefill || {}).vendor_id, 10) || null;
+        ReportsPage.setAddress('1099-summary', { year, vendor_id: vendorId });
         openModal('1099 Summary', `
             <div class="form-grid" style="margin-bottom:12px;">
                 <div class="form-group"><label for="report-1099-year">Year</label>
@@ -1056,15 +1093,16 @@ const ReportsPage = {
                 <div class="form-group" style="align-self:end;">
                     <button type="button" class="btn btn-primary" onclick="ReportsPage.load1099()">Generate</button></div>
             </div>
-            <div id="report-1099-content"><div style="font-size:11px; color:var(--gray-500);">Select year and click Generate</div></div>
+            <div id="report-1099-content" ${vendorId ? `data-vendor-id="${vendorId}"` : ''}><div style="font-size:11px; color:var(--gray-500);">Select year and click Generate</div></div>
             <div class="form-actions"><button type="button" class="btn btn-secondary" onclick="closeModal()">Close</button></div>`);
         if (year) await ReportsPage.load1099();
     },
 
     async load1099() {
         const year = $('#report-1099-year').value;
-        ReportsPage.setAddress('1099-summary', { year });
         const content = $('#report-1099-content');
+        const vendorId = content.getAttribute('data-vendor-id') || null;
+        ReportsPage.setAddress('1099-summary', { year, vendor_id: vendorId });
         content.innerHTML = '<div style="font-size:11px; color:var(--gray-500);">Loading...</div>';
         try {
             const data = await API.get(`/reports/1099-summary?year=${year}`);
@@ -1090,6 +1128,7 @@ const ReportsPage = {
                     <thead><tr><th scope="col">Vendor</th><th scope="col">Tax ID</th><th scope="col">Type</th><th scope="col" class="amount">Total Paid</th><th scope="col">Status</th></tr></thead>
                     <tbody>${rows}</tbody>
                 </table></div>`;
+            ReportsPage._spotlight(content, { vendor_id: vendorId }, ReportsPage._refocusRow(content));
         } catch (err) { content.innerHTML = `<div style="color:var(--danger);">${escapeHtml(err.message)}</div>`; }
     },
 
@@ -1291,18 +1330,33 @@ ReportsPage.financialStatementsPdf = async function (prefill) {
     }, "Dates", false, { view: 'financial-statements', prefill });
 };
 
+// With customer_id (from the customer's page, #238) the API keeps that
+// customer's jobs only: the report says so, its total is labelled as that
+// customer's, and "all jobs" drops the filter in place (address replaced).
 ReportsPage.jobProfitability = async function (prefill) {
+    const params = { customer_id: parseInt((prefill || {}).customer_id, 10) || null };
     await ReportsPage.openPeriodModal(T("Job Profitability"), "this_year_to_date", async (_period, range) => {
-        const data = await API.get(`/reports/job-profitability?start_date=${range.start}&end_date=${range.end}`);
+        const filter = params.customer_id ? `&customer_id=${params.customer_id}` : '';
+        const [data, customer] = await Promise.all([
+            API.get(`/reports/job-profitability?start_date=${range.start}&end_date=${range.end}${filter}`),
+            params.customer_id ? API.get(`/customers/${params.customer_id}`).catch(() => null) : null,
+        ]);
+        const who = customer ? customer.name : (params.customer_id ? `${T('customer')} #${params.customer_id}` : '');
+        const filtered = params.customer_id
+            ? `<div class="hint" style="margin-bottom:8px;" data-filtered="customer">
+                ${escapeHtml(T('Jobs'))} of <strong>${escapeHtml(who)}</strong> only — the totals below are this ${escapeHtml(T('customer'))}'s, not the company's.
+                <a href="javascript:void(0)" onclick="ReportsPage.setParam('customer_id', null)">Show all ${escapeHtml(T('jobs'))}</a>
+              </div>`
+            : '';
         const pct = v => v === null || v === undefined ? '—' : `${v.toFixed(1)}%`;
         // A job's row opens the job's page (its own address, so Back returns
         // here); the customer's name opens the customer's page without
         // taking the row's click (R9). "No job" is no document: text.
-        const customer = (j) => j.customer_id
+        const customerCell = (j) => j.customer_id
             ? ReportsPage._rowLink(`event.stopPropagation(); ReportsPage.openCustomer(${j.customer_id})`, j.customer_name || '', `customer:${j.customer_id}`)
             : escapeHtml(j.customer_name || '');
         const rows = data.jobs.map(j => `<tr ${j.job_id ? `style="cursor:pointer" onclick="ReportsPage._leaveFrom();closeModal();App.navigate('#/jobs/${j.job_id}')"` : ''}>
-            <td>${customer(j)}</td>
+            <td>${customerCell(j)}</td>
             <td>${escapeHtml(j.job_name)}</td>
             <td class="amount">${j.contract_amount !== null && j.contract_amount !== undefined ? formatCurrency(j.contract_amount) : ''}</td>
             <td class="amount">${formatCurrency(j.income)}</td>
@@ -1310,23 +1364,23 @@ ReportsPage.jobProfitability = async function (prefill) {
             <td class="amount" style="font-weight:700;">${formatCurrency(j.net_income)}</td>
             <td class="amount">${pct(j.margin_pct)}</td>
         </tr>`).join('');
-        return `
+        return `${filtered}
             <div style="font-size:11px; color:var(--gray-500); margin-bottom:8px;">
-                ${escapeHtml(data.start_date)} — ${escapeHtml(data.end_date)} · ${Terms.text('"No job" holds untagged activity')} <em>and</em> ${Terms.text('the applied-cost credits behind Job Cost Entries (labor, equipment, overhead applied to jobs), so its costs can be negative and the totals still match the P&L')}
+                ${escapeHtml(data.start_date)} — ${escapeHtml(data.end_date)}${params.customer_id ? '' : ` · ${Terms.text('"No job" holds untagged activity')} <em>and</em> ${Terms.text('the applied-cost credits behind Job Cost Entries (labor, equipment, overhead applied to jobs), so its costs can be negative and the totals still match the P&L')}`}
             </div>
             <div class="table-container"><table>
                 <thead><tr><th scope="col">${T('Customer')}</th><th scope="col">${T('Job')}</th><th scope="col" class="amount">Contract</th><th scope="col" class="amount">${T('Income')}</th>
                 <th scope="col" class="amount">Costs</th><th scope="col" class="amount">Net</th><th scope="col" class="amount">Margin</th></tr></thead>
                 <tbody>${rows.length ? rows : '<tr><td colspan="7">No activity in this period</td></tr>'}</tbody>
                 <tfoot><tr style="font-weight:700; background:var(--gray-50);">
-                    <td colspan="3">Total</td>
+                    <td colspan="3">${params.customer_id ? `Total — ${escapeHtml(who)}` : 'Total'}</td>
                     <td class="amount">${formatCurrency(data.total_income)}</td>
                     <td class="amount">${formatCurrency(data.total_costs)}</td>
                     <td class="amount">${formatCurrency(data.total_net_income)}</td>
                     <td></td>
                 </tr></tfoot>
             </table></div>`;
-    }, "Dates", false, { view: 'job-profitability', prefill });
+    }, "Dates", false, { view: 'job-profitability', params, prefill });
 };
 
 ReportsPage.jobBudgetVsActual = async function (prefill) {

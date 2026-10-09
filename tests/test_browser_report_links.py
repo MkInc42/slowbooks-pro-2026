@@ -31,6 +31,9 @@ of tests/test_theme_contrast.py:
 Skipped, as one module, where playwright or its Chromium is not installed.
 """
 
+import datetime as dt
+import re
+
 import pytest
 
 pytest.importorskip("playwright.sync_api")
@@ -43,7 +46,10 @@ from tests.test_browser_report_views import (  # noqa: E402
     _open_at,
     _query,
 )
+from tests.test_readonly_browser import _reader, _signed_in  # noqa: E402
 from tests.test_theme_contrast import (  # noqa: E402,F401  (the fixtures)
+    _open,
+    _visit,
     books_fixture,
     browser_fixture,
     company_fixture,
@@ -302,3 +308,194 @@ def test_a_class_pl_opened_from_fund_balances_goes_back_there_and_the_label_foll
     finally:
         page.close()
         company.put("/api/settings", json={"company_type": "business"})
+
+
+# ── R8: entity pages open their reports pre-filtered ─────────────────────
+
+
+def _home(browser, client, role=None):
+    """The app at #/, the splash out of the way (as _open_at leaves it)."""
+    page, handled = (
+        _signed_in(browser, client, role) if role else _open(browser, client)
+    )
+    page.evaluate(
+        "() => { const s = document.getElementById('splash'); if (s) s.classList.add('hidden'); }"
+    )
+    return page, handled
+
+
+def _open_customer(page, handled, customer_id):
+    _visit(page, handled, "#/customers")
+    page.evaluate("(id) => CustomersPage.showDetails(id)", customer_id)
+    page.wait_for_function(
+        "() => document.getElementById('modal-title').textContent.startsWith('Customer — ')"
+    )
+    settle(page, handled)
+
+
+def _open_vendor(page, handled, vendor_id):
+    _visit(page, handled, "#/vendors")
+    page.evaluate("(id) => VendorsPage.showDetails(id)", vendor_id)
+    page.wait_for_function(
+        "() => document.getElementById('modal-title').textContent.startsWith('Vendor — ')"
+    )
+    settle(page, handled)
+
+
+def _hrefs(page, group):
+    return page.evaluate(
+        '(g) => [...document.querySelectorAll(`[role=group][aria-label="${g}"] a`)]'
+        ".map(a => [a.textContent.trim(), a.getAttribute('href')])",
+        group,
+    )
+
+
+def test_the_customer_page_invoice_rows_open_the_invoice_and_its_reports_open_for_the_customer(
+    browser, company, books
+):
+    cid = books["customer"]
+    page, handled = _home(browser, company)
+    try:
+        _open_customer(page, handled, cid)
+        # an invoice row opens the invoice, not the Invoices list
+        page.locator("#modal-body h4", has_text="Recent invoices").wait_for()
+        page.locator("#modal-body h4", has_text="Recent invoices").locator(
+            "xpath=following-sibling::table//tbody/tr[1]"
+        ).click()
+        page.wait_for_function(
+            "() => document.getElementById('modal-title').textContent.startsWith('Invoice #')"
+        )
+        assert re.fullmatch(r"#/invoices/\d+", _hash(page))
+
+        # the Reports row: each report through its address, on a period
+        page.go_back()
+        _open_customer(page, handled, cid)
+        links = dict(_hrefs(page, "Reports for this customer"))
+        assert links == {
+            "Income by Customer": f"#/reports/income-by-customer?customer_id={cid}&period=this_year_to_date",
+            "A/R Aging": f"#/reports/ar-aging?customer_id={cid}&period=this_year_to_date",
+            "Job Profitability": f"#/reports/job-profitability?customer_id={cid}&period=this_year_to_date",
+        }
+        statement = page.get_by_role("button", name="Statement (PDF)")
+        assert statement.count() == 1
+        assert (
+            f"/api/reports/customer-statement/{cid}/pdf?as_of_date="
+            in statement.get_attribute("onclick")
+        )
+
+        # A/R Aging: the whole report, this customer's row picked out and focused
+        page.get_by_role("link", name="A/R Aging").click()
+        _report(page)
+        assert page.evaluate(TITLE) == "Accounts Receivable Aging"
+        q = _query(_hash(page))
+        assert q["customer_id"] == str(cid) and q["period"] == "this_year_to_date"
+        assert q["as_of_date"] == dt.date.today().isoformat()
+        current = page.locator('#report-content tr[aria-current="true"]')
+        assert current.count() == 1 and "Salt & Pine" in current.text_content()
+        assert page.evaluate(FOCUSED_KEY) == f"customer:{cid}"
+        assert "TOTAL" in page.evaluate(
+            "() => document.getElementById('report-content').textContent"
+        )
+        # a new period keeps the customer in the address
+        page.select_option("#report-period-select", "last_month")
+        settle(page, handled)
+        _report(page)
+        assert _query(_hash(page))["customer_id"] == str(cid)
+        assert page.locator('#report-content tr[aria-current="true"]').count() == 1
+
+        # Job Profitability: filtered to the customer's jobs, and says so
+        page.go_back()
+        _open_customer(page, handled, cid)
+        page.get_by_role("link", name="Job Profitability").click()
+        _report(page)
+        body = page.evaluate(
+            "() => document.getElementById('report-content').textContent"
+        )
+        assert "Salt & Pine Catering Co. only" in body
+        assert "Total — Salt & Pine Catering Co." in body
+        assert "No job" not in body
+        assert "Waterfront Gala" in body
+        length = _history(page)
+        # the whole report, in place: the address loses the filter, no push
+        page.get_by_role("link", name="Show all jobs").click()
+        page.wait_for_function(
+            "() => !document.querySelector('#report-content [data-filtered]')"
+        )
+        _report(page)
+        assert "customer_id" not in _query(_hash(page))
+        assert _history(page) == length
+        body = page.evaluate(
+            "() => document.getElementById('report-content').textContent"
+        )
+        assert "No job" in body and "Total — " not in body
+    finally:
+        page.close()
+
+
+def test_the_vendor_page_reports_open_for_the_vendor(browser, company, books):
+    accounts = company.get("/api/accounts").json()
+    [cogs] = [a for a in accounts if a["account_number"] == "5000"]
+    r = company.put(
+        f"/api/vendors/{books['vendor']}",
+        json={"default_expense_account_id": cogs["id"]},
+    )
+    assert r.status_code == 200, r.text
+    vid, vid1099 = books["vendor"], books["vendor2"]
+    page, handled = _home(browser, company)
+    try:
+        _open_vendor(page, handled, vid)
+        links = dict(_hrefs(page, "Reports for this vendor"))
+        assert links == {
+            "A/P Aging": f"#/reports/ap-aging?vendor_id={vid}&period=this_year_to_date",
+            f"{cogs['name']} register": f"#/reports/account-transactions?account_id={cogs['id']}&period=this_year_to_date",
+        }
+        page.get_by_role("link", name="A/P Aging").click()
+        _report(page)
+        assert page.evaluate(TITLE) == "Accounts Payable Aging"
+        current = page.locator('#report-content tr[aria-current="true"]')
+        assert current.count() == 1 and "Cascade Flour Mill" in current.text_content()
+        assert page.evaluate(FOCUSED_KEY) == f"vendor:{vid}"
+
+        page.go_back()
+        _open_vendor(page, handled, vid)
+        page.get_by_role("link", name=f"{cogs['name']} register").click()
+        page.wait_for_selector("#drilldown-body table")
+        assert page.evaluate(TITLE) == f"Drill-down — {cogs['name']}"
+        assert _query(_hash(page))["account_id"] == str(cogs["id"])
+
+        # a 1099 vendor: the summary for this year, its row picked out
+        _open_vendor(page, handled, vid1099)
+        links = dict(_hrefs(page, "Reports for this vendor"))
+        year = dt.date.today().year
+        assert (
+            links["1099 Summary"]
+            == f"#/reports/1099-summary?year={year}&vendor_id={vid1099}"
+        )
+        page.get_by_role("link", name="1099 Summary").click()
+        page.wait_for_selector("#report-1099-content table")
+        current = page.locator('#report-1099-content tr[aria-current="true"]')
+        assert current.count() == 1 and "Blue Heron Installs" in current.text_content()
+    finally:
+        page.close()
+
+
+def test_a_read_only_sign_in_keeps_the_reports_rows(
+    browser, company, books, db_session
+):
+    reader = _reader(company, db_session)
+    page, handled = _home(browser, reader, "readonly")
+    try:
+        _open_customer(page, handled, books["customer"])
+        assert sorted(t for t, _ in _hrefs(page, "Reports for this customer")) == [
+            "A/R Aging",
+            "Income by Customer",
+            "Job Profitability",
+        ]
+        assert page.get_by_role("button", name="Statement (PDF)").count() == 1
+        _open_vendor(page, handled, books["vendor2"])
+        assert sorted(t for t, _ in _hrefs(page, "Reports for this vendor")) == [
+            "1099 Summary",
+            "A/P Aging",
+        ]
+    finally:
+        page.close()

@@ -128,6 +128,7 @@ const VendorsPage = {
                         <button class="btn btn-sm btn-secondary" data-write onclick="closeModal();BillsPage.showPayForm(${id})">Pay Bills</button>
                         <button class="btn btn-sm btn-secondary" onclick="VendorsPage.showForm(${id})">Edit</button>
                     </div>
+                    ${VendorsPage._reportsRow(vendor, acct)}
                 </div>
             </div>
 
@@ -187,6 +188,23 @@ const VendorsPage = {
             </div>`;
 
         openModal(`Vendor — ${vendor.name}`, html);
+    },
+
+    // Reports for this vendor (#238), each through the report's own address
+    // (docs/dev/report-views.md): A/P Aging as of today with the vendor's
+    // row highlighted; the 1099 Summary for this year, likewise, when the
+    // vendor is a 1099 vendor; the default expense or COGS account's
+    // register (the drill-down, this year to date). Reads: a read-only
+    // sign-in keeps them.
+    _reportsRow(vendor, acct) {
+        const link = (view, params, text) =>
+            `<a class="btn btn-sm btn-secondary" href="${ReportsPage.viewUrl(view, params)}">${escapeHtml(text)}</a>`;
+        return `<div role="group" aria-label="Reports for this vendor" style="margin-top:8px;display:flex;flex-wrap:wrap;gap:4px;justify-content:flex-end">
+            <span style="font-size:11px;color:var(--text-muted);text-transform:uppercase;letter-spacing:.05em;align-self:center">Reports</span>
+            ${link('ap-aging', { vendor_id: vendor.id, period: 'this_year_to_date' }, 'A/P Aging')}
+            ${vendor.is_1099_vendor ? link('1099-summary', { year: new Date().getFullYear(), vendor_id: vendor.id }, '1099 Summary') : ''}
+            ${acct ? link('account-transactions', { account_id: acct.id, period: 'this_year_to_date' }, `${acct.name} register`) : ''}
+        </div>`;
     },
 
     async _saveNotes(id, value) {

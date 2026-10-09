@@ -104,8 +104,10 @@ const CustomersPage = {
             }).join('') + '</ul>';
 
         // -- Invoices + payments — last 10 each, click-through to detail --
+        // An invoice row opens the invoice at its own address (#/invoices/12,
+        // over the list), not the Invoices list (#238).
         const invRows = invoices.slice(0, 10).map(i =>
-            `<tr style="cursor:pointer" onclick="closeModal();App.navigate('#/invoices')">
+            `<tr style="cursor:pointer" onclick="closeModal();App.navigate('#/invoices/${i.id}')">
                 <td>${escapeHtml(i.invoice_number || '')}</td>
                 <td>${escapeHtml(i.date || '')}</td>
                 <td class="amount">${formatCurrency(i.total)}</td>
@@ -158,6 +160,7 @@ const CustomersPage = {
                         <button class="btn btn-sm btn-secondary" onclick="CustomersPage.showForm(${id})">Edit</button>
                         ${Terms.isNonprofit() ? `<button class="btn btn-sm btn-secondary" onclick="window.open('/api/donors/${id}/giving-statement/pdf?year=' + (new Date().getFullYear() - 1), '_blank')">Giving Statement (last year)</button>` : ''}
                     </div>
+                    ${CustomersPage._reportsRow(id)}
                 </div>
             </div>
 
@@ -238,6 +241,26 @@ const CustomersPage = {
             </div>`;
 
         openModal(`${T('Customer')} — ${customer.name}`, html);
+    },
+
+    // Reports for this customer (#238): each opens through the report's
+    // own address (docs/dev/report-views.md), on this year to date — as of
+    // today for the aging — so Back returns here and a reload keeps it. A
+    // report that takes no customer filter highlights the customer's row;
+    // Job Profitability is filtered to the customer's jobs and says so. The
+    // statement PDF is the picker's, as of today; a nonprofit's is the
+    // giving statement above. Reads: a read-only sign-in keeps them.
+    _reportsRow(id) {
+        const link = (view, params, text) =>
+            `<a class="btn btn-sm btn-secondary" href="${ReportsPage.viewUrl(view, params)}">${text}</a>`;
+        const period = { customer_id: id, period: 'this_year_to_date' };
+        return `<div role="group" aria-label="Reports for this ${T('customer')}" style="margin-top:8px;display:flex;flex-wrap:wrap;gap:4px;justify-content:flex-end">
+            <span style="font-size:11px;color:var(--text-muted);text-transform:uppercase;letter-spacing:.05em;align-self:center">Reports</span>
+            ${Terms.isNonprofit() ? '' : `<button type="button" class="btn btn-sm btn-secondary" onclick="window.open('/api/reports/customer-statement/${id}/pdf?as_of_date=${todayISO()}', '_blank')">Statement (PDF)</button>`}
+            ${link('income-by-customer', period, T('Income by Customer'))}
+            ${link('ar-aging', period, T('A/R Aging'))}
+            ${link('job-profitability', period, T('Job Profitability'))}
+        </div>`;
     },
 
     async _saveNotes(id, value) {
