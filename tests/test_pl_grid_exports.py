@@ -185,9 +185,10 @@ def test_the_p_and_l_exports_honour_class_id(client, ledger):
     by_name = {row[2]: row for row in rows[1:]}
     assert by_name["Service Income"][3] == "300.00", "this class only"
     assert by_name["Net Income"][3] == "-100.00"
-    # the preamble says which class
+    # the preamble says which class, and that it is that class alone (the
+    # PDF's words, NEW-29)
     whole = client.get(f"/api/reports/profit-loss/csv?{PERIOD}&class_id={side}").text
-    assert "Profit & Loss — Class: Side Gig" in whole
+    assert "Profit & Loss — Class: Side Gig only, not the company total" in whole
 
     r = client.get(f"/api/reports/profit-loss/pdf?{PERIOD}&class_id={side}")
     assert r.status_code == 200 and r.content[:5] == b"%PDF-"

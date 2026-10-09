@@ -172,9 +172,12 @@ def profit_loss_csv(data: dict, company: str, words) -> str:
 
 
 def profit_loss_csv_class_line(data: dict, words) -> str:
-    """The preamble's report line for one class's P&L."""
+    """The preamble's report line for one class's P&L: which class, and
+    that the figures are that class's alone — the PDF's words (NEW-29)."""
     cls = data.get("class_name")
-    return words("Profit & Loss") + (f" — {words('Class')}: {cls}" if cls else "")
+    return words("Profit & Loss") + (
+        f" — {words('Class')}: {cls} only, not the company total" if cls else ""
+    )
 
 
 def profit_loss_by_class_csv(
