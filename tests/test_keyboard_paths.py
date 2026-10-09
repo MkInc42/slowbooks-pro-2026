@@ -66,3 +66,18 @@ def test_an_escape_at_a_date_field_leaves_the_field_in_both_handlers():
     assert "if (escapeLeavesPicker(e)) return;\n        e.preventDefault(); closeModal(); return;" in utils
     app = _src("app.js")
     assert "if (e.key === 'Escape' && !escapeLeavesPicker(e)) { closeModal(); }" in app
+
+
+# ── NEW-41 ────────────────────────────────────────────────────────────────
+
+
+def test_the_alt_shortcuts_compare_the_keys_position_and_cmd_k_finds():
+    app = _src("app.js")
+    keys = app[app.index("// Keyboard shortcuts.") :]
+    keys = keys[: keys.index("// Close search dropdown")]
+    assert "const alt = e.altKey && !e.ctrlKey && !e.metaKey;" in keys
+    for code in ("KeyN", "KeyP", "KeyQ", "KeyH", "KeyD"):
+        assert f"if (alt && e.code === '{code}')" in keys, code
+    assert "['KeyN', 'KeyP', 'KeyQ'].includes(e.code) && App.isReadOnly()" in keys
+    assert not re.search(r"(?<!!)e\.altKey && e\.key === '[a-z]'", keys)
+    assert "((e.ctrlKey || e.metaKey) && !e.altKey && e.key === 'k')" in keys

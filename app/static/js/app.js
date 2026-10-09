@@ -1191,8 +1191,14 @@ const App = {
         // Load saved theme
         App.loadTheme();
 
-        // Keyboard shortcuts
+        // Keyboard shortcuts. The Alt letters go by the key's place
+        // (e.code: KeyD is the D key on any layout) with Alt alone held,
+        // not by the character typed: on a Mac, Option-D types "∂",
+        // Option-H "˙" and Option-Q "œ", and e.key carried those, so none
+        // of the documented shortcuts fired (macOS gate NEW-41). Ctrl+Alt
+        // is left alone: it is AltGr on some layouts, typing a character.
         document.addEventListener('keydown', (e) => {
+            const alt = e.altKey && !e.ctrlKey && !e.metaKey;
             // Ctrl+Enter: submit quick entry form
             if (e.ctrlKey && e.key === 'Enter') {
                 const qeForm = $('#qe-form');
@@ -1205,24 +1211,25 @@ const App = {
             }
             // Alt+N / Alt+P / Alt+Q start new entries: a read-only sign-in is
             // told why nothing opens, rather than handed a blank locked form
-            if (e.altKey && ['n', 'p', 'q'].includes(e.key) && App.isReadOnly()) {
+            if (alt && ['KeyN', 'KeyP', 'KeyQ'].includes(e.code) && App.isReadOnly()) {
                 toast(App.READ_ONLY_MESSAGE, 'info'); e.preventDefault(); return;
             }
             // Alt+N: new invoice
-            if (e.altKey && e.key === 'n') { InvoicesPage.showForm(); e.preventDefault(); }
+            if (alt && e.code === 'KeyN') { InvoicesPage.showForm(); e.preventDefault(); }
             // Alt+P: receive payment
-            if (e.altKey && e.key === 'p') { PaymentsPage.showForm(); e.preventDefault(); }
+            if (alt && e.code === 'KeyP') { PaymentsPage.showForm(); e.preventDefault(); }
             // Alt+Q: quick entry
-            if (e.altKey && e.key === 'q') { App.navigate('#/quick-entry'); e.preventDefault(); }
+            if (alt && e.code === 'KeyQ') { App.navigate('#/quick-entry'); e.preventDefault(); }
             // Alt+H: home/dashboard
-            if (e.altKey && e.key === 'h') { App.navigate('#/'); e.preventDefault(); }
+            if (alt && e.code === 'KeyH') { App.navigate('#/'); e.preventDefault(); }
             // Alt+D: toggle dark mode (Feature 12)
-            if (e.altKey && e.key === 'd') { App.toggleTheme(); e.preventDefault(); }
+            if (alt && e.code === 'KeyD') { App.toggleTheme(); e.preventDefault(); }
             // Escape: close modal (not the Escape that closes a date
             // field's calendar: utils.js escapeLeavesPicker, NEW-33)
             if (e.key === 'Escape' && !escapeLeavesPicker(e)) { closeModal(); }
-            // Ctrl+K or /: focus search (when not in an input)
-            if ((e.ctrlKey && e.key === 'k') || (e.key === '/' && !e.target.closest('input,textarea,select'))) {
+            // Ctrl+K (⌘K on a Mac, which did nothing: NEW-41) or /: focus
+            // search (when not in an input)
+            if (((e.ctrlKey || e.metaKey) && !e.altKey && e.key === 'k') || (e.key === '/' && !e.target.closest('input,textarea,select'))) {
                 const search = $('#global-search');
                 if (search) { search.focus(); e.preventDefault(); }
             }

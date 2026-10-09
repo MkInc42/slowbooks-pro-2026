@@ -346,3 +346,50 @@ def test_escape_in_a_date_field_leaves_the_field_and_the_next_closes_the_dialog(
         page.wait_for_function(f"!({MODAL_SHOWN})()")
     finally:
         page.close()
+
+
+# ── NEW-41: the shortcuts by key position; ⌘K ────────────────────────────
+
+KEY = """([key, code, mods]) => document.body.dispatchEvent(new KeyboardEvent('keydown',
+    { key, code, bubbles: true, cancelable: true, ...mods }))"""
+THEME = "() => document.documentElement.getAttribute('data-theme') || 'light'"
+
+
+def test_the_alt_shortcuts_go_by_the_keys_position_and_cmd_k_finds(
+    browser, company, books
+):
+    page, handled = _open(browser, company)
+    try:
+        _visit(page, handled, "#/customers")
+        was = page.evaluate(THEME)
+        # Option-D on a Mac: the character is "∂", the key is still KeyD
+        page.evaluate(KEY, ["∂", "KeyD", {"altKey": True}])
+        assert page.evaluate(THEME) != was
+        page.evaluate(KEY, ["∂", "KeyD", {"altKey": True}])
+        assert page.evaluate(THEME) == was
+        # a real Alt+D too
+        page.keyboard.press("Alt+KeyD")
+        assert page.evaluate(THEME) != was
+        page.keyboard.press("Alt+KeyD")
+        assert page.evaluate(THEME) == was
+        # Ctrl+Alt (AltGr on some layouts) types a character, and is left alone
+        page.evaluate(KEY, ["đ", "KeyD", {"altKey": True, "ctrlKey": True}])
+        assert page.evaluate(THEME) == was
+        # Option-H ("˙") goes home
+        page.evaluate(KEY, ["˙", "KeyH", {"altKey": True}])
+        page.wait_for_function("() => location.hash === '#/'")
+        settle(page, handled)
+        # Option-N ("˜") opens a new invoice
+        page.evaluate(KEY, ["˜", "KeyN", {"altKey": True}])
+        page.wait_for_function(MODAL_SHOWN)
+        assert page.evaluate(TITLE).startswith("New Invoice")
+        page.evaluate("() => closeModal()")
+        # ⌘K finds, as Ctrl+K does
+        page.evaluate("() => document.body.focus()")
+        page.evaluate(KEY, ["k", "KeyK", {"metaKey": True}])
+        assert page.evaluate("() => document.activeElement.id") == "global-search"
+        page.evaluate("() => document.body.focus()")
+        page.keyboard.press("Control+KeyK")
+        assert page.evaluate("() => document.activeElement.id") == "global-search"
+    finally:
+        page.close()

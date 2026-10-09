@@ -46,4 +46,4 @@ def test_settings_offers_download_to_an_administrator_only():
     assert '${SettingsPage._isAdmin() ? `<a href="/api/backups/download/' in js
     app_js = (ROOT / "app/static/js/app.js").read_text(encoding="utf-8")
     assert """document.querySelectorAll('#sidebar a[href="#/audit"]')""" in app_js
-    assert "['n', 'p', 'q'].includes(e.key) && App.isReadOnly()" in app_js
+    assert "['KeyN', 'KeyP', 'KeyQ'].includes(e.code) && App.isReadOnly()" in app_js
