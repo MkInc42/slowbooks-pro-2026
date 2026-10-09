@@ -44,7 +44,6 @@ from tests.test_browser_report_views import (
 )  # noqa: E402
 from tests.test_theme_contrast import (  # noqa: E402,F401  (the fixtures)
     _visit,
-    books_fixture,
     browser_fixture,
     company_fixture,
     settle,

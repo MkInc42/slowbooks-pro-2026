@@ -509,3 +509,15 @@ def db():
     finally:
         session.rollback()
         session.close()
+
+
+@pytest.fixture(name="books")
+def books_fixture(client, seed_accounts):
+    """The bakery's books (tests/bakery_books.py), entered through the API:
+    the company the browser modules and the report-link tests run on. Here
+    rather than in tests/test_theme_contrast.py, which skips as a module
+    without Playwright and took every importer of the fixture with it
+    (2.22.0 Windows gate, W-2)."""
+    from tests.bakery_books import seed_books
+
+    return seed_books(client, seed_accounts)

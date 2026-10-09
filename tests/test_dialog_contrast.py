@@ -17,18 +17,16 @@ import pytest
 
 pytest.importorskip("playwright.sync_api")
 
+from tests.bakery_books import _ok, seed_books  # noqa: E402
 from tests.test_theme_contrast import (  # noqa: E402,F401  (the fixtures)
     PAGE_SWEEP,
     SERVED,
-    _ok,
     _open,
     _theme,
     _visit,
     below_threshold,
-    books_fixture,
     browser_fixture,
     company_fixture,
-    seed_books,
     settle,
     sweep_of,
 )

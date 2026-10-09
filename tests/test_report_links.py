@@ -20,7 +20,6 @@ import re
 from pathlib import Path
 
 from app.services import bank_register
-from tests.test_theme_contrast import books_fixture  # noqa: F401  (the fixture)
 
 ROOT = Path(__file__).resolve().parents[1]
 JS = ROOT / "app" / "static" / "js"

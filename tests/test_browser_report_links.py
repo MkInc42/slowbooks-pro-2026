@@ -50,7 +50,6 @@ from tests.test_readonly_browser import _reader, _signed_in  # noqa: E402
 from tests.test_theme_contrast import (  # noqa: E402,F401  (the fixtures)
     _open,
     _visit,
-    books_fixture,
     browser_fixture,
     company_fixture,
     settle,
