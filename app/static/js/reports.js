@@ -18,6 +18,7 @@ const ReportsPage = {
         'balance-sheet':        { label: () => T('Balance Sheet'),      open: (p) => ReportsPage.balanceSheet(p), asOf: true },
         'profit-loss-by-class': { label: () => T('P&L by Class'),       open: (p) => ReportsPage.profitLossByClass(p) },
         'profit-loss-class':    { label: () => T('Profit & Loss'),      open: (p) => ReportsPage.profitLossOfClass(p.class_id, null, p), keep: ['class_id'] },
+        'profit-loss-unclassified': { label: () => `${T('P&L')} Unclassified`, open: (p) => ReportsPage.profitLossUnclassified(p) },
         'account-transactions': { label: 'Drill-down',         open: (p) => ReportsPage.openDrillDown(p.account_id, null, p.start_date, p.end_date, p.class_id || null, null, p.from || null) },
         'ar-aging':             { label: () => T('Accounts Receivable Aging'), open: (p) => ReportsPage.arAging(p), asOf: true },
         'ap-aging':             { label: 'Accounts Payable Aging',    open: (p) => ReportsPage.apAging(p), asOf: true },
@@ -183,6 +184,10 @@ const ReportsPage = {
                 <div class="card" style="cursor:pointer" onclick="ReportsPage.profitLossByClass()">
                     <div class="card-header">${T('P&L by Class')}</div>
                     <p style="font-size:13px; color:var(--gray-500);">${Terms.text('Income vs expenses split by class')}</p>
+                </div>
+                <div class="card" style="cursor:pointer" onclick="ReportsPage.profitLossUnclassified()">
+                    <div class="card-header">${T('P&L')} Unclassified</div>
+                    <p style="font-size:13px; color:var(--gray-500);">${Terms.text('Income and expenses with no class yet — the end-of-month cleanup list')}</p>
                 </div>
                 <div class="card" style="cursor:pointer" onclick="ReportsPage.jobBudgetVsActual()">
                     <div class="card-header">${T('Job Budget vs Actual')}</div>
@@ -642,6 +647,16 @@ const ReportsPage = {
     },
 
     async profitLoss(prefill) {
+        // A P&L saved or addressed with a class is that class's own (#235):
+        // the address is replaced by the class view's, so Back is not a
+        // loop through the redirect.
+        if (prefill && parseInt(prefill.class_id, 10)) {
+            if (App.parseHash(location.hash || '#/').path === '/reports/profit-loss') {
+                history.replaceState(history.state, '', ReportsPage.viewUrl('profit-loss-class', prefill));
+            }
+            await ReportsPage.profitLossOfClass(prefill.class_id, null, prefill);
+            return;
+        }
         await ReportsPage.openPeriodModal(T("Profit & Loss"), "this_year_to_date", async (_period, range) => {
             const data = await API.get(`/reports/profit-loss?start_date=${range.start}&end_date=${range.end}`);
             const pdfBtn = ReportsPage._exportButtons('profit-loss', `start_date=${range.start}&end_date=${range.end}`);
@@ -1271,6 +1286,7 @@ ReportsPage.profitLossByClass = async function (prefill) {
                 totals: { income: data.total_income, cogs: data.total_cogs, gross_profit: data.total_gross_profit, expenses: data.total_expenses, net_income: data.total_net_income },
                 drill: (a, c) => `ReportsPage.openDrillDown(${args(a.account_id, a.account_name, range.start, range.end, c.class_id, c.class_name, 'profit-loss-by-class')})`,
                 head: (c) => `ReportsPage.profitLossOfClass(${args(c.class_id, c.class_name, dates)})`,
+                sum: (c) => `ReportsPage.profitLossOfClass(${args(c.class_id, c.class_name, dates)})`,
             })}`;
     }, "Dates", false, { reportType: 'profit_loss_by_class', view: 'profit-loss-by-class', prefill, wide: true });
 };
@@ -1349,6 +1365,20 @@ ReportsPage.profitLossOfClass = async function (classId, className, prefill) {
                 </tbody>
             </table></div></div>`;
     }, "Dates", false, { reportType: 'profit_loss_class', view: 'profit-loss-class', params, prefill, toolbar });
+};
+
+// P&L Unclassified (#235): the class P&L pointed at the system-default
+// class, the end-of-month cleanup list. Its card's address stands in for
+// the class view's (replaced, not pushed, so Back is one step).
+ReportsPage.profitLossUnclassified = async function (prefill) {
+    let classes = [];
+    try { classes = await API.get('/classes'); } catch (err) { toast(err.message || `Could not load the ${T('classes')}`, 'error'); return; }
+    const uncat = classes.find(c => c.is_system_default);
+    if (!uncat) { toast(`There is no default ${T('class')} to report on`, 'error'); return; }
+    if (App.parseHash(location.hash || '#/').path === '/reports/profit-loss-unclassified') {
+        history.replaceState(history.state, '', ReportsPage.viewUrl('profit-loss-class', { class_id: uncat.id, ...(prefill || {}) }));
+    }
+    await ReportsPage.profitLossOfClass(uncat.id, uncat.name, prefill);
 };
 
 // ‹ Prev / Next › through the class picker's list.

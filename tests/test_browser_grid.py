@@ -407,3 +407,151 @@ def test_the_grid_saves_as_pdf_and_csv_and_as_a_saved_report(
         assert len(_heads(page)) == 14
     finally:
         page.close()
+
+
+# ── R5: a class's P&L as a report ────────────────────────────────────────
+
+
+def test_a_subtotal_cell_opens_the_class_and_back_from_its_drill_down_returns_to_it(
+    browser, company, divisions
+):
+    page, handled = _open_at(browser, company, BY_CLASS_URL)
+    try:
+        page.wait_for_selector("#report-content .pivot-grid")
+        length = _history(page)
+        framing = _heads(page).index("Framing") - 1
+        page.locator(
+            f"#report-content tbody tr:has-text('Net Income') td[data-col='{framing}'] a"
+        ).click()
+        page.wait_for_function(f"({TITLE})() === 'Profit & Loss — Framing'")
+        class_pl = _hash(page)
+        assert _query(class_pl)["class_id"] == str(divisions["Framing"])
+        assert _history(page) == length + 1
+        # its exports carry the class
+        assert (
+            page.locator(
+                f"#class-pl-body button[onclick*='/api/reports/profit-loss/pdf?start_date={SEPT[0]}&end_date={SEPT[1]}&class_id={divisions['Framing']}']"
+            ).count()
+            == 1
+        )
+        assert page.get_by_role("button", name="Add to Saved Reports…").count() == 1
+
+        page.locator("#class-pl-body a:has-text('Service Income')").click()
+        page.wait_for_selector("#drilldown-body table")
+        q = _query(_hash(page))
+        assert q["from"] == "profit-loss-class" and q["class_id"] == str(
+            divisions["Framing"]
+        )
+        assert _history(page) == length + 2
+        assert "Framing work" in page.inner_text("#drilldown-body")
+        back = page.get_by_role("button", name="Back to Profit & Loss — Framing")
+        assert back.count() == 1
+        back.click()
+        page.wait_for_selector("#class-pl-body table")
+        assert _hash(page) == class_pl, "the class P&L, not the grid"
+        assert _history(page) == length + 2, "through history"
+        page.get_by_role("button", name="Back to P&L by Class").click()
+        page.wait_for_selector("#report-content .pivot-grid")
+        assert _hash(page) == BY_CLASS_URL
+    finally:
+        page.close()
+
+
+def test_the_class_p_and_l_saves_with_its_class_and_reopens(
+    browser, company, divisions
+):
+    url = (
+        f"#/reports/profit-loss-class?class_id={divisions['Plumbing']}"
+        f"&start_date={SEPT[0]}&end_date={SEPT[1]}"
+    )
+    page, handled = _open_at(browser, company, url)
+    try:
+        page.wait_for_selector("#class-pl-body table")
+        page.wait_for_function(f"({TITLE})() === 'Profit & Loss — Plumbing'")
+        page.evaluate("() => { window.prompt = () => 'Plumbing, September'; }")
+        page.get_by_role("button", name="Add to Saved Reports…").click()
+        page.wait_for_selector("#saved-reports-list")
+        saved = next(
+            s
+            for s in company.get("/api/saved-reports").json()
+            if s["name"] == "Plumbing, September"
+        )
+        assert saved["report_type"] == "profit_loss_class"
+        assert saved["parameters"] == {
+            "class_id": divisions["Plumbing"],
+            "period": "custom",
+            "start_date": SEPT[0],
+            "end_date": SEPT[1],
+        }
+        page.keyboard.press("Escape")
+        page.wait_for_function(f"!({MODAL_SHOWN})()")
+        page.get_by_role("button", name="Open").first.click()
+        page.wait_for_selector("#class-pl-body table")
+        page.wait_for_function(f"({TITLE})() === 'Profit & Loss — Plumbing'")
+        assert _hash(page) == url
+        assert page.get_by_role("combobox", name="Class").input_value() == "Plumbing"
+
+        # a plain P&L addressed with a class is that class's own, with one
+        # address, not a redirect to go back through
+        _visit(
+            page,
+            handled,
+            f"#/reports/profit-loss?class_id={divisions['HVAC']}&start_date={SEPT[0]}&end_date={SEPT[1]}",
+        )
+        page.wait_for_function(f"({TITLE})() === 'Profit & Loss — HVAC'")
+        assert _hash(page).startswith(
+            f"#/reports/profit-loss-class?class_id={divisions['HVAC']}"
+        )
+    finally:
+        page.close()
+
+
+def test_the_unclassified_card_is_the_uncategorized_column_of_the_grid(
+    browser, company, divisions
+):
+    page, handled = _open_at(browser, company, "#/reports")
+    try:
+        length = _history(page)
+        page.get_by_text("P&L Unclassified", exact=True).click()
+        page.wait_for_selector("#class-pl-body table")
+        page.wait_for_function(f"({TITLE})() === 'Profit & Loss — Uncategorized'")
+        h = _hash(page)
+        assert h.startswith(
+            f"#/reports/profit-loss-class?class_id={divisions['Uncategorized']}&period=this_year_to_date"
+        )
+        assert _history(page) == length + 1
+        q = _query(h)
+        grid = company.get(
+            "/api/reports/profit-loss-by-class",
+            params={"start_date": q["start_date"], "end_date": q["end_date"]},
+        ).json()
+        column = grid["classes"][0]
+        assert column["class_name"] == "Uncategorized"
+        own = company.get(
+            "/api/reports/profit-loss",
+            params={
+                "start_date": q["start_date"],
+                "end_date": q["end_date"],
+                "class_id": divisions["Uncategorized"],
+            },
+        ).json()
+        assert own["net_income"] == column["net_income"]
+        shown = page.inner_text("#class-pl-body tbody tr:has-text('Net Income')")
+        assert f"{column['net_income']:,.2f}".replace("-", "") in shown
+        # Back is the Report Center, the report closed
+        page.go_back()
+        page.wait_for_function("() => location.hash === '#/reports'")
+        page.wait_for_function(f"!({MODAL_SHOWN})()")
+
+        # the card's own address opens the same view, replaced, one step
+        _visit(
+            page,
+            handled,
+            f"#/reports/profit-loss-unclassified?start_date={SEPT[0]}&end_date={SEPT[1]}",
+        )
+        page.wait_for_function(f"({TITLE})() === 'Profit & Loss — Uncategorized'")
+        assert _hash(page) == (
+            f"#/reports/profit-loss-class?class_id={divisions['Uncategorized']}&start_date={SEPT[0]}&end_date={SEPT[1]}"
+        )
+    finally:
+        page.close()
