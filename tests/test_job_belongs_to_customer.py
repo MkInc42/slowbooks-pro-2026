@@ -220,7 +220,21 @@ def test_a_nonprofit_is_told_in_its_own_words(client, seed_accounts, two_jobs):
         "Grant Roof belongs to a different donor than this pledge — clear the "
         "Grant field or pick one of this donor's."
     )
-    # and a move is refused in the same words
+    # a donation receipt is refused by that name
+    receipt = {
+        "customer_id": two_jobs["alder"],
+        "date": "2026-04-03",
+        "method": "card",
+        "job_id": two_jobs["roof"],
+        "lines": [_line()],
+    }
+    r = client.post("/api/sales-receipts", json=receipt)
+    assert r.status_code == 400, r.text
+    assert r.json()["detail"] == (
+        "Grant Roof belongs to a different donor than this donation receipt — "
+        "clear the Grant field or pick one of this donor's."
+    )
+    # and a move is refused in the same words, each document by that name
     pledge = client.post(
         "/api/invoices",
         json=_invoice_body(two_jobs["birch"], job_id=two_jobs["roof"], is_pledge=True),
@@ -232,6 +246,16 @@ def test_a_nonprofit_is_told_in_its_own_words(client, seed_accounts, two_jobs):
     assert r.status_code == 400, r.text
     assert r.json()["detail"] == (
         "Grant Roof is on 1 pledge for Birch Co; move those first."
+    )
+    r = client.post(
+        "/api/sales-receipts", json={**receipt, "customer_id": two_jobs["birch"]}
+    )
+    assert r.status_code == 201, r.text
+    r = client.put(
+        f"/api/jobs/{two_jobs['roof']}", json={"customer_id": two_jobs["alder"]}
+    )
+    assert r.json()["detail"] == (
+        "Grant Roof is on 1 pledge and 1 donation receipt for Birch Co; move those first."
     )
 
 
@@ -533,6 +557,50 @@ def test_the_forms_save_keeps_an_invoice_with_an_old_mismatch(
     assert r.status_code == 200 and r.json()["job_id"] is None, r.text
     r = client.put(f"/api/invoices/{inv['id']}", json={"job_id": two_jobs["kitchen"]})
     assert r.status_code == 200 and r.json()["job_id"] == two_jobs["kitchen"], r.text
+
+
+def test_a_resent_line_keeps_a_job_some_stored_line_carried(
+    client, db_session, seed_accounts, two_jobs
+):
+    """The skeptic's edge: a client deletes line 1 and sends old line 2
+    back with its stored foreign job. No job changed, so nothing is
+    judged — the resent job is one a stored line carried, whatever its
+    position; a job no stored line had is judged."""
+    inv = client.post(
+        "/api/invoices",
+        json=_invoice_body(two_jobs["alder"], lines=[_line(), _line(rate=40)]),
+    ).json()
+    _stored_mismatch(db_session, InvoiceLine, inv["lines"][1]["id"], two_jobs["roof"])
+
+    # line 1 deleted, old line 2 first now, its stored job with it
+    r = client.put(
+        f"/api/invoices/{inv['id']}",
+        json={"lines": [_line(rate=40, job_id=two_jobs["roof"])]},
+    )
+    assert r.status_code == 200, r.text
+    assert [ln["job_id"] for ln in r.json()["lines"]] == [two_jobs["roof"]]
+
+    # a job no stored line had is judged, wherever it lands
+    third = client.post("/api/customers", json={"name": "Cedar Co"}).json()
+    patio = client.post(
+        "/api/jobs", json={"customer_id": third["id"], "name": "Patio"}
+    ).json()
+    _refused(
+        client.put(
+            f"/api/invoices/{inv['id']}",
+            json={
+                "lines": [
+                    _line(rate=40, job_id=two_jobs["roof"]),
+                    _line(job_id=patio["id"]),
+                ]
+            },
+        ),
+        "invoice",
+        " (line 2)",
+    )
+    assert [
+        ln["job_id"] for ln in client.get(f"/api/invoices/{inv['id']}").json()["lines"]
+    ] == [two_jobs["roof"]]
 
 
 def test_the_forms_save_keeps_an_estimate_with_an_old_mismatch(
