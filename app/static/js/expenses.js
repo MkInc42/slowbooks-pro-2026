@@ -37,7 +37,7 @@ const ExpensesPage = {
                     <td class="amount">${formatCurrency(x.amount)}</td>
                     <td class="actions" style="text-decoration:none;">
                         <button class="btn btn-sm btn-secondary" onclick="ExpensesPage.showDetail(${x.id})">View</button>
-                        ${isVoid ? '' : `<button class="btn btn-sm btn-danger" onclick="ExpensesPage.void(${x.id})">Void</button>`}
+                        ${isVoid ? '' : `<button data-destructive class="btn btn-sm btn-danger" onclick="ExpensesPage.void(${x.id})">Void</button>`}
                     </td>
                 </tr>`;
             }
@@ -241,7 +241,7 @@ const ExpensesPage = {
                 </div>
             </div>
             <div class="form-actions">
-                ${isVoid ? '' : `<button type="button" class="btn btn-danger" onclick="ExpensesPage.void(${x.id})">Void</button>`}
+                ${isVoid ? '' : `<button data-destructive type="button" class="btn btn-danger" onclick="ExpensesPage.void(${x.id})">Void</button>`}
                 <button type="button" class="btn btn-secondary" onclick="closeModal()">Close</button>
             </div>`);
         ExpensesPage.loadAttachments(x.id);

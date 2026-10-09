@@ -480,7 +480,7 @@ const BankingPage = {
                     <td class="amount">${e.deposit > 0 ? formatCurrency(e.deposit) : ''}</td>
                     <td class="amount" style="font-weight:700;">${formatCurrency(e.balance)}</td>
                     <td style="text-align:center;">${e.reconciliation_id ? 'R' : (e.cleared ? '✓' : '')}</td>
-                    <td>${e.voidable ? `<button class="btn btn-sm btn-secondary" onclick="BankingPage.voidEntry('${e.source_type}', ${e.transaction_id}, ${id})">Void</button>` : ''}</td>
+                    <td>${e.voidable ? `<button data-destructive class="btn btn-sm btn-secondary" onclick="BankingPage.voidEntry('${e.source_type}', ${e.transaction_id}, ${id})">Void</button>` : ''}</td>
                 </tr>`).join('');
             // newest first, so the balance brought forward (a start date's
             // doing) closes the table
@@ -754,7 +754,7 @@ const BankingPage = {
             <tbody>${rows.map(t => `<tr style="${t.status === 'void' ? 'color:var(--gray-400); text-decoration:line-through;' : ''}">
                 <td>${formatDate(t.date)}</td><td>${escapeHtml(t.from_account_name)}</td><td>${escapeHtml(t.to_account_name)}</td>
                 <td class="amount">${formatCurrency(t.amount)}</td><td>${escapeHtml(t.memo || '')}</td>
-                <td>${t.status === 'void' ? '' : `<button class="btn btn-sm btn-secondary" onclick="BankingPage.voidTransfer(${t.id})">Void</button>`}</td>
+                <td>${t.status === 'void' ? '' : `<button data-destructive class="btn btn-sm btn-secondary" onclick="BankingPage.voidTransfer(${t.id})">Void</button>`}</td>
             </tr>`).join('')}</tbody></table></div>` : '<p>No transfers yet.</p>';
         openModal('Transfers', body);
     },

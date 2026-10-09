@@ -200,10 +200,15 @@ function openModal(title, html, opts) {
     const modal = $('#modal');
     modal.classList.toggle('modal--wide', !!(opts && opts.wide));
     // The first control takes focus once the dialog's own enhancements (the
-    // type-ahead boxes) are in place; a dialog with none takes it itself.
+    // type-ahead boxes) are in place. Never a control that undoes (Void,
+    // Delete: data-destructive), where Return would do it: the dialog takes
+    // focus itself then, as one with no control does, and a screen reader
+    // says its title (macOS gate NEW-32: the journal entry, job cost and
+    // deposit views opened on Void).
     setTimeout(() => {
-        const first = _tabStops($('#modal-body'), null)[0] || modal;
-        try { first.focus(); } catch (e) { /* nothing focusable */ }
+        const first = _tabStops($('#modal-body'), null)[0];
+        const target = first && !first.matches('[data-destructive]') ? first : modal;
+        try { target.focus(); } catch (e) { /* nothing focusable */ }
     }, 0);
 }
 

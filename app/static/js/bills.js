@@ -50,7 +50,7 @@ const BillsPage = {
                     <td class="actions">
                         <button class="btn btn-sm btn-secondary" onclick="BillsPage.view(${b.id})">View</button>
                         ${b.status !== 'void' ? `<button class="btn btn-sm btn-secondary" data-write onclick="BillsPage.showForm(${b.id})">Edit</button>` : ''}
-                        ${b.status !== 'void' && b.status !== 'paid' ? `<button class="btn btn-sm btn-danger" onclick="BillsPage.void(${b.id})">Void</button>` : ''}
+                        ${b.status !== 'void' && b.status !== 'paid' ? `<button data-destructive class="btn btn-sm btn-danger" onclick="BillsPage.void(${b.id})">Void</button>` : ''}
                     </td>
                 </tr>`,
         });
@@ -117,7 +117,7 @@ const BillsPage = {
                 <td>${formatDate(p.date)}</td>
                 <td>${escapeHtml(how)}</td>
                 <td class="amount">${formatCurrency(applied)}</td>
-                <td class="actions">${p.is_voided ? statusBadge('void') : `${BillsPage._printCheckButton(p)}<button class="btn btn-sm btn-danger" onclick="BillsPage.voidBillPayment(${p.id}, ${bill.id})">Void</button>`}</td>
+                <td class="actions">${p.is_voided ? statusBadge('void') : `${BillsPage._printCheckButton(p)}<button data-destructive class="btn btn-sm btn-danger" onclick="BillsPage.voidBillPayment(${p.id}, ${bill.id})">Void</button>`}</td>
             </tr>`;
         }).join('');
         return `<div style="margin-top:16px;">
@@ -164,7 +164,7 @@ const BillsPage = {
                 <tbody>${rows}</tbody></table></div>` : ''}
             ${!p.is_voided && ahead > 0 ? `<p style="font-size:11px; color:var(--text-muted);">${formatCurrency(ahead)} paid ahead, not applied to a bill.</p>` : ''}
             <div class="form-actions">
-                ${p.is_voided ? '' : `${BillsPage._printCheckButton(p)}<button type="button" class="btn btn-danger" onclick="BillsPage.voidBillPayment(${p.id}, ${firstBill})">Void</button>`}
+                ${p.is_voided ? '' : `${BillsPage._printCheckButton(p)}<button data-destructive type="button" class="btn btn-danger" onclick="BillsPage.voidBillPayment(${p.id}, ${firstBill})">Void</button>`}
                 <button type="button" class="btn btn-secondary" onclick="closeModal()">Close</button>
             </div>`);
     },

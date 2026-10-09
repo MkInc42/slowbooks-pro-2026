@@ -35,7 +35,7 @@ const BankRulesPage = {
                     <td>${r.is_active ? 'Yes' : 'No'}</td>
                     <td class="actions">
                         <button class="btn btn-sm btn-secondary" onclick="BankRulesPage.showForm(${r.id})">Edit</button>
-                        <button class="btn btn-sm btn-danger" onclick="BankRulesPage.deleteRule(${r.id})">Delete</button>
+                        <button data-destructive class="btn btn-sm btn-danger" onclick="BankRulesPage.deleteRule(${r.id})">Delete</button>
                     </td>
                 </tr>`;
             }

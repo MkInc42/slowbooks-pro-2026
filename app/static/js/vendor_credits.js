@@ -28,7 +28,7 @@ const VendorCreditsPage = {
                     <td class="amount">${formatCurrency(c.balance_remaining)}</td>
                     <td class="actions">
                         ${c.status === 'issued' ? `<button class="btn btn-sm btn-primary" onclick="VendorCreditsPage.showApply(${c.id})">Apply</button>` : ''}
-                        ${c.status !== 'void' ? `<button class="btn btn-sm btn-secondary" onclick="VendorCreditsPage.void(${c.id})">Void</button>` : ''}
+                        ${c.status !== 'void' ? `<button data-destructive class="btn btn-sm btn-secondary" onclick="VendorCreditsPage.void(${c.id})">Void</button>` : ''}
                     </td>
                 </tr>`,
         });

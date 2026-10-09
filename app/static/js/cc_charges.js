@@ -26,7 +26,7 @@ const CCChargesPage = {
                     <td>${escapeHtml(c.card_account_name || '')}</td>
                     <td>${escapeHtml(c.reference || '')}</td>
                     <td class="amount">${formatCurrency(c.amount)}</td>
-                    <td>${voided ? '' : `<button class="btn btn-sm btn-secondary" onclick="CCChargesPage.voidCharge(${c.id})">Void</button>`}</td>
+                    <td>${voided ? '' : `<button data-destructive class="btn btn-sm btn-secondary" onclick="CCChargesPage.voidCharge(${c.id})">Void</button>`}</td>
                 </tr>`;
             }
             html += '</tbody></table></div>';

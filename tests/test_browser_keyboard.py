@@ -45,6 +45,7 @@ from tests.test_browser_report_views import SEPT, _open_at  # noqa: E402
 from tests.test_dialog_contrast import (  # noqa: E402,F401  (the dialogs)
     BANKING,
     NONPROFIT_DIALOGS,
+    NONPROFIT_PAGES,
     PEOPLE,
     PURCHASES,
     REPORTS,
@@ -81,7 +82,9 @@ WHERE = """() => { const a = document.activeElement, m = document.getElementById
 # The first and the last control of the dialog's body take focus
 FIRST = "() => { _tabStops(document.getElementById('modal-body'), null)[0].focus(); }"
 LAST = "() => { _tabStops(document.getElementById('modal-body'), null).pop().focus(); }"
-CLOSE_X = "() => `button#${document.getElementById('modal-close-btn').dataset.tabProbe}`"
+CLOSE_X = (
+    "() => `button#${document.getElementById('modal-close-btn').dataset.tabProbe}`"
+)
 HANDLER_OFF = "() => document.removeEventListener('keydown', modalKeydown)"
 HANDLER_ON = "() => document.addEventListener('keydown', modalKeydown)"
 SYNTHETIC_TAB = """(shift) => document.activeElement.dispatchEvent(new KeyboardEvent('keydown',
@@ -285,7 +288,12 @@ def test_synthetic_tabs_alone_walk_a_dialog_the_webkit_way(browser, company, boo
     )
     try:
         page.wait_for_selector("#drilldown-body table")
-        assert page.evaluate("() => document.getElementById('report-custom-start').checkVisibility()") is False
+        assert (
+            page.evaluate(
+                "() => document.getElementById('report-custom-start').checkVisibility()"
+            )
+            is False
+        )
         _check_walk(page, handled, synthetic=True)
         # a Tab a control has claimed is left to it
         page.evaluate(FIRST)
@@ -303,9 +311,9 @@ def test_synthetic_tabs_alone_walk_a_dialog_the_webkit_way(browser, company, boo
         assert page.evaluate("() => document.activeElement.id") == "modal-close-btn"
         page.evaluate("() => document.getElementById('modal').focus()")
         page.evaluate(SYNTHETIC_TAB, True)
-        assert page.evaluate(
-            "() => document.activeElement.textContent.trim()"
-        ) == "Close"
+        assert (
+            page.evaluate("() => document.activeElement.textContent.trim()") == "Close"
+        )
     finally:
         page.close()
 
@@ -469,10 +477,8 @@ def test_back_goes_back_within_the_app_while_there_is_somewhere_to_go(
         settle(page, handled)
         assert page.evaluate(BACK)["disabled"] is True
         # on a Mac: ⌘[, said on the button; Alt+← is the Mac's word-left
-        page.evaluate(
-            """() => { Object.defineProperty(Navigator.prototype, 'platform',
-                { get: () => 'MacIntel', configurable: true }); App.labelBack(); }"""
-        )
+        page.evaluate("""() => { Object.defineProperty(Navigator.prototype, 'platform',
+                { get: () => 'MacIntel', configurable: true }); App.labelBack(); }""")
         assert page.evaluate(BACK)["title"] == "Back (⌘[)"
         assert page.evaluate(BACK)["keys"] == "Meta+["
         _sidebar(page, handled, "#/customers")
@@ -481,5 +487,121 @@ def test_back_goes_back_within_the_app_while_there_is_somewhere_to_go(
         assert page.evaluate("location.hash") == "#/customers"
         page.keyboard.press("Meta+BracketLeft")
         page.wait_for_function(AT, arg="#/")
+    finally:
+        page.close()
+
+
+# ── NEW-32: no dialog opens on Void or Delete ────────────────────────────
+
+# What has focus: its tag, its words, and whether it undoes something
+FOCUSED = """() => { const a = document.activeElement;
+    return { id: a.id || '', tag: a.tagName.toLowerCase(), text: a.textContent.trim().slice(0, 40),
+             destructive: a.hasAttribute('data-destructive') }; }"""
+DESTRUCTIVE = re.compile(r"^(void|delete|remove)\b", re.I)
+
+
+def _opens_safely(page, handled, books, groups):
+    """Every dialog of `groups` opened as the app opens it: the control
+    focused is never one that undoes. Returns what was focused per dialog."""
+    focused, offenders, unopened = {}, [], []
+    for route, openers in groups:
+        _visit(page, handled, route.format(**books))
+        for opener in openers:
+            call = opener.format(**books)
+            page.evaluate("() => closeModal()")
+            try:
+                page.evaluate(f"async () => {{ await {call}; }}")
+                page.wait_for_function(MODAL_SHOWN, timeout=5000)
+            except (
+                Exception
+            ) as exc:  # the contrast sweep reports a dialog that won't open
+                unopened.append((call, str(exc)[:120]))
+                continue
+            settle(page, handled)
+            at = page.evaluate(FOCUSED)
+            focused[call] = at
+            if at["destructive"] or DESTRUCTIVE.match(at["text"]):
+                offenders.append((call, at))
+        page.evaluate("() => closeModal()")
+    assert not offenders, offenders
+    return focused, unopened
+
+
+def test_no_dialog_opens_with_focus_on_void_or_delete(browser, company, books):
+    groups = [
+        ("#/invoices", SALES),
+        ("#/bills", PURCHASES),
+        ("#/banking/{checking}", BANKING),
+        ("#/reports", REPORTS),
+        ("#/employees", PEOPLE),
+        ("#/settings", SETTINGS),
+    ]
+    page, handled = _open(browser, company)
+    confirms = []
+    page.on("dialog", lambda d: (confirms.append(d.message), d.dismiss()))
+    try:
+        # the three the gate named open on Void: the dialog itself takes
+        # focus, named by its title, and Return there does nothing
+        _visit(page, handled, "#/journal")
+        for call in (
+            f"JournalPage.view({books['journal']})",
+            f"DepositsPage.view({books['deposit']})",
+            f"JobCostsPage.view({books['job_cost']})",
+        ):
+            page.evaluate("() => closeModal()")
+            page.evaluate(f"async () => {{ await {call}; }}")
+            page.wait_for_function(MODAL_SHOWN)
+            settle(page, handled)
+            assert page.evaluate(FOCUSED)["id"] == "modal", (
+                call,
+                page.evaluate(FOCUSED),
+            )
+            assert (
+                page.evaluate(
+                    "() => document.activeElement.getAttribute('aria-labelledby')"
+                )
+                == "modal-title"
+            )
+            assert page.locator("#modal-body [data-destructive]").count() == 1
+            page.keyboard.press("Enter")
+            page.wait_for_timeout(100)
+            assert page.evaluate(MODAL_SHOWN) and not confirms
+            # Tab from there: the dialog's Close ×, then Void, then Close
+            page.keyboard.press("Tab")
+            assert page.evaluate("() => document.activeElement.id") == "modal-close-btn"
+        # a dialog whose first control is harmless keeps it
+        page.evaluate("() => closeModal()")
+        page.evaluate("async () => { await InvoicesPage.showForm(); }")
+        page.wait_for_function(MODAL_SHOWN)
+        settle(page, handled)
+        assert page.evaluate(FOCUSED)["id"] != "modal"
+        # and every dialog the app opens (the last of them as a read-only
+        # sign-in sees it, which is how the sweep leaves the page)
+        focused, unopened = _opens_safely(page, handled, books, groups)
+        assert len(focused) >= 100, (len(focused), unopened)
+    finally:
+        page.close()
+
+
+def test_a_nonprofits_dialogs_open_safely_too(
+    browser, client, nonprofit  # noqa: F811  (the fixture, imported above)
+):
+    page, handled = _open(browser, client)
+    try:
+        for route in NONPROFIT_PAGES:  # the pages load what their dialogs need
+            _visit(page, handled, route.format(**nonprofit))
+        focused, unopened = _opens_safely(
+            page, handled, nonprofit, [("#/invoices", NONPROFIT_DIALOGS)]
+        )
+        assert len(focused) == len(NONPROFIT_DIALOGS), unopened
+        views = [
+            c
+            for c in focused
+            if re.search(r"(Releases|Allocations|InKind)Page\.view\(", c)
+        ]
+        assert len(views) == 3, views
+        assert all(focused[c]["id"] == "modal" for c in views), {
+            c: focused[c] for c in views
+        }
     finally:
         page.close()

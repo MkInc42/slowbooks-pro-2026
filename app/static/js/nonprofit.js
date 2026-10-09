@@ -114,7 +114,7 @@ const ReleasesPage = {
                 </div>
                 <div style="text-align:right">
                     <div style="font-size:20px;font-weight:700">${formatCurrency(r.amount)}</div>
-                    <div>${r.status === 'void' ? '<span style="color:var(--text-danger);font-weight:600">VOID</span>' : `<button class="btn btn-sm btn-secondary" onclick="ReleasesPage.voidEntry(${r.id})">Void</button>`}</div>
+                    <div>${r.status === 'void' ? '<span style="color:var(--text-danger);font-weight:600">VOID</span>' : `<button data-destructive class="btn btn-sm btn-secondary" onclick="ReleasesPage.voidEntry(${r.id})">Void</button>`}</div>
                 </div>
             </div>
             <div style="font-size:11px;color:var(--gray-500)">Posted as a debit to Net Assets With Donor Restrictions and a credit to Net Assets Without, both tagged to the ${T('class')}.</div>
@@ -237,7 +237,7 @@ const AllocationsPage = {
                 </table></div>
                 <button type="button" class="btn btn-sm btn-secondary" style="margin-top:8px;" onclick="AllocationsPage.addTarget()">+ Add Target</button>
                 <div class="form-actions">
-                    ${rule ? `<button type="button" class="btn btn-secondary" onclick="AllocationsPage.deleteRule(${rule.id})">Delete</button>` : ''}
+                    ${rule ? `<button data-destructive type="button" class="btn btn-secondary" onclick="AllocationsPage.deleteRule(${rule.id})">Delete</button>` : ''}
                     <button type="button" class="btn btn-secondary" onclick="closeModal()">Cancel</button>
                     <button type="submit" class="btn btn-primary">Save Rule</button>
                 </div>
@@ -381,7 +381,7 @@ const AllocationsPage = {
                 </div>
                 <div style="text-align:right">
                     <div style="font-size:20px;font-weight:700">${formatCurrency(a.total)}</div>
-                    <div>${a.status === 'void' ? '<span style="color:var(--text-danger);font-weight:600">VOID</span>' : `<button class="btn btn-sm btn-secondary" onclick="AllocationsPage.voidEntry(${a.id})">Void</button>`}</div>
+                    <div>${a.status === 'void' ? '<span style="color:var(--text-danger);font-weight:600">VOID</span>' : `<button data-destructive class="btn btn-sm btn-secondary" onclick="AllocationsPage.voidEntry(${a.id})">Void</button>`}</div>
                 </div>
             </div>
             <div class="table-container"><table class="data-table" style="font-size:12px">

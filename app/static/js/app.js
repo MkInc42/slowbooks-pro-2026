@@ -687,7 +687,7 @@ const App = {
                         ${inactive
                             ? `<button class="btn btn-sm btn-secondary" data-write onclick="App.setAccountActive(${a.id}, true)">Reactivate</button>`
                             : `<button class="btn btn-sm btn-secondary" data-write onclick="App.setAccountActive(${a.id}, false)">Deactivate</button>`}
-                        ${a.is_control ? '' : `<button class="btn btn-sm btn-secondary" data-write onclick="App.deleteAccount(${a.id})">Delete</button>`}
+                        ${a.is_control ? '' : `<button data-destructive class="btn btn-sm btn-secondary" data-write onclick="App.deleteAccount(${a.id})">Delete</button>`}
                     </td>
                 </tr>`;
             }

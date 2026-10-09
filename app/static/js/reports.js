@@ -255,7 +255,7 @@ const ReportsPage = {
                         <td style="color:var(--text-muted);">${period(s.parameters)}</td>
                         <td class="actions">
                             <button class="btn btn-sm btn-secondary" onclick="ReportsPage.openSaved(${s.id})">Open</button>
-                            <button class="btn btn-sm btn-secondary" aria-label="Delete saved report" onclick="ReportsPage.deleteSaved(${s.id})">Delete</button>
+                            <button data-destructive class="btn btn-sm btn-secondary" aria-label="Delete saved report" onclick="ReportsPage.deleteSaved(${s.id})">Delete</button>
                         </td>
                     </tr>`).join('');
                 savedHtml = `

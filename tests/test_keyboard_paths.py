@@ -63,7 +63,10 @@ def test_an_escape_at_a_date_field_leaves_the_field_in_both_handlers():
     assert re.search(
         r"/\^\(date\|time\|datetime-local\|month\|week\)\$/\.test\(el\.type\)", utils
     )
-    assert "if (escapeLeavesPicker(e)) return;\n        e.preventDefault(); closeModal(); return;" in utils
+    assert (
+        "if (escapeLeavesPicker(e)) return;\n        e.preventDefault(); closeModal(); return;"
+        in utils
+    )
     app = _src("app.js")
     assert "if (e.key === 'Escape' && !escapeLeavesPicker(e)) { closeModal(); }" in app
 
@@ -96,18 +99,62 @@ def test_the_toolbar_has_a_back_that_knows_whether_there_is_somewhere_to_go():
     assert "goBack() { if (App.canGoBack()) history.back(); }" in app
     assert "history.length" not in re.sub(r"//.*", "", app)  # not in the code
     # a link's entry is stamped when first seen; the first entry at start
-    assert "else if (!history.state) history.replaceState({ from: App._here }, '', here);" in app
-    assert "if (!history.state) history.replaceState({ from: null }, '', location.hash || '#/');" in app
+    assert (
+        "else if (!history.state) history.replaceState({ from: App._here }, '', here);"
+        in app
+    )
+    assert (
+        "if (!history.state) history.replaceState({ from: null }, '', location.hash || '#/');"
+        in app
+    )
     # the button follows every push, stamp and history move
     assert app.count("App.addressShown();") >= 3
     assert "closeModal();\n            App.syncBack();" in app
-    assert "App.addressShown();  // the toolbar's Back follows (NEW-30)" in _src("reports.js")
+    assert "App.addressShown();  // the toolbar's Back follows (NEW-30)" in _src(
+        "reports.js"
+    )
     # the shortcut: ⌘[ on a Mac, Alt+← elsewhere, by key position
-    assert "if (App.isBackKey(e) && App.canGoBack()) { e.preventDefault(); App.goBack(); return; }" in app
+    assert (
+        "if (App.isBackKey(e) && App.canGoBack()) { e.preventDefault(); App.goBack(); return; }"
+        in app
+    )
     assert "(e.code === 'BracketLeft' || e.key === '[')" in app
-    assert "e.altKey && !e.ctrlKey && !e.metaKey && !e.shiftKey && e.code === 'ArrowLeft'" in app
+    assert (
+        "e.altKey && !e.ctrlKey && !e.metaKey && !e.shiftKey && e.code === 'ArrowLeft'"
+        in app
+    )
     assert "btn.title = mac ? 'Back (⌘[)' : 'Back (Alt+←)';" in app
     css = (ROOT / "app/static/css/style.css").read_text(encoding="utf-8")
     assert ".tb-btn:disabled {" in css
     docs = (ROOT / "docs/accessibility.md").read_text(encoding="utf-8")
     assert "⌘[" in docs and "Alt+←" in docs
+
+
+# ── NEW-32 ────────────────────────────────────────────────────────────────
+
+# Every button that says Void or Delete carries the marker openModal reads,
+# in a dialog or a list (the rule is one rule); the three the gate named
+# are among them
+DESTRUCTIVE = [
+    ("journal.js", "JournalPage.void(${entry.id})"),
+    ("deposits.js", "DepositsPage.voidDeposit(${d.id})"),
+    ("job_costs.js", "JobCostsPage.voidEntry(${jc.id})"),
+]
+
+
+def test_every_void_or_delete_is_marked_and_never_focused_first():
+    unmarked = []
+    for p in sorted(JS.glob("*.js")):
+        for m in re.finditer(
+            r"<button([^>]*)>\s*(Void|Delete)\b", p.read_text(encoding="utf-8")
+        ):
+            if "data-destructive" not in m.group(1):
+                unmarked.append(f"{p.name}: {m.group(0)[:80]}")
+    assert not unmarked, unmarked
+    for name, call in DESTRUCTIVE:
+        assert f'onclick="{call}"' in _src(name), (name, call)
+    utils = _src("utils.js")
+    assert (
+        "const target = first && !first.matches('[data-destructive]') ? first : modal;"
+        in utils
+    )

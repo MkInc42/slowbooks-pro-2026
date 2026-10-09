@@ -218,7 +218,7 @@ const BenefitsPage = {
             <td class="amount">${r.per_period_cap ?? '—'}</td><td class="amount">${r.annual_cap ?? '—'}</td>
             <td class="amount">${r.wage_base_ceiling ?? '—'}</td><td class="amount">${r.employer_annual_cap ?? '—'}</td>
             <td style="font-size:11px;">${r.employer_match_limit_pct ? `limit ${r.employer_match_limit_pct}% ` : ''}${escapeHtml(r.tiers_json || '')}</td>
-            <td class="actions">${rates.length > 1 ? `<button class="btn btn-sm btn-secondary" onclick="BenefitsPage.deleteRate(${codeId}, ${r.id})" aria-label="Delete rate">Delete</button>` : ''}</td>
+            <td class="actions">${rates.length > 1 ? `<button data-destructive class="btn btn-sm btn-secondary" onclick="BenefitsPage.deleteRate(${codeId}, ${r.id})" aria-label="Delete rate">Delete</button>` : ''}</td>
         </tr>`).join('');
         openModal(`Rates — ${escapeHtml(code.code)}`, `
             <div class="table-container"><table>
@@ -272,7 +272,7 @@ const BenefitsPage = {
             <td class="actions">
                 <button class="btn btn-sm btn-secondary" onclick="BenefitsPage.showGroupForm(${g.id})">Codes</button>
                 <button class="btn btn-sm btn-secondary" onclick="BenefitsPage.showMembers(${g.id})">Members</button>
-                <button class="btn btn-sm btn-secondary" onclick="BenefitsPage.deleteGroup(${g.id})">Delete</button>
+                <button data-destructive class="btn btn-sm btn-secondary" onclick="BenefitsPage.deleteGroup(${g.id})">Delete</button>
             </td>
         </tr>`).join('');
         return `

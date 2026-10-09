@@ -635,7 +635,7 @@ const JobsPage = {
                         <textarea name="notes" rows="2">${escapeHtml(job.notes || '')}</textarea></div>
                 </div>
                 <div class="form-actions">
-                    ${id ? `<button type="button" class="btn btn-secondary" onclick="JobsPage.remove(${id})" style="margin-right:auto;">Delete</button>` : ''}
+                    ${id ? `<button data-destructive type="button" class="btn btn-secondary" onclick="JobsPage.remove(${id})" style="margin-right:auto;">Delete</button>` : ''}
                     <button type="button" class="btn btn-secondary" onclick="closeModal()">Cancel</button>
                     <button type="submit" class="btn btn-primary">${id ? `Save ${T('Job')}` : `Create ${T('Job')}`}</button>
                 </div>
