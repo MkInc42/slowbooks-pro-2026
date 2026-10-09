@@ -54,6 +54,19 @@ Details, known gaps and how to report a barrier:
 
 ## What's New
 
+**v2.22 — Connected.** Every report view has an address, so a report, a
+class's P&L or a drill-down can be bookmarked, pasted, reloaded and left
+with Back (#237). P&L by Class scrolls sideways with the Account column
+frozen, jumps to a class, chooses its columns, and saves as PDF, CSV and a
+saved report (#231–#233); a class's P&L is a report of its own and P&L by
+Job sits on the same grid (#235, #242). Classes have a page, with every
+line tagged to the class (#234); the General Ledger shows and filters by
+class (#236); the Chart of Accounts opens the register (#240). Every report
+row goes somewhere and the customer and vendor pages open their reports
+(#238, #239); the drill-down re-dates in place and every posting links to
+its document (#241); the per-line Class cell for every company, with a
+warning for a transaction saved without one (#243).
+
 **v2.21 — Three things you'd reach for.** Click a vendor for its own
 page, with its bills, payments, credits and what's owed (#223). Edit a
 posted bill, the way an invoice is edited, with the ledger following and a
@@ -144,7 +157,7 @@ against any of eight providers (Anthropic Claude and xAI Grok first, then
 Groq, Cloudflare Workers AI, OpenAI, Google Gemini, a Cloudflare Worker you
 host yourself, or any OpenAI-compatible endpoint you name) — keys encrypted at rest with versioned, rotatable ciphertext.
 And the whole app is agent-operable: every install serves a
-self-documenting local REST API (546 operations in v2.21) — built for Claude
+self-documenting local REST API (555 operations in v2.22) — built for Claude
 Code and Grok first, and any agentic CLI works; the
 [AI setup guide](https://www.slowbookspro.com/ai/) has the paste-prompt.
 

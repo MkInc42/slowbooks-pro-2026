@@ -7,6 +7,135 @@ on what the software does, not on what sprint shipped what.
 
 ## [Unreleased]
 
+### v2.22.0 — Connected
+
+The last three releases each built one edge of the same graph — classes,
+reports, drill-downs and the pages behind them — and left the rest of it
+unbuilt. A survey of the code found fourteen missing links; this release
+builds them all, deep links first.
+
+**Every report view has an address** (#237). `#/reports/profit-loss?start_date=…&end_date=…`,
+`#/reports/account-transactions?account_id=…&class_id=…&from=general-ledger`,
+a class's own P&L, the by-class grid: a reload, a bookmark or Back
+reproduces the view with its period and filters. A change inside a view
+(period, filter) rewrites the address in place; opening another view (a
+drill-down, a class column, a document from a drill-down) adds a history
+entry. Browser Back returns to the view left and closes the one being
+left; every "Back to …" button goes back through history when that is where
+it came from, however deep the chain (each pushed entry records where it
+was pushed from), and otherwise opens the view. A drill-down from a class's
+P&L says "Back to Profit & Loss — <class>". The dashboard's "Full P&L" and
+"Full Balance Sheet" open the dated report; saved reports open through the
+same addresses. A date or period in a pasted address that isn't one is
+ignored and said so; names `Object.prototype` has aren't reports.
+`docs/dev/report-views.md` says how a view gets an address.
+
+**P&L by Class you can scroll, jump, choose, save and export** (#231, #232,
+#233). The grid opens in the wide dialog and scrolls sideways with the
+Account column and the header frozen; "Go to class" (type to find it),
+‹ Prev / Next ›, ←/→, Home/End and Enter move through the columns, and a
+live status line names the column. It saves as PDF (landscape, paged past
+eight classes) and CSV (the grid, or one row per account and class for a
+pivot) and as a saved report; the Profit & Loss PDF and CSV take `class_id`.
+`class_ids`, `show=active` and `include_empty` choose the columns; a subset
+says "Filtered: n of m classes shown — these totals are for the classes
+shown, not the company", with the company's Net Income beside it, and a
+subset that names no column says so with "Show every class".
+
+**A class's P&L is a report** (#235): period picker, a class picker with
+‹ Prev / Next › that walk the grid's columns for the dates, Save and export,
+"Back to P&L by Class" on the report's period; its drill-downs come back to
+it. The by-class subtotal cells open it. A "P&L Unclassified" card on the
+Report Center is this report pointed at Uncategorized.
+
+**P&L by Job** (#242). `GET /api/reports/profit-loss-by-job` (+ PDF, CSV):
+every P&L account down the side, a column per job with "No job" first,
+`customer_id` to narrow to one customer's jobs, the same chooser and the
+same filtered contract; column totals equal the plain P&L. An amount opens
+the lines behind it (the drill-down and the register take `job_id`, 0 = no
+job); a job's heading opens the job page on the report's dates with a way
+back. Job Profitability's rows do the same now, and its "No job" row opens
+P&L by Job on that column (#245).
+
+**Classes have a page** (#234). `#/classes` lists every class with its
+income, cost of goods, expenses and net for a period (Active / Archived /
+All; every class together is the P&L, and a filtered list says what it
+totals). `#/classes/<id>`: Overview with the class's P&L account by account,
+its net income and share of the company's, and links into its P&L and into
+the by-class grid landing on its column; Transactions with every posted line
+tagged to the class across every account, each opening its document; the
+fund fields in nonprofit mode. Uncategorized and archived classes have
+pages; rename and archive stay in Settings. Classes are in the global
+search. New: `GET /api/classes/activity`, `/api/classes/{id}`,
+`/{id}/summary`, `/{id}/transactions`.
+
+**Class on the General Ledger and the register** (#236). The ledger shows
+the Class column its CSV already had and takes Account and Class pickers;
+`class_id` on the route applies to the lines and to the balance brought
+forward under the same test, on the CSV and PDF, the drill-down and saved
+reports; a filtered ledger says so. The bank and card register takes
+`start_date`, `end_date` and `class_id`, shows the balance brought forward
+when dated, and keeps the account's whole balance beside a class-filtered
+running balance.
+
+**The Chart of Accounts opens the register** (#240): bank and card
+accounts to their register, every other account to its drill-down for this
+year; a filter box on the chart (its count announced); accounts in the
+global search by number or name.
+
+**Every report row goes somewhere** (#239). A/R Aging, Income by Customer
+and the Job Profitability customer cell open the customer's page; A/P Aging
+and the 1099 Summary open the vendor's; Trial Balance and Cash Flow accounts
+open the drill-down for the report's dates; a Fund Balances row opens the
+fund's own P&L. The drill-down says "Back to <report>" for every report that
+opened it, and Back puts the keyboard back on the row it left.
+
+**Entity pages open their reports** (#238). The customer page gets a
+Reports row — Statement (PDF) in business mode, Income by Customer, A/R
+Aging, Job Profitability for that customer's jobs — and the vendor page A/P
+Aging, the 1099 Summary (for a 1099 vendor) and the default expense
+account's register, each on this year to date with the row picked out. Job
+Profitability for one customer says so and labels its total as that
+customer's. The customer page's invoice rows open the invoice (they opened
+the Invoices list). The customer and vendor pages have addresses,
+`#/customers/<id>` and `#/vendors/<id>`, so Back from one of those reports
+returns to the page.
+
+**A drill-down you can re-date and re-scope** (#241). It runs through the
+period shell: dates change in place, a Class and an Account select in its
+toolbar, Previous / Next through the accounts of the report it came from;
+Payee, the void badge, cleared (✓) and reconciled (R), a "Balance brought
+forward" line and a period total; a line with no document opens its journal
+entry; "Add to Saved Reports…" works. Every `source_type` the app posts
+links to its document — job costs, pay runs, credit memos, in-kind gifts,
+releases, allocations, the void and edit postings, adjustments,
+depreciation — and a test enumerates the posting sites so a new one can't
+ship unlinked.
+
+**Class on every line, and a warning** (#243). The per-line Class cell is
+drawn for every company that has a class of its own (it was nonprofit-only),
+and invoice lines get it in both modes, so one bill can split across two
+classes. A company setting, *Warn when a transaction is saved without a
+class* (`class_warn_blank`, off by default): on, every document form with a
+class picker starts with no class chosen and asks before saving with none
+on the header or a line.
+
+**Not built, by decision: a Balance Sheet by Class.** Customer payments,
+bill payments, transfers, payroll runs, sales-tax payments and opening
+balances carry no class, so every balance-sheet column but a class's own
+net income would read Uncategorized and the report would mislead, as
+QuickBooks' does. The class page's net income is the honest figure;
+nonprofit mode's Fund Balances already covers funds. In the same spirit,
+`BillPaymentCreate` no longer accepts `class_id` or `job_id`: both were
+accepted and silently dropped (a bill payment has no class column and Pay
+Bills offers none); a body carrying them is refused.
+
+**Also:** "Job Cost Entry" is "Grant Cost Entry" in nonprofit mode (the
+new route's label); a job in the by-job chooser, picker and headings has one
+name; every amount in the plain and per-class P&L CSVs has two decimals.
+
+No schema migration. 555 operations.
+
 ### v2.21.0 — Three things you'd reach for
 
 A user who knows QuickBooks clicked a vendor, an account in the General

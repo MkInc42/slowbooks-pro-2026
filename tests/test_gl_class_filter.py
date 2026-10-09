@@ -19,12 +19,8 @@ from datetime import date
 from decimal import Decimal
 from pathlib import Path
 
-import pytest
 
 from app.services.accounting import create_journal_entry
-from tests.test_pl_by_class_detail import (
-    ledger_fixture,
-)  # noqa: F401  (registers the ledger fixture)
 
 JS = Path(__file__).resolve().parents[1] / "app" / "static" / "js"
 PERIOD = {"start_date": "2026-07-01", "end_date": "2026-07-31"}

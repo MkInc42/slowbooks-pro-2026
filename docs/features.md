@@ -74,7 +74,13 @@ The register is the ledger account (v2.10, issue #114). Full guide: [docs/bankin
 - **Register links** — every register line opens its document: invoice, payment, bill, bill payment, deposit, expense, card charge, transfer, or its journal entry
 
 ## Reports & Tax
-- **P&L by Class** (v2.20.0) — every income, COGS and expense account down the side with a column per class and a total, tying to the plain P&L; click an amount for the transactions behind it in that class, or a class for its own Profit & Loss
+- **P&L by Class** (v2.20.0, a wide grid since v2.22.0) — every income, COGS and expense account down the side with a column per class and a total, tying to the plain P&L; click an amount for the transactions behind it in that class, or a class for its own Profit & Loss. The Account column and the header stay put while the classes scroll sideways; "Go to class" (type to find it), ‹ Prev / Next ›, ←/→, Home/End and Enter move through the columns, with a status line a screen reader hears; on a phone the grid swipes with the Account column frozen. Saves as PDF (landscape, paged past eight classes) and CSV (the grid, or one row per account and class for a pivot) and as a saved report. Chooses its columns: a class subset, All or Active only, classes with no activity; a subset says it is filtered, shows the filtered total and the company's Net Income, and rides in the saved report and the exports
+- **A class's own P&L** (v2.22.0) — a report of its own: period, a class picker with ‹ Prev / Next › that walk the grid's columns, Save and export; the by-class subtotal cells open it and Back from its drill-down returns to it. A **P&L Unclassified** card on the Report Center is this report pointed at the Uncategorized class
+- **P&L by Job** (v2.22.0) — every P&L account down the side, a column per job and a "No job" column, on the same grid as P&L by Class, with its own PDF, CSV and saved report; `customer_id` narrows to one customer's jobs. An amount opens the lines behind it for that job; a job's heading opens the job page on the report's dates with a way back. Column totals equal the plain P&L
+- **Every report view has an address** (v2.22.0) — `#/reports/<view>?…` carries the period, dates and filters, a drill-down's account and class, a class's own P&L, so a report can be bookmarked, pasted, reloaded and reached with Back. A change inside a report rewrites the address in place; opening another view adds a history entry; browser Back returns to the view left and closes the one being left, and each "Back to …" button goes back through history when that is where it came from. Saved reports and the dashboard's "Full P&L" / "Full Balance Sheet" open through the same addresses
+- **Every report row goes somewhere** (v2.22.0) — A/R Aging, Income by Customer and the Job Profitability customer cell open the customer's page; A/P Aging and the 1099 Summary open the vendor's; Trial Balance and Cash Flow account rows open the drill-down for the report's dates; a Fund Balances row opens the fund's own P&L; Job Profitability's rows open the job page on the report's dates and its "No job" row opens P&L by Job on that column. The drill-down says "Back to <report>" for every report that opened it, and Back puts the keyboard back on the row it left
+- **Reports from the customer and vendor pages** (v2.22.0) — a Reports row on the customer page (Statement PDF in business mode, Income by Customer, A/R Aging, Job Profitability for that customer's jobs) and on the vendor page (A/P Aging, 1099 Summary for 1099 vendors, the default expense account's register), each on this year to date with the customer's or vendor's row picked out; the pages have addresses (`#/customers/<id>`, `#/vendors/<id>`) so Back returns to them
+- **The drill-down** (v2.22.0) — sits on the period shell: change its dates, class or account in place, step Previous / Next through the accounts of the report it came from, save it as a report that reopens. It shows Payee, the cleared mark (✓ cleared, R reconciled), void lines struck through, the balance brought forward and a period total. Every posting in a register or drill-down links to its document — job cost entries, pay runs, credit memos, in-kind gifts, releases and allocations at their own addresses; PTO accruals, checks, inventory adjustments, sales-tax payments, IIF lines and asset postings at their journal entry
 - **QuickBooks-style period selector** — All reports support preset periods (This Month, This Quarter, This/Last Year, Year to Date, Custom Date) with live refresh
 - **Profit & Loss** — Income vs expenses for any date range
 - **Balance Sheet** — Assets, liabilities, and equity as of any date
@@ -84,10 +90,19 @@ The register is the ledger account (v2.10, issue #114). Full guide: [docs/bankin
 - **A/P Aging** — see Accounts Payable
 - **Cash Flow** — Indirect method: net income, non-cash adjustments, changes in working capital, investing and financing; the net change equals the change in the bank accounts
 - **Sales Tax** — Per-line taxable flag (defaults from the item and the customer) so untaxed labor and a taxed part share one invoice; the rate lives on the document. Sales Tax report shows the taxable base and tax collected, nets credit memos, and checks itself against Sales Tax Payable. Pay Sales Tax records payments to government (DR Sales Tax Payable, CR a bank or card account)
-- **General Ledger** — Every posted line grouped by account: balance brought forward, running balance in the account's natural sign (a payable or income reads positive), the source document type, and a period total that ties to the Trial Balance An account's name opens its register for the report's dates (v2.21.0)
+- **General Ledger** — Every posted line grouped by account: balance brought forward, running balance in the account's natural sign (a payable or income reads positive), the source document type, and a period total that ties to the Trial Balance. An account's name opens its register for the report's dates (v2.21.0). Shows its Class column on screen and takes Account and Class pickers (v2.22.0): a class-filtered ledger computes each balance brought forward and running balance under the same class test and says so; the exports and saved reports carry the filter
 - **Income by Customer** — Sales before tax per customer, with tax in its own column, payments received (applied or not) and invoice counts
 - **Customer Statements** — PDF statement: one list in date order (invoices, payments, credit memos), each line describing its document, with a running balance in home currency
 - **Schedule C (Tax)** — Generate Schedule C data from P&L with configurable account-to-tax-line mappings, matched to exact line ids and following the seeded chart (cost of goods on line 4; income 1, other expense 27a when unmapped); net profit equals the P&L. Export as CSV
+
+## Classes
+- **Classes page** (v2.22.0) — `#/classes`, outside Settings: every class with its income, cost of goods, expenses and net for a period (Active / Archived / All); every class together is the Profit & Loss for the dates, and a filtered list says what it totals
+- **A class's own page** (v2.22.0) — `#/classes/<id>`: Overview with the class's P&L account by account, its net income and share of the company's, and links into its Profit & Loss and into P&L by Class landing on its column; Transactions with every posted line tagged to the class across every account, each opening its document; the Uncategorized page is the cleanup list; archived classes keep their page; fund fields in nonprofit mode. The global search finds classes and opens the page. Rename and archive stay in Settings
+- **Register filters** (v2.22.0) — a bank or card register takes a date range and a class in its address; with a start date it shows the balance brought forward, and a class-filtered running balance is labelled beside the account's whole balance
+- **Chart of Accounts opens the register** (v2.22.0) — an account's name opens the bank register (bank and card accounts) or this year's transactions through the period shell (every other account, inactive included); a filter box narrows the chart by number or name, its count announced; the global search finds accounts and opens the same register
+- **Line-level class for every company** (v2.22.0) — the per-line Class cell on bill and journal lines is no longer nonprofit-only, and invoice lines have one too, so one bill can split across two classes; posting always honoured a line's class
+- **Warn when a transaction is saved without a class** (v2.22.0) — a company setting (Settings → Classes, `class_warn_blank`); on, entry forms start with no class chosen and ask before saving a document with none on its header or lines, which would be reported under Uncategorized; payments, transfers and payroll carry no class and are not asked
+- **No Balance Sheet by Class** — not built, by decision: customer payments, bill payments, transfers, payroll runs, sales-tax payments and opening balances carry no class, so every balance-sheet column except a class's own net income would read Uncategorized and the report would mislead, as QuickBooks' does. The class page's net income is the honest figure; nonprofit mode's Fund Balances covers funds, where restriction releases make the movement explicit
 
 ## Nonprofit mode
 - **One switch** — Settings → Company Type → Nonprofit swaps the vocabulary (Donor, Pledge, Donation, Fund, Grant, Statement of Activities / Financial Position, Net Assets) on screens, report titles, PDF names and the dashboard; the API and database never change name. Printed faces are literal: Donation Receipt / Pledge / Invoice by the document, not the setting
@@ -461,7 +476,7 @@ All endpoints under `/api/`. Swagger docs at `/docs`. 300+ routes across 50 rout
 | `/api/dashboard/charts` | GET | AR aging buckets + monthly revenue trend |
 | `/api/settings` | GET, PUT | Company settings |
 | `/api/settings/test-email` | POST | Send SMTP test email |
-| `/api/search` | GET | Unified search across all entities |
+| `/api/search` | GET | Unified search across all entities, classes and accounts included (v2.22.0) |
 | `/api/accounts` | GET, POST, PUT, DELETE | Chart of Accounts CRUD. `?bank=1` filters to bank/card accounts. PUT refuses the number or type of a control account (400) and DELETE refuses a system account |
 | `/api/customers` | GET, POST, PUT, DELETE | Customer management |
 | `/api/vendors` | GET, POST, PUT, DELETE | Vendor management |
@@ -501,7 +516,7 @@ All endpoints under `/api/`. Swagger docs at `/docs`. 300+ routes across 50 rout
 | `/api/bills` | GET, POST, PUT | Bill CRUD with line items; PUT edits a posted bill (v2.21.0), re-posting its journal |
 | `/api/bills/{id}/void` | POST | Void bill |
 | `/api/bills/{id}/pdf · /print-preview` | GET | Bill PDF / print page |
-| `/api/bill-payments` | GET, POST | Pay vendor bills with allocation (a payment pays its own vendor's bills only); `?bill_id=` lists a bill's payments |
+| `/api/bill-payments` | GET, POST | Pay vendor bills with allocation (a payment pays its own vendor's bills only); `?bill_id=` lists a bill's payments; `class_id`/`job_id` are refused (they were accepted and dropped; v2.22.0) |
 | `/api/bill-payments/{id}` | GET | One bill payment with what it paid |
 | `/api/credit-memos` | GET, POST | Credit memo CRUD |
 | `/api/credit-memos/{id}/apply` | POST | Apply credit to that customer's invoices |
@@ -535,7 +550,7 @@ All payroll, HR, tax-form, and self-service portal endpoints are documented with
 ### Banking & Deposits
 | Endpoint | Methods | Description |
 |----------|---------|-------------|
-| `/api/banking/check-register` | GET | The register: ledger lines on a bank/card account with running balance, links, cleared state |
+| `/api/banking/check-register` | GET | The register: ledger lines on a bank/card account with running balance, links, cleared state; `start_date`, `end_date`, `class_id` (v2.22.0) |
 | `/api/deposits/pending` | GET | Pending deposits in Undeposited Funds |
 | `/api/deposits` | GET, POST | List and create deposits (move funds to bank; `line_ids` are the payments taken) |
 | `/api/deposits/{id}` | GET | One deposit with its payments |
@@ -556,14 +571,15 @@ All payroll, HR, tax-form, and self-service portal endpoints are documented with
 | Endpoint | Methods | Description |
 |----------|---------|-------------|
 | `/api/reports/profit-loss` (+`/pdf`, `/csv`) | GET | P&L report; `class_id` gives one class's P&L |
-| `/api/reports/profit-loss-by-class` | GET | Every P&L account with a column per class (`accounts`), and each class's totals (`classes`) |
+| `/api/reports/profit-loss-by-class` (+`/pdf`, `/csv`) | GET | Every P&L account with a column per class (`accounts`), and each class's totals (`classes`); `class_ids`, `show=active`, `include_empty` choose the columns and the response says `filtered` with `columns_total` and the `unfiltered` figures; CSV `layout=wide\|long` (v2.22.0) |
+| `/api/reports/profit-loss-by-job` (+`/pdf`, `/csv`) | GET | The same grid with a column per job and "No job"; `job_ids` (0 = no job), `customer_id`, `show`, `include_empty` (v2.22.0) |
 | `/api/reports/balance-sheet` (+`/pdf`, `/csv`) | GET | Balance sheet |
 | `/api/reports/trial-balance` (+`/pdf`, `/csv`) | GET | Trial balance, debit and credit columns with totals |
 | `/api/reports/ar-aging` | GET | Accounts receivable aging |
 | `/api/reports/ap-aging` | GET | Accounts payable aging |
 | `/api/reports/sales-tax` | GET | Sales tax collected |
 | `/api/reports/sales-tax/pay` | POST | Record sales tax payment to government |
-| `/api/reports/general-ledger` (+`/pdf`, `/csv`) | GET | Every posted line by account: balance brought forward, running balance, source, class, period total |
+| `/api/reports/general-ledger` (+`/pdf`, `/csv`) | GET | Every posted line by account: balance brought forward, running balance, source, class, period total; `account_id` and `class_id` filter it, the balance brought forward under the same class test (v2.22.0) |
 | `/api/reports/income-by-customer` | GET | Sales totals per customer |
 | `/api/tax/schedule-c` | GET | Schedule C data from P&L |
 | `/api/tax/schedule-c/csv` | GET | Schedule C CSV export |
@@ -641,11 +657,19 @@ All payroll, HR, tax-form, and self-service portal endpoints are documented with
 ### Drill-Down & Saved Reports
 | Endpoint | Methods | Description |
 |----------|---------|-------------|
-| `/api/reports/account-transactions` | GET | Every journal line hitting an account, with source-doc links; `class_id` keeps one class's lines |
+| `/api/reports/account-transactions` | GET | Every journal line hitting an account, with source-doc links for every posting; `class_id` keeps one class's lines, `job_id` one job's (0 = no job) (v2.22.0) |
 | `/api/customers/check-duplicate` | GET | Pre-submit duplicate-name check (fuzzy) |
 | `/api/vendors/check-duplicate` | GET | Pre-submit duplicate-name check (fuzzy) |
 | `/api/saved-reports` | GET, POST | List/create named report parameter sets |
 | `/api/saved-reports/{id}` | GET, PUT, DELETE | Saved report CRUD |
+
+### Classes (v2.22.0)
+| Endpoint | Methods | Description |
+|----------|---------|-------------|
+| `/api/classes/activity` | GET | One row per class for `start_date`–`end_date` (income, COGS, gross profit, expenses, net); `include_archived`; totals of the rows and the company's P&L totals |
+| `/api/classes/{id}` | GET | One class |
+| `/api/classes/{id}/summary` | GET | The class's P&L for the dates (the same query as `/api/reports/profit-loss?class_id`) with the company's net income beside it |
+| `/api/classes/{id}/transactions` | GET | Every posted line attributed to the class across all accounts, with `source_link`, and the class's debit, credit and net |
 
 ### Analytics
 All read endpoints accept `?period=month|quarter|year` (or `mtd/qtd/ytd`), or explicit `?start_date=YYYY-MM-DD&end_date=YYYY-MM-DD`.

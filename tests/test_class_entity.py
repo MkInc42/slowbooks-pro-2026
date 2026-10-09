@@ -30,9 +30,6 @@ from pathlib import Path
 import pytest
 
 from app.services.accounting import create_journal_entry
-from tests.test_pl_by_class_detail import (
-    ledger_fixture,
-)  # noqa: F401  (registers the ledger fixture)
 
 ROOT = Path(__file__).resolve().parents[1]
 JS = ROOT / "app" / "static" / "js"
