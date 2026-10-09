@@ -658,7 +658,52 @@ def test_converting_an_estimate_leaves_another_customers_job_off(
     assert inv["jobs_left_off"] == ["Birch Co: Roof"]
     income = _by_job_income(client)
     assert income[two_jobs["roof"]] == 0, "nothing counted under Birch's job"
-    assert sum(income.values()) == 140, "and all of it counted for Alder"
+    assert income[two_jobs["kitchen"]] == 40 and income[None] == 100
+
+
+def test_a_converted_estimate_posts_each_lines_job(
+    client, db_session, seed_accounts, two_jobs
+):
+    """Convert posted the header's job only, so a line's own job counted
+    under "No job" in P&L by Job; it posts through the same path as create
+    and duplicate now, each income line tagged with its line's job."""
+    from app.models.transactions import Transaction
+
+    bath = client.post(
+        "/api/jobs", json={"customer_id": two_jobs["alder"], "name": "Bath"}
+    ).json()
+    est = client.post(
+        "/api/estimates",
+        json={
+            "customer_id": two_jobs["alder"],
+            "date": "2026-04-04",
+            "tax_rate": 0,
+            "job_id": two_jobs["kitchen"],
+            "lines": [_line(), _line(rate=40, job_id=bath["id"])],
+        },
+    ).json()
+    before = _by_job_income(client)
+
+    r = client.post(f"/api/estimates/{est['id']}/convert")
+    assert r.status_code == 200, r.text
+    inv = r.json()
+    assert inv["job_id"] == two_jobs["kitchen"]
+    assert [ln["job_id"] for ln in inv["lines"]] == [None, bath["id"]]
+    assert inv["jobs_left_off"] == []
+
+    txn = db_session.get(Transaction, db_session.get(Invoice, inv["id"]).transaction_id)
+    assert txn.job_id == two_jobs["kitchen"], "the entry carries the header's job"
+    income_lines = [ln for ln in txn.lines if ln.credit and ln.credit > 0]
+    assert sorted((float(ln.credit), ln.job_id) for ln in income_lines) == [
+        (40.0, bath["id"]),
+        (100.0, two_jobs["kitchen"]),  # the header's job, filled in by the posting
+    ]
+    assert sum(float(ln.debit) for ln in txn.lines) == 140.0, "amounts unchanged"
+
+    after = _by_job_income(client)
+    assert after[bath["id"]] == before.get(bath["id"], 0) + 40, "the line's job"
+    assert after[two_jobs["kitchen"]] == before.get(two_jobs["kitchen"], 0) + 100
+    assert after.get(None, 0) == before.get(None, 0), "nothing extra under No job"
 
 
 def test_duplicating_an_invoice_leaves_another_customers_job_off(

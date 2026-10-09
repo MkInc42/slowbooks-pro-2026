@@ -15,6 +15,7 @@ from sqlalchemy.orm import Session, joinedload, selectinload
 from app.database import get_db
 from app.routes.invoices.helpers import (
     _due_date_from_terms,
+    _post_invoice_journal,
     confirm_zero_total,
     opening_status,
     resolve_line_taxable,
@@ -32,18 +33,12 @@ from app.services.request_utils import content_disposition
 from app.services.accounting import (
     _q,
     compute_line_totals,
-    create_journal_entry,
-    get_ar_account_id,
-    get_default_income_account_id,
-    get_sales_tax_account_id,
 )
-from app.services.donor_documents import document_label
 from app.services.jobs_service import (
     own_job,
     refuse_other_customers_jobs,
     refuse_other_customers_jobs_on_edit,
 )
-from app.services.terminology import document_reference, terms_from_db
 
 router = APIRouter(prefix="/api/estimates", tags=["estimates"])
 
@@ -310,7 +305,6 @@ def convert_to_invoice(
     db: Session = Depends(get_db),
 ):
     """Convert to invoice — deep-copies all fields and lines."""
-    words = terms_from_db(db)
     from app.services.closing_date import check_closing_date
 
     estimate = db.query(Estimate).filter(Estimate.id == estimate_id).first()
@@ -383,10 +377,10 @@ def convert_to_invoice(
         notes=estimate.notes or settings.get("invoice_notes") or None,
         **address,
     )
-    face = document_label(invoice, words)
     db.add(invoice)
     db.flush()
 
+    new_lines = []
     for eline, cline in zip(estimate.lines, copied):
         iline = InvoiceLine(
             invoice_id=invoice.id,
@@ -402,69 +396,20 @@ def convert_to_invoice(
             line_order=eline.line_order,
         )
         db.add(iline)
+        new_lines.append(iline)
 
     estimate.status = EstimateStatus.CONVERTED
     estimate.converted_invoice_id = invoice.id
 
-    # Journal Entry — DR A/R for total, CR income account per line item
-    ar_id = get_ar_account_id(db)
-    default_income_id = get_default_income_account_id(db)
-    tax_account_id = get_sales_tax_account_id(db)
-
-    if ar_id and default_income_id:
-        from app.models.items import Item
-
-        journal_lines = []
-        # Debit A/R for total
-        journal_lines.append(
-            {
-                "account_id": ar_id,
-                "debit": Decimal(str(invoice.total)),
-                "credit": Decimal("0"),
-                "description": document_reference(face, invoice_number),
-            }
-        )
-        # Credit income for each line item
-        for eline in estimate.lines:
-            line_amount = Decimal(str(eline.amount))
-            if line_amount == 0:
-                continue
-            income_id = default_income_id
-            if eline.item_id:
-                item = db.query(Item).filter(Item.id == eline.item_id).first()
-                if item and item.income_account_id:
-                    income_id = item.income_account_id
-            journal_lines.append(
-                {
-                    "account_id": income_id,
-                    "debit": Decimal("0"),
-                    "credit": line_amount,
-                    "description": eline.description or "",
-                }
-            )
-        # Credit sales tax if any
-        if invoice.tax_amount and invoice.tax_amount > 0 and tax_account_id:
-            journal_lines.append(
-                {
-                    "account_id": tax_account_id,
-                    "debit": Decimal("0"),
-                    "credit": Decimal(str(invoice.tax_amount)),
-                    "description": "Sales tax",
-                }
-            )
-
-        txn = create_journal_entry(
-            db,
-            today,
-            document_reference(face, invoice_number, customer.name if customer else ""),
-            journal_lines,
-            source_type="invoice",
-            source_id=invoice.id,
-            reference=invoice_number,
-            class_id=invoice.class_id,
-            job_id=invoice.job_id,
-        )
-        invoice.transaction_id = txn.id
+    # The posting a new invoice gets — DR A/R, CR income per line with the
+    # line's job, class and cost code, CR sales tax — through the same
+    # path as create and duplicate. The route's own builder posted the
+    # header's job only, so a converted estimate's line-level jobs counted
+    # under "No job" in P&L by Job (2.22.0 gate, found fixing NEW-36).
+    txn = _post_invoice_journal(
+        db, invoice, new_lines, customer.name if customer else ""
+    )
+    invoice.transaction_id = txn.id
 
     # Phase 11 (audit fix): estimate→invoice conversion is a NEW sale from
     # an accounting standpoint. Post inventory movements for each inventory
