@@ -191,3 +191,18 @@ def test_the_line_class_and_function_cells_leave_their_names_to_the_grid_rule():
     # the rule that names them: the column heading and "line N"
     assert "rowName = `line ${row.sectionRowIndex + 1}`;" in utils
     assert "return [heading, rowName].filter(Boolean).join(', ');" in utils
+
+
+# ── NEW-39 ────────────────────────────────────────────────────────────────
+
+
+def test_the_drill_downs_position_is_a_live_status_with_the_account():
+    src = _src("reports.js")
+    assert (
+        '<span id="drill-position" class="grid-live" role="status" aria-live="polite"'
+        in src
+    )
+    assert (
+        "pos.textContent = list.length > 1 && i >= 0 ? `${i + 1} of ${list.length}: ${list[i].label}` : '';"
+        in src
+    )

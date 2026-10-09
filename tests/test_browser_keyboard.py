@@ -721,3 +721,61 @@ def test_a_nonprofits_fund_and_function_cells_say_their_line(
         ]
     finally:
         page.close()
+
+
+# ── NEW-39: the drill-down's "n of m" is a status ────────────────────────
+
+
+def test_the_drill_downs_position_is_a_status_that_names_the_account(
+    browser, company, books
+):
+    checking = _account(company, "1000")
+    url = (
+        f"#/reports/account-transactions?account_id={checking['id']}"
+        f"&start_date={SEPT[0]}&end_date={SEPT[1]}&from=trial-balance"
+    )
+    page, handled = _open_at(browser, company, url)
+    try:
+        page.wait_for_selector("#drilldown-body table")
+        pos = page.locator("#drill-position")
+        assert pos.get_attribute("role") == "status"
+        assert pos.get_attribute("aria-live") == "polite"
+        where = pos.text_content().strip()
+        m = re.fullmatch(r"(\d+) of (\d+): (.+)", where)
+        assert m and m.group(3).endswith(checking["name"]), where
+        n, total = int(m.group(1)), int(m.group(2))
+        assert total > 3
+
+        def step(button):
+            was = pos.text_content()
+            page.focus(button)
+            page.keyboard.press("Enter")
+            page.wait_for_function(
+                "(was) => document.getElementById('drill-position').textContent !== was",
+                arg=was,
+            )
+            settle(page, handled)
+            return pos.text_content().strip()
+
+        # Next, by keyboard: focus stays on Next, the status says where
+        after = step("#drill-next")
+        m2 = re.fullmatch(r"(\d+) of (\d+): (.+)", after)
+        assert m2 and int(m2.group(1)) == n + 1 and int(m2.group(2)) == total, after
+        assert page.evaluate("() => document.activeElement.id") == "drill-next"
+        assert m2.group(3).split(" - ", 1)[-1] in page.evaluate(TITLE)  # its name
+        assert page.get_by_role("status").filter(has_text=after).count() == 1
+        # at the last account Next is disabled: Prev takes the focus, so
+        # the keyboard keeps its place (and Next again from the first)
+        page.select_option(
+            "#drill-account",
+            page.eval_on_selector_all(
+                "#drill-account option", "os => os[os.length - 2].value"
+            ),
+        )
+        settle(page, handled)
+        last = step("#drill-next")
+        assert last.startswith(f"{total} of {total}: "), last
+        assert page.evaluate("() => document.activeElement.id") == "drill-prev"
+        assert page.locator("#drill-next").is_disabled()
+    finally:
+        page.close()

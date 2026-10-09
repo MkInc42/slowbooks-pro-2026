@@ -496,7 +496,7 @@ const ReportsPage = {
             <div style="grid-column:1 / -1; display:flex; gap:6px; align-items:center; flex-wrap:wrap;">
                 <button type="button" class="btn btn-sm btn-secondary" id="drill-prev" aria-label="Previous account" onclick="ReportsPage._drillStep(-1)">‹ Previous</button>
                 <button type="button" class="btn btn-sm btn-secondary" id="drill-next" aria-label="Next account" onclick="ReportsPage._drillStep(1)">Next ›</button>
-                <span id="drill-position" style="font-size:11px; color:var(--text-muted);"></span>
+                <span id="drill-position" class="grid-live" role="status" aria-live="polite" style="font-size:11px; color:var(--text-muted);"></span>
             </div>`;
 
         await ReportsPage.openPeriodModal(title(accountName, className), 'this_year_to_date', async (_period, range) => {
@@ -620,7 +620,10 @@ const ReportsPage = {
     // The toolbar's selects, from what the server said: the account list
     // with the one shown (added if the report lacks it), the classes
     // (archived ones included, so the one shown is there), and
-    // Previous/Next disabled at the ends.
+    // Previous/Next disabled at the ends. Where in the walk, "3 of 23:
+    // 1000 - Checking", is a status (role=status, aria-live), so a screen
+    // reader hears where Next landed, as it hears the grid's "Column n of
+    // m" (macOS gate NEW-39): the title changes with it but is not live.
     _classList: null,
     async _fillDrillToolbar(data, accounts) {
         const acct = $('#drill-account');
@@ -631,9 +634,14 @@ const ReportsPage = {
         acct.innerHTML = list.map(a => `<option value="${a.id}" ${a.id === data.account.id ? 'selected' : ''}>${escapeHtml(a.label)}</option>`).join('');
         const i = list.findIndex(a => a.id === data.account.id);
         const prev = $('#drill-prev'), next = $('#drill-next'), pos = $('#drill-position');
+        const focused = document.activeElement;
         if (prev) prev.disabled = i <= 0;
         if (next) next.disabled = i < 0 || i >= list.length - 1;
-        if (pos) pos.textContent = list.length > 1 ? `${i + 1} of ${list.length}` : '';
+        // A button disabled under the keyboard (Next at the last account)
+        // drops focus to the page; the other one takes it instead.
+        if (focused === next && next.disabled && prev && !prev.disabled) prev.focus();
+        else if (focused === prev && prev.disabled && next && !next.disabled) next.focus();
+        if (pos) pos.textContent = list.length > 1 && i >= 0 ? `${i + 1} of ${list.length}: ${list[i].label}` : '';
         if (!ReportsPage._classList) {
             try { ReportsPage._classList = await API.get('/classes?include_archived=true'); } catch (e) { ReportsPage._classList = []; }
         }
