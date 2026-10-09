@@ -520,6 +520,25 @@ def test_a_date_in_the_address_that_is_not_one_is_said_so(browser, company, book
         assert _hash(page) == (
             f"#/reports/profit-loss?start_date={dt.date.today().year}-01-01&end_date=2026-09-30"
         )
+        # the From box shows the date the report ran on, not a blank
+        # where the box refused "garbage" (NEW-24)
+        assert page.evaluate(PERIOD) == {
+            "period": "custom",
+            "start": f"{dt.date.today().year}-01-01",
+            "end": "2026-09-30",
+        }
+    finally:
+        page.close()
+
+    # an as-of view: the box shows the date used
+    page, handled = _open_at(
+        browser, company, "#/reports/balance-sheet?as_of_date=garbage"
+    )
+    try:
+        page.wait_for_selector("#report-content table")
+        assert "as_of_date in the address is not a date (garbage)" in _toasts(page)
+        assert page.input_value("#report-custom-end") == dt.date.today().isoformat()
+        assert _query(_hash(page))["as_of_date"] == dt.date.today().isoformat()
     finally:
         page.close()
 
@@ -693,5 +712,95 @@ def test_closing_a_view_leaves_its_address_for_the_page_under_it(
         page.wait_for_selector("#report-content table")
         assert _hash(page) == aging
         assert page.evaluate(MODAL_SHOWN)
+    finally:
+        page.close()
+
+
+def test_from_after_to_is_refused_and_the_dates_before_it_are_kept(
+    browser, company, books
+):
+    """From after To was accepted silently — an empty report (NEW-35). In an
+    address both dates are ignored, said so, and the view starts on its own
+    period; typed into the boxes it is refused, said so, and the boxes go
+    back to the range the report still shows. The pages that read dates
+    from their address (the register, the Classes list) refuse it too."""
+    page, handled = _open_at(
+        browser,
+        company,
+        "#/reports/profit-loss?start_date=2026-12-26&end_date=2026-10-09",
+    )
+    try:
+        page.wait_for_selector("#report-content table")
+        assert (
+            "start_date in the address (2026-12-26) is after end_date (2026-10-09) — both ignored"
+            in _toasts(page)
+        )
+        # the P&L's own period, and the address rewritten to it
+        assert page.input_value("#report-period-select") == "this_year_to_date"
+        q = _query(_hash(page))
+        assert q["period"] == "this_year_to_date"
+        assert q["start_date"] == f"{dt.date.today().year}-01-01"
+        assert q["end_date"] == dt.date.today().isoformat()
+
+        # typed: a custom range, then From moved past To
+        page.select_option("#report-period-select", "custom")
+        page.fill("#report-custom-start", SEPT[0])
+        page.fill("#report-custom-end", SEPT[1])
+        page.dispatch_event("#report-custom-end", "change")
+        page.wait_for_function("(u) => location.hash === u", arg=PL_URL)
+        page.wait_for_selector("#report-content table")
+        body = page.evaluate(
+            "() => document.getElementById('report-content').textContent"
+        )
+        assert "Sep 1, 2026" in body and "Sep 30, 2026" in body
+        page.fill("#report-custom-start", "2026-12-26")
+        page.dispatch_event("#report-custom-start", "change")
+        page.wait_for_function(
+            "() => [...document.querySelectorAll('#toast-container .toast')].some(t => t.textContent.includes('is after To'))"
+        )
+        assert (
+            "From (Dec 26, 2026) is after To (Sep 30, 2026) — kept Sep 1, 2026 to Sep 30, 2026"
+            in _toasts(page)
+        )
+        assert page.evaluate(PERIOD) == {
+            "period": "custom",
+            "start": SEPT[0],
+            "end": SEPT[1],
+        }
+        assert _hash(page) == PL_URL
+        assert "Sep 1, 2026" in page.evaluate(
+            "() => document.getElementById('report-content').textContent"
+        )
+    finally:
+        page.close()
+
+    # the register's address: the filter is dropped, and said so
+    bank = next(
+        a for a in company.get("/api/accounts").json() if a["account_number"] == "1000"
+    )
+    page, handled = _open_at(
+        browser,
+        company,
+        f"#/banking/{bank['id']}?start_date=2026-12-26&end_date=2026-10-09",
+    )
+    try:
+        page.wait_for_selector("#reg-start")
+        assert "is after end_date (2026-10-09) — both ignored" in _toasts(page)
+        assert page.input_value("#reg-start") == ""
+        assert page.input_value("#reg-end") == ""
+        assert page.locator("#reg-filter-note").count() == 0
+    finally:
+        page.close()
+
+    # the Classes list: the period falls back, the address is rewritten
+    page, handled = _open_at(
+        browser, company, "#/classes?start_date=2026-12-26&end_date=2026-10-09"
+    )
+    try:
+        page.wait_for_selector("#classes-total-note")
+        assert "is after end_date (2026-10-09) — both ignored" in _toasts(page)
+        q = _query(_hash(page))
+        assert q["start_date"] == f"{dt.date.today().year}-01-01"
+        assert q["end_date"] == dt.date.today().isoformat()
     finally:
         page.close()

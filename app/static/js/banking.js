@@ -375,13 +375,9 @@ const BankingPage = {
 
     _regFilterFrom(query) {
         const q = query || {};
-        const isDate = v => /^\d{4}-\d{2}-\d{2}$/.test(v || '') && !isNaN(new Date(v).getTime());
-        for (const key of ['start_date', 'end_date']) {
-            if (q[key] && !isDate(q[key])) toast(`${key} in the address is not a date (${q[key]}) — ignored`, 'error');
-        }
+        // a date that is not one, or From after To, is said so and ignored
         return {
-            start_date: isDate(q.start_date) ? q.start_date : '',
-            end_date: isDate(q.end_date) ? q.end_date : '',
+            ...datesFromQuery(q),
             class_id: /^\d+$/.test(q.class_id || '') ? q.class_id : '',
         };
     },

@@ -169,9 +169,10 @@ const JobsPage = {
         JobsPage._open = new Set();
         JobsPage._showLines = new Set();
         const q = query || {};
-        const isDate = (v) => /^\d{4}-\d{2}-\d{2}$/.test(v || '');
-        if (isDate(q.start_date) || isDate(q.end_date)) {
-            JobsPage._period = { start: isDate(q.start_date) ? q.start_date : '', end: isDate(q.end_date) ? q.end_date : '' };
+        // a date that is not one, or From after To, is said so and ignored
+        const dates = datesFromQuery(q);
+        if (dates.start_date || dates.end_date) {
+            JobsPage._period = { start: dates.start_date, end: dates.end_date };
         }
         JobsPage._from = (typeof ReportsPage !== 'undefined' && ReportsPage._view(q.from)) ? q.from : null;
         try {

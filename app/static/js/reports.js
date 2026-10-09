@@ -804,7 +804,12 @@ const ReportsPage = {
         // "Back to …"). opts.wide — the wide dialog (openModal's), for a
         // grid with a column per class or job.
         const reportType = opts.reportType || null;
-        const prefill = opts.prefill || {};
+        // The dates of the address or the saved report: a date that is not
+        // one, or From after To (NEW-35), is said so and ignored — the view
+        // starts on its usual period — and the address is then rewritten
+        // to the dates in use (datesFromQuery). An as-of view has one date,
+        // checked below once its box has refused or taken it.
+        const prefill = useAsOfOnly ? { ...(opts.prefill || {}) } : { ...(opts.prefill || {}), ...datesFromQuery(opts.prefill) };
         const view = opts.view || null;
         const paramsObj = typeof opts.params === 'function' ? null : (opts.params || {});
         const params = () => (paramsObj ? paramsObj : opts.params());
@@ -844,19 +849,23 @@ const ReportsPage = {
         const endInput = $("#report-custom-end");
         const content = $("#report-content");
 
-        // A pasted address with a date that is not one: the date input
-        // refuses it and the default stands. Said, rather than other dates
-        // quietly shown (R7 review); the address is then rewritten to the
-        // dates in use.
-        const asOfKey = prefill.end_date ? 'end_date' : 'as_of_date';
-        const dates = useAsOfOnly ? [[asOfKey, endInput]] : [['start_date', startInput], ['end_date', endInput]];
-        for (const [key, input] of dates) {
-            if (prefill[key] && input.value !== prefill[key]) toast(`${key} in the address is not a date (${prefill[key]}) — ignored`, 'error');
+        // A pasted as-of date that is not one: the date input refuses it
+        // and the default stands. Said, rather than another date quietly
+        // shown (R7 review); the address is then rewritten to the date in
+        // use, and the box shows it (NEW-24).
+        if (useAsOfOnly) {
+            const asOfKey = prefill.end_date ? 'end_date' : 'as_of_date';
+            if (prefill[asOfKey] && endInput.value !== prefill[asOfKey]) toast(`${asOfKey} in the address is not a date (${prefill[asOfKey]}) — ignored`, 'error');
         }
         if (prefill.period && !known) toast(`period in the address is not one of the choices (${prefill.period}) — ignored`, 'error');
 
         // Track current params so the Save button captures fresh values.
         let currentParams = {};
+        // The range the report last ran on. From after To typed into the
+        // boxes is refused — said, and the boxes go back to this range,
+        // which the report still shows (NEW-35); on the first render, with
+        // no range yet, the view's own period stands in.
+        let lastRange = null;
         // The first render of the view: the only one that may move focus
         // to a spotlighted row (ReportsPage._spotlight). opts.spotlight
         // false leaves the row alone altogether — a view the server has
@@ -865,15 +874,30 @@ const ReportsPage = {
 
         const render = async () => {
             ReportsPage.toggleCustomRange();
+            const custom = select.value === 'custom';
+            if (!useAsOfOnly && custom && startInput.value && endInput.value && startInput.value > endInput.value) {
+                const keep = lastRange || ReportsPage.getDateRange(initialPeriod);
+                toast(`From (${formatDate(startInput.value)}) is after To (${formatDate(endInput.value)}) — kept ${formatDate(keep.start)} to ${formatDate(keep.end)}`, 'error');
+                startInput.value = keep.start;
+                endInput.value = keep.end;
+                if (lastRange) return;  // the report on it is already showing
+            }
             content.innerHTML = `<div style="font-size:11px; color:var(--gray-500);">Loading report...</div>`;
             try {
                 if (useAsOfOnly) {
                     const asOfDate = ReportsPage.getAsOfDate(select.value, endInput.value || todayISO());
+                    // the box shows the date the report runs on (NEW-24)
+                    if (custom && endInput.value !== asOfDate) endInput.value = asOfDate;
                     currentParams = { period: select.value, as_of_date: asOfDate };
                     if (view) ReportsPage.setAddress(view, { ...params(), ...currentParams });
                     content.innerHTML = await loadContent(select.value, { as_of_date: asOfDate }, params());
                 } else {
                     const range = ReportsPage.getDateRange(select.value, startInput.value, endInput.value);
+                    // the boxes show the dates the report runs on: a date the
+                    // address had that the box refused is replaced by the
+                    // one used, not left blank (NEW-24)
+                    if (custom) { startInput.value = range.start; endInput.value = range.end; }
+                    lastRange = range;
                     currentParams = { period: select.value, start_date: range.start, end_date: range.end };
                     if (view) ReportsPage.setAddress(view, { ...params(), ...currentParams });
                     content.innerHTML = await loadContent(select.value, range, params());

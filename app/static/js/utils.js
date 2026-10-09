@@ -45,6 +45,27 @@ function formatDate(dateStr) {
     return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
 }
 
+// The dates an address (or a saved report's parameters) carries:
+// start_date and end_date must each be a date, and From must not be after
+// To. What is not is said so and comes back as '' — ignored, so the page
+// starts on its usual period and rewrites the address to the dates in use
+// (docs/dev/report-views.md; NEW-35).
+function datesFromQuery(q) {
+    q = q || {};
+    const isDate = v => /^\d{4}-\d{2}-\d{2}$/.test(v || '') && !isNaN(new Date(v).getTime());
+    const out = {};
+    for (const key of ['start_date', 'end_date']) {
+        if (q[key] && !isDate(q[key])) toast(`${key} in the address is not a date (${q[key]}) — ignored`, 'error');
+        out[key] = isDate(q[key]) ? q[key] : '';
+    }
+    if (out.start_date && out.end_date && out.start_date > out.end_date) {
+        toast(`start_date in the address (${out.start_date}) is after end_date (${out.end_date}) — both ignored`, 'error');
+        out.start_date = '';
+        out.end_date = '';
+    }
+    return out;
+}
+
 function todayISO() {
     const d = new Date();
     return d.getFullYear() + '-' + String(d.getMonth()+1).padStart(2,'0') + '-' + String(d.getDate()).padStart(2,'0');

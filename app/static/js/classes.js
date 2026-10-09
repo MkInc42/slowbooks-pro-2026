@@ -50,12 +50,7 @@ const ClassesPage = {
         const q = query || {};
         const known = ReportsPage.periodOptions('').includes(`value="${q.period}"`);
         if (q.period && !known) toast(`period in the address is not one of the choices (${q.period}) — ignored`, 'error');
-        const isDate = v => /^\d{4}-\d{2}-\d{2}$/.test(v || '') && !isNaN(new Date(v).getTime());
-        for (const key of ['start_date', 'end_date']) {
-            if (q[key] && !isDate(q[key])) toast(`${key} in the address is not a date (${q[key]}) — ignored`, 'error');
-        }
-        const start = isDate(q.start_date) ? q.start_date : '';
-        const end = isDate(q.end_date) ? q.end_date : '';
+        const { start_date: start, end_date: end } = datesFromQuery(q);
         const period = known ? q.period : ((start || end) ? 'custom' : fallback);
         const range = ReportsPage.getDateRange(period, start || null, end || null);
         return { period, start: range.start, end: range.end };
