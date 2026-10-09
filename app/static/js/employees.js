@@ -509,7 +509,7 @@ const EmployeesPage = {
                         <td>••••${escapeHtml(acct.last_four || '')}</td>
                         <td>${escapeHtml(acct.deposit_type || '')}</td>
                         <td class="actions">
-                            <button class="btn btn-sm btn-danger" onclick="EmployeesPage._deleteBankAccount(${id}, ${acct.id})">Delete</button>
+                            <button data-destructive class="btn btn-sm btn-danger" onclick="EmployeesPage._deleteBankAccount(${id}, ${acct.id})">Delete</button>
                         </td>
                     </tr>`;
                 }
@@ -604,7 +604,7 @@ const EmployeesPage = {
                         <td>${formatDate(doc.uploaded_at || doc.uploaded || doc.created_at)}</td>
                         <td class="actions">
                             ${doc.missing ? '' : `<a class="btn btn-sm btn-secondary" href="/api/employees/${id}/documents/${doc.id}" target="_blank">Download</a>`}
-                            <button class="btn btn-sm btn-danger" onclick="EmployeesPage._deleteDocument(${id}, ${doc.id})">Delete</button>
+                            <button data-destructive class="btn btn-sm btn-danger" onclick="EmployeesPage._deleteDocument(${id}, ${doc.id})">Delete</button>
                         </td>
                     </tr>`;
                 }

@@ -120,13 +120,83 @@ function toastAction(message, actionLabel, onClick, ms = 8000) {
 // whatever opened it. (Audit finding 3: role/aria-modal live on #modal in
 // index.html; this is the behaviour half.)
 let _modalOpener = null;
-const _FOCUSABLE = 'a[href], button:not([disabled]), input:not([disabled]):not([type="hidden"]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])';
+
+// What Tab can land on, before the browser's own rules thin it out.
+const _TAB_SEL = 'a[href], area[href], button, input, select, textarea, summary, iframe, [tabindex], [contenteditable]:not([contenteditable="false"])';
+
+// Drawn, as the browser's Tab judges it: display, visibility and a folded
+// <details> all count. checkVisibility is the browser's own answer; an
+// older browser is asked the long way.
+function _drawn(el) {
+    if (typeof el.checkVisibility === 'function') return el.checkVisibility({ visibilityProperty: true });
+    return el.getClientRects().length > 0 && getComputedStyle(el).visibility !== 'hidden';
+}
+
+// The controls Tab walks under `root`, in the order the browser's own Tab
+// takes them: a tabindex above 0 first, lowest first, then everything
+// else as the document has it. What the browser skips, this skips: a
+// disabled control (a disabled fieldset's too), tabindex="-1" (a
+// type-ahead's hidden select), anything not drawn (a folded chooser, a
+// hidden input), and the radios of a group bar one: the checked one, or
+// the first where none is checked (Chromium lands there from either
+// side). From one of its own (`from`, the control Tab leaves) the whole
+// group is stepped over.
+function _tabStops(root, from) {
+    const radio = (el) => (el.tagName === 'INPUT' && el.type === 'radio' && el.name) ? el.name : null;
+    const all = [...root.querySelectorAll(_TAB_SEL)]
+        .filter(el => el.tabIndex >= 0 && !el.matches(':disabled') && _drawn(el));
+    const picked = new Set(all.filter(el => radio(el) && el.checked).map(radio));
+    const leaving = from ? radio(from) : null;
+    const seen = new Set();
+    const stops = all.filter(el => {
+        const g = radio(el);
+        if (!g) return true;
+        if (g === leaving) return false;
+        if (picked.has(g)) return el.checked;
+        if (seen.has(g)) return false;
+        seen.add(g);
+        return true;
+    });
+    const ahead = stops.filter(el => el.tabIndex > 0).sort((a, b) => a.tabIndex - b.tabIndex);
+    return ahead.concat(stops.filter(el => el.tabIndex === 0));
+}
+
+// A date or time field: Tab walks its own segments (month, day, year)
+// before leaving it, and only the browser knows which has the caret.
+function _hasSegments(el) {
+    return !!el && el.tagName === 'INPUT' && /^(date|time|datetime-local|month|week)$/.test(el.type);
+}
+
+// Escape in a date or time field closes the field's calendar; WebKit
+// sends the key on to the page too, where it closed the whole dialog with
+// it, an unsaved invoice lost (macOS gate NEW-33, the owner's own
+// keyboard). That Escape leaves the field instead, the dialog itself
+// taking focus, so the next one closes the dialog. True when it was one.
+// (Both Escape handlers, this file's and app.js's, ask.)
+function escapeLeavesPicker(e) {
+    if (!_hasSegments(e.target)) return false;
+    const modal = document.getElementById('modal');
+    const overlay = document.getElementById('modal-overlay');
+    if (modal && overlay && !overlay.classList.contains('hidden') && modal.contains(e.target)) modal.focus();
+    return true;
+}
+
+// Focus as Tab gives it: a text box's words selected, as the browser
+// does; a textarea keeps its caret (the browser selects nothing there,
+// and a note being edited must not vanish under the next keystroke).
+function _tabTo(el) {
+    try { el.focus(); } catch (e) { return; }
+    if (el.tagName === 'INPUT' && /^(text|search|url|tel|password|email|number)$/.test(el.type)) {
+        try { el.select(); } catch (e) { /* not selectable */ }
+    }
+}
 
 // opts.wide: a form whose rows are wider than a dialog — the line-item
 // tables with ten or eleven columns (job cost entry). The default 700px
 // dialog clipped the last columns of that table with no scrollbar (#174).
 function openModal(title, html, opts) {
     _modalOpener = document.activeElement;
+    const wasOpen = !$('#modal-overlay').classList.contains('hidden');
     $('#modal-title').textContent = title;
     $('#modal-body').innerHTML = html;
     // A read-only sign-in sees the form locked, not a 403 after filling it
@@ -136,30 +206,94 @@ function openModal(title, html, opts) {
     $('#modal-overlay').classList.remove('hidden');
     const modal = $('#modal');
     modal.classList.toggle('modal--wide', !!(opts && opts.wide));
-    const first = modal.querySelector('#modal-body ' + _FOCUSABLE.split(', ').join(', #modal-body ')) || modal;
-    setTimeout(() => { try { first.focus(); } catch (e) { /* nothing focusable */ } }, 0);
+    // No address of its own until the router gives it one (a document, a
+    // page, a report view: App.dialogAddressed); over a plain form the
+    // toolbar's Back is inert, and sits under the overlay (App.syncBack).
+    // A mark that is the opener's own stays: one found while no dialog was
+    // open (set since the last close, so by this opener, its fetch awaited
+    // or not), or one set in this very task over an open dialog (a view
+    // that put its address on the bar and opens at once). Any other — a
+    // form over an addressed dialog — goes.
+    const own = modal.dataset.address === (location.hash || '#/') && (!wasOpen || !!(window.App && window.App._marking));
+    if (!own) delete modal.dataset.address;
+    if (window.App && typeof window.App.syncBack === 'function') window.App.syncBack();
+    // The first control takes focus once the dialog's own enhancements (the
+    // type-ahead boxes) are in place. Never a control that undoes (Void,
+    // Delete: data-destructive), where Return would do it: the dialog takes
+    // focus itself then, as one with no control does, and a screen reader
+    // says its title (macOS gate NEW-32: the journal entry, job cost and
+    // deposit views opened on Void).
+    setTimeout(() => {
+        const first = _tabStops($('#modal-body'), null)[0];
+        const target = first && !first.matches('[data-destructive]') ? first : modal;
+        try { target.focus(); } catch (e) { /* nothing focusable */ }
+    }, 0);
 }
 
 function closeModal() {
     $('#modal-overlay').classList.add('hidden');
     $('#modal').classList.remove('modal--wide');
+    delete $('#modal').dataset.address;
+    if (window.App && typeof window.App.syncBack === 'function') window.App.syncBack();
     const opener = _modalOpener;
     _modalOpener = null;
     if (opener && document.contains(opener)) { try { opener.focus(); } catch (e) { /* gone */ } }
 }
 
-document.addEventListener('keydown', (e) => {
+// Keys inside an open dialog. Escape closes it. Tab and Shift+Tab are
+// moved in script, through every control the browser's own Tab would
+// reach, in its order, wrapping at the ends: WebKit's Tab, under macOS's
+// default keyboard setting ("text boxes and lists only"), skipped buttons
+// and links and left the dialog for the page, so "Back to …", Prev/Next
+// and a report's links were out of reach (macOS gate NEW-25). Chromium
+// walks the same sequence either way. A date or time field is the one
+// place the browser keeps Tab (its segments, _hasSegments): a Tab from
+// one moves to its next segment or leaves it, and a Tab into one lands
+// on the segment the browser chooses; where the browser then leaves the
+// control for the wrong one, the walk puts that right a moment later. A
+// control that has already claimed the key (e.defaultPrevented) is left
+// alone.
+let _tabFix = null;
+function modalKeydown(e) {
     const overlay = document.getElementById('modal-overlay');
     if (!overlay || overlay.classList.contains('hidden')) return;
-    if (e.key === 'Escape') { e.preventDefault(); closeModal(); return; }
-    if (e.key !== 'Tab') return;
+    if (e.key === 'Escape') {
+        if (escapeLeavesPicker(e)) return;
+        e.preventDefault(); closeModal(); return;
+    }
+    if (e.key !== 'Tab' || e.defaultPrevented) return;
+    clearTimeout(_tabFix);
     const modal = document.getElementById('modal');
-    const nodes = Array.from(modal.querySelectorAll(_FOCUSABLE)).filter(n => n.offsetParent !== null);
-    if (!nodes.length) { e.preventDefault(); modal.focus(); return; }
-    const first = nodes[0], last = nodes[nodes.length - 1];
-    if (e.shiftKey && (document.activeElement === first || document.activeElement === modal)) { e.preventDefault(); last.focus(); }
-    else if (!e.shiftKey && document.activeElement === last) { e.preventDefault(); first.focus(); }
-});
+    const active = document.activeElement;
+    const stops = _tabStops(modal, active);
+    if (!stops.length) { e.preventDefault(); modal.focus(); return; }
+    const back = e.shiftKey;
+    const i = stops.indexOf(active);
+    let next;
+    if (i >= 0) {
+        next = stops[(i + (back ? -1 : 1) + stops.length) % stops.length];
+    } else if (active && modal.contains(active)) {
+        // from something that is not a stop (the dialog itself, a button
+        // disabled while it had focus): the next stop along from it
+        const follows = (s) => active.compareDocumentPosition(s) & Node.DOCUMENT_POSITION_FOLLOWING;
+        next = back ? (stops.filter(s => !follows(s)).pop() || stops[stops.length - 1]) : (stops.find(follows) || stops[0]);
+    } else {
+        next = back ? stops[stops.length - 1] : stops[0];
+    }
+    const inDialog = !!active && active !== modal && modal.contains(active);
+    if (inDialog && (_hasSegments(active) || _hasSegments(next))) {
+        // The control says when the browser's Tab leaves it, and for where
+        // (relatedTarget); a segment move leaves it on, and the listener
+        // is taken off again once this key is done with.
+        const left = (ev) => { if (ev.relatedTarget !== next) _tabFix = setTimeout(() => _tabTo(next), 0); };
+        active.addEventListener('focusout', left, { once: true });
+        setTimeout(() => active.removeEventListener('focusout', left), 0);
+        return;
+    }
+    e.preventDefault();
+    _tabTo(next);
+}
+document.addEventListener('keydown', modalKeydown);
 
 function statusBadge(status) {
     return `<span class="badge badge-${status}">${status}</span>`;
@@ -540,6 +674,10 @@ const Nonprofit = {
     // company has a class of its own (Uncategorized alone has nothing to
     // choose); a nonprofit's funds always draw it. An archived class a line
     // already carries stays a choice, so an edit does not strip it.
+    // Neither cell names itself: nameFields names a field in a table from
+    // its column and its line ("Class, line 2", "Function, line 2"), as
+    // the Item and Account cells beside them are named. A fixed "Class for
+    // this line" read the same on every line (macOS gate NEW-37).
     _funds: null,
     _rules: null,
     async loadFunds() {
@@ -561,13 +699,13 @@ const Nonprofit = {
         const funds = (Nonprofit._funds || [])
             .filter(f => !f.is_archived || f.id === fundSelected)
             .map(f => `<option value="${f.id}" ${fundSelected === f.id ? 'selected' : ''}>${escapeHtml(f.name)}${f.is_archived ? ' (archived)' : ''}</option>`).join('');
-        return `<td><select class="${cls}-fund" data-no-search aria-label="${escapeHtml(T('Class'))} for this line"><option value="">Same as header</option>${funds}</select></td>`;
+        return `<td><select class="${cls}-fund" data-no-search><option value="">Same as header</option>${funds}</select></td>`;
     },
     headHtml() { return Nonprofit.classHeadHtml() + (Nonprofit.enabled() ? `<th scope="col">Function</th>` : ''); },
     cellHtml(cls, selected, fundSelected) {
         const split = Nonprofit.enabled() && (Nonprofit._rules || []).length ? ` <button type="button" class="btn btn-sm btn-secondary np-split" title="Split this line by an allocation rule" onclick="Nonprofit.splitRow(this)">Split</button>` : '';
         return Nonprofit.classCellHtml(cls, fundSelected) + (Nonprofit.enabled()
-            ? `<td style="white-space:nowrap"><select class="${cls}" aria-label="Function for this line">${Nonprofit.optionsHtml(selected, '—')}</select>${split}</td>`
+            ? `<td style="white-space:nowrap"><select class="${cls}">${Nonprofit.optionsHtml(selected, '—')}</select>${split}</td>`
             : '');
     },
     fromRow(row, cls) { return row.querySelector(`.${cls}`)?.value || null; },

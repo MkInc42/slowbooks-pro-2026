@@ -89,7 +89,7 @@ const PaymentsPage = {
             <div class="form-actions">
                 ${ack && ack.eligible ? `<button class="btn btn-secondary" onclick="window.open('/api/donors/gifts/payment/${p.id}/acknowledgment/pdf','_blank')">Acknowledgment (PDF)</button>
                 <button class="btn btn-secondary" onclick="Donors.emailAcknowledgment('payment', ${p.id})">Email Acknowledgment</button>` : ''}
-                ${!p.is_voided ? `<button class="btn btn-danger" onclick="PaymentsPage.void(${p.id})">Void Payment</button>` : ''}
+                ${!p.is_voided ? `<button data-destructive class="btn btn-danger" onclick="PaymentsPage.void(${p.id})">Void Payment</button>` : ''}
                 <button class="btn btn-secondary" onclick="closeModal()">Close</button>
             </div>`);
     },

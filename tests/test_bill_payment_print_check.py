@@ -29,7 +29,7 @@ def _print(pid):
 
 def _void(pid):
     return (
-        '<button class="btn btn-sm btn-danger" '
+        '<button data-destructive class="btn btn-sm btn-danger" '
         f'onclick="BillsPage.voidBillPayment({pid}, 3)">Void</button>'
     )
 

@@ -76,7 +76,7 @@ const ResellerPermitsPage = {
                     <td class="actions">
                         <button class="btn btn-sm btn-primary" onclick="ResellerPermitsPage.verifyWorkflow(${p.id})">Verify…</button>
                         <button class="btn btn-sm btn-secondary" onclick="ResellerPermitsPage.showForm(${p.id})">Edit</button>
-                        <button class="btn btn-sm btn-danger" onclick="ResellerPermitsPage.del(${p.id})">Delete</button>
+                        <button data-destructive class="btn btn-sm btn-danger" onclick="ResellerPermitsPage.del(${p.id})">Delete</button>
                     </td>
                 </tr>`;
             }).join('');

@@ -189,8 +189,8 @@ const VendorsPage = {
 
         // The page's own address (#/vendors/3, App.routes): Back from a
         // report opened below returns here, a reload keeps the page.
-        App.documentAddress(`#/vendors/${vendor.id}`);
         openModal(`Vendor — ${vendor.name}`, html);
+        App.documentAddress(`#/vendors/${vendor.id}`);  // after the dialog: it marks it as its own
     },
 
     // Reports for this vendor (#238), each through the report's own address

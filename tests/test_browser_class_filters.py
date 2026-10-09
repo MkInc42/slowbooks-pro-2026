@@ -415,7 +415,7 @@ def test_the_line_class_cell_is_on_the_bill_journal_and_invoice_forms(
             "() => [...document.querySelector('#bill-lines tr .line-function-fund').options].map(o => o.textContent)"
         )
         assert options == ["Same as header", "Uncategorized", "Site Prep"], options
-        assert page.get_by_label("Class for this line").count() >= 1
+        assert page.get_by_label("Class, line 1").count() == 1
         page.evaluate("() => closeModal()")
 
         # the journal entry: the same cell, no function cell

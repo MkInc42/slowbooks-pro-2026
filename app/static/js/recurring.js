@@ -28,7 +28,7 @@ const RecurringPage = {
                     <td style="font-family:var(--font-mono);">${r.invoices_created}</td>
                     <td class="actions">
                         <button class="btn btn-sm btn-secondary" onclick="RecurringPage.showForm(${r.id})">Edit</button>
-                        <button class="btn btn-sm btn-danger" onclick="RecurringPage.del(${r.id})">Delete</button>
+                        <button data-destructive class="btn btn-sm btn-danger" onclick="RecurringPage.del(${r.id})">Delete</button>
                     </td>
                 </tr>`;
             }

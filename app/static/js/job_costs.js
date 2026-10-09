@@ -259,7 +259,7 @@ const JobCostsPage = {
                 </div>
                 <div style="text-align:right">
                     <div style="font-size:20px;font-weight:700">${formatCurrency(jc.total)}</div>
-                    <div>${jc.status === 'void' ? '<span style="color:var(--text-danger);font-weight:600">VOID</span>' : `<button class="btn btn-sm btn-secondary" onclick="JobCostsPage.voidEntry(${jc.id})">Void</button>`}</div>
+                    <div>${jc.status === 'void' ? '<span style="color:var(--text-danger);font-weight:600">VOID</span>' : `<button data-destructive class="btn btn-sm btn-secondary" onclick="JobCostsPage.voidEntry(${jc.id})">Void</button>`}</div>
                 </div>
             </div>
             <div class="table-container"><table class="data-table" style="font-size:12px">

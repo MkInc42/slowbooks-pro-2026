@@ -27,7 +27,7 @@ const JournalPage = {
                     <td class="actions">
                         <button class="btn btn-sm btn-secondary" onclick="JournalPage.view(${e.id})">View</button>
                         ${e.voided ? '<span class="journal-voided" style="color:var(--danger);font-weight:700;">Voided</span>' : ''}
-                        ${JournalPage.canVoid(e) ? `<button class="btn btn-sm btn-danger" onclick="JournalPage.void(${e.id})">Void</button>` : ''}
+                        ${JournalPage.canVoid(e) ? `<button data-destructive class="btn btn-sm btn-danger" onclick="JournalPage.void(${e.id})">Void</button>` : ''}
                     </td>
                 </tr>`;
             }
@@ -69,7 +69,7 @@ const JournalPage = {
                 <div class="total-row"><span class="label">Total Credit</span><span class="value">${formatCurrency(entry.total_credit)}</span></div>
             </div>
             <div class="form-actions">
-                ${JournalPage.canVoid(entry) ? `<button class="btn btn-danger" onclick="JournalPage.void(${entry.id})">Void</button>` : ''}
+                ${JournalPage.canVoid(entry) ? `<button data-destructive class="btn btn-danger" onclick="JournalPage.void(${entry.id})">Void</button>` : ''}
                 <button class="btn btn-secondary" onclick="closeModal()">Close</button>
             </div>`);
     },

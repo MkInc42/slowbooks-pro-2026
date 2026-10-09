@@ -103,7 +103,7 @@ const DepositsPage = {
                 <td class="amount">${formatCurrency(d.amount)}</td>
                 <td>${escapeHtml(status)}</td>
                 <td class="actions"><button class="btn btn-sm btn-secondary" onclick="DepositsPage.view(${d.id})">View</button>
-                    ${canVoid ? `<button class="btn btn-sm btn-secondary" onclick="DepositsPage.voidDeposit(${d.id})">Void</button>` : ''}</td>
+                    ${canVoid ? `<button data-destructive class="btn btn-sm btn-secondary" onclick="DepositsPage.voidDeposit(${d.id})">Void</button>` : ''}</td>
             </tr>`;
         }).join('');
         return `
@@ -151,7 +151,7 @@ const DepositsPage = {
             </div>
             ${payments}
             <div class="form-actions">
-                ${canVoid ? `<button type="button" class="btn btn-danger" onclick="DepositsPage.voidDeposit(${d.id})">Void</button>` : ''}
+                ${canVoid ? `<button data-destructive type="button" class="btn btn-danger" onclick="DepositsPage.voidDeposit(${d.id})">Void</button>` : ''}
                 <button type="button" class="btn btn-secondary" onclick="closeModal()">Close</button>
             </div>`);
     },

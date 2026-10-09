@@ -51,7 +51,19 @@ or Alt+D.*
   headings, tables and reading order rather than a flat image of text.
 - **Dialogs are real dialogs:** focus moves into them, Tab and Shift+Tab stay
   inside, Escape closes them, and focus returns to the control that opened
-  them.
+  them. Tab reaches every control, buttons and links included, on every
+  browser and whatever the Mac's "keyboard navigation" setting: the dialog
+  moves focus itself, in the order the browser would (v2.22.0). Escape in
+  a date field leaves the field (after closing its calendar); the next
+  Escape closes the dialog, so an unsaved form is not lost to one key
+  (v2.22.0). No dialog opens with focus on Void or Delete: one whose first
+  control is destructive takes focus itself, and reads its title (v2.22.0).
+- **Back, within the app** (v2.22.0): the toolbar's ← button goes back
+  through the app's history, and is enabled only while an app page is
+  behind. The desktop app's window has no Back of its own, and some hops (a
+  report's row to a customer's page, a class's page to its P&L) have no
+  "Back to …" button; this covers them all.
+
 - **Notifications** ("Invoice saved") announce through a polite live region.
 - **Every data table declares its column headers** (`scope="col"`).
 - **Icon-only buttons** (remove a line, delete an attachment, close a dialog)
@@ -63,6 +75,25 @@ or Alt+D.*
 
 *New Invoice: focus is inside the dialog and moves from field to field with
 Tab.*
+
+### Keyboard shortcuts
+
+| Keys | Does |
+|---|---|
+| Alt+← (⌘[ on a Mac) | Back, within the app |
+| Alt+N | New invoice |
+| Alt+P | Receive payment |
+| Alt+Q | Quick Entry |
+| Alt+H | Dashboard |
+| Alt+D | Toggle dark mode |
+| Ctrl+K (⌘K on a Mac), or `/` outside a field | Search |
+| Ctrl+S | Save the open form |
+| Ctrl+Enter | Submit Quick Entry |
+| Escape | Close the dialog (in a date field: leave the field first) |
+
+On a Mac the Alt key is Option; the letter shortcuts go by the key, not
+the character Option types, so Option-D toggles the theme even though it
+types "∂" (v2.22.0).
 
 ## What we know is still open
 

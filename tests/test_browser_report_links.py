@@ -656,7 +656,9 @@ def test_the_drill_down_re_dates_in_place_and_its_selects_re_scope_it(
         assert page.get_by_label("Account", exact=True).count() == 1
         assert page.get_by_role("button", name="Previous account").count() == 1
         assert page.get_by_role("button", name="Next account").count() == 1
-        assert re.fullmatch(r"\d+ of \d+", page.text_content("#drill-position").strip())
+        assert re.fullmatch(
+            r"\d+ of \d+: .+", page.text_content("#drill-position").strip()
+        )
         accounts = page.eval_on_selector_all(
             "#drill-account option", "os => os.map(o => [o.value, o.textContent])"
         )

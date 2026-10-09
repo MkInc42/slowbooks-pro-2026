@@ -99,8 +99,9 @@ const App = {
         '/deposits':      { page: 'deposits',        label: 'Make Deposits',      render: () => DepositsPage.render() },
         '/deposits/:id':      { page: 'deposits',   label: 'Deposit',       render: (id) => App.withDocument(() => DepositsPage.render(), () => DepositsPage.view(id)) },
         // The Check Register page is the Banking register now (2.10); old bookmarks land there.
-        // (replaceState: Back from Banking must not land on the alias, which would send it forward again)
-        '/check-register': { page: 'banking',         label: 'Banking',            render: () => { history.replaceState(null, '', '#/banking'); App.navigate('#/banking'); return ''; } },
+        // (replaceState: Back from Banking must not land on the alias, which would send it forward again;
+        // the entry keeps its state, so Back still knows what is behind it)
+        '/check-register': { page: 'banking',         label: 'Banking',            render: () => { history.replaceState(history.state, '', '#/banking'); App.navigate('#/banking'); return ''; } },
         '/cc-charges':    { page: 'cc-charges',      label: 'CC Charges',         render: () => CCChargesPage.render() },
         '/cc-charges/:id':    { page: 'cc-charges', label: 'CC Charge',     render: (id) => App.withDocument(() => CCChargesPage.render(), () => JournalPage.view(id)) },
         '/expenses':      { page: 'expenses',        label: 'Enter Expenses',     render: () => ExpensesPage.render() },
@@ -122,6 +123,15 @@ const App = {
         const html = await list();
         setTimeout(() => {
             Promise.resolve().then(open)
+                .then(() => {
+                    // the dialog's address is the bar's: Back stays live over
+                    // it (App.editingDialog); and Back to a page left by one
+                    // of its row links (a customer's page, an invoice) puts
+                    // focus back on the link, as a report's row has it, once
+                    // the dialog's own first focus has gone by
+                    App.dialogAddressed();
+                    if (history.state && history.state.focus) setTimeout(() => ReportsPage._refocusRow($('#modal-body')), 0);
+                })
                 .catch(err => toast(err.message || 'Could not open this document', 'error'));
         }, 0);
         return html;
@@ -135,7 +145,106 @@ const App = {
     // there (the page opened through its route).
     documentAddress(hash) {
         const here = location.hash || '#/';
-        if (here !== hash) history.pushState({ from: here }, '', hash);
+        if (here !== hash) history.pushState(App.entryState(here), '', hash);
+        App.dialogAddressed();  // the open dialog's own: Back stays live over it
+    },
+
+    // ---- A dialog with an address of its own (NEW-30 review) --------------
+    // The router puts a dialog's address on the bar three ways: a document
+    // route (App.withDocument: #/invoices/12 over the list), a customer's or
+    // vendor's page (App.documentAddress) and a report view
+    // (ReportsPage.setAddress). Each marks the open dialog with that address;
+    // openModal clears the mark, so a plain form (New Invoice, Edit Customer,
+    // a Settings form) opened over the page, or over an addressed dialog,
+    // carries none. Back is inert over such a form: the button sits under
+    // the overlay and the chord does nothing, since a Back that discarded a
+    // half-typed form would be worse than none; the user closes the form
+    // first. Over an addressed dialog Back stays live: it is how a report, a
+    // document or a page is left.
+    dialogAddressed() {
+        const m = $('#modal');
+        if (m) m.dataset.address = location.hash || '#/';
+        // An opener that puts its address on the bar first and opens next
+        // (the statement picker, the 1099 summary: ReportsPage.setAddress,
+        // then openModal): its mark survives the open for this task
+        // (utils.js openModal reads _marking).
+        App._marking = true;
+        setTimeout(() => { App._marking = false; }, 0);
+        App.addressShown();
+    },
+    editingDialog() {
+        const overlay = $('#modal-overlay'), m = $('#modal');
+        if (!overlay || !m || overlay.classList.contains('hidden')) return false;
+        return (m.dataset.address || '') !== (location.hash || '#/');
+    },
+    backAllowed() { return App.canGoBack() && !App.editingDialog(); },
+
+    // ---- Back, within the app (macOS gate NEW-30) --------------------------
+    // The Mac app's window has no Back of its own (no button, gesture or
+    // menu item), so a hop with no "Back to …" of its own was one way. The
+    // toolbar's Back and its shortcut (⌘[ on a Mac, Alt+← elsewhere) go
+    // back through history, and only while an app page is behind:
+    // history.length is no guide, it counts the entries ahead and the
+    // desktop shell's own. Each entry the app pushes records the address it
+    // was pushed from (history.state.from: App.navigate, App.documentAddress,
+    // ReportsPage.setAddress); an entry a link made (a sidebar link's hash
+    // change) is stamped the same way when the router first sees it, and
+    // the session's first entry is stamped with nothing behind it. So `from`
+    // says whether there is somewhere to go. (A replaceState elsewhere
+    // should carry history.state along, or Back goes dark on that entry.)
+    _here: null,   // the address shown, for the next stamp
+    _nShown: 0,    // the entry shown: its place in the chain
+    // What an entry of the app's records: the address it was pushed from
+    // (from: Back and "Back to …" read it) and its place in the chain (n,
+    // one more than the entry it follows), so a move away declined can
+    // tell which way the entry it left lies (App.stayPut).
+    entryState(from) { return { from, n: App._nShown + 1 }; },
+    // A move away declined (the Settings leave guard, with edits unsaved):
+    // the page still shows the entry it was on, so the history goes back to
+    // that entry — behind, for a link's new entry (the browser had already
+    // made it) or a Forward; ahead, for a Back — with nothing re-rendered or
+    // closed on the way (_stay: the popstate and navigate handlers let it
+    // pass). The entry's own state says what is behind it, so the toolbar's
+    // Back stays as it was. (NEW-30 review, round 3.)
+    _stay: false,
+    stayPut() {
+        const n = history.state && history.state.n;
+        App._stay = true;
+        setTimeout(() => { App._stay = false; }, 2000);  // never stuck
+        if (typeof n === 'number' && n < App._nShown) history.forward(); else history.back();
+    },
+    isMac() { return typeof navigator !== 'undefined' && /Mac|iP(hone|ad|od)/.test(navigator.platform || ''); },
+    canGoBack() { return !!(history.state && history.state.from); },
+    goBack() { if (App.backAllowed()) history.back(); },
+    // ⌘[ on a Mac (the key, or where the layout puts "["; ⌘⌥[ is not it),
+    // Alt+← elsewhere
+    isBackKey(e) {
+        if (App.isMac()) return e.metaKey && !e.ctrlKey && !e.altKey && !e.shiftKey && (e.code === 'BracketLeft' || e.key === '[');
+        return e.altKey && !e.ctrlKey && !e.metaKey && !e.shiftKey && e.code === 'ArrowLeft';
+    },
+    // The toolbar's Back follows the entry shown: after every push, stamp
+    // and history move.
+    syncBack() {
+        const btn = $('#back-btn');
+        if (!btn) return;
+        btn.disabled = !App.canGoBack();
+        // under a form's overlay, not above it (App.editingDialog)
+        btn.classList.toggle('tb-back--under', App.editingDialog());
+    },
+    // An address is on the bar (pushed, stamped or replaced): noted for the
+    // next stamp, and Back follows it.
+    addressShown() {
+        App._here = location.hash || '#/';
+        if (history.state && typeof history.state.n === 'number') App._nShown = history.state.n;
+        App.syncBack();
+    },
+    // The button says its shortcut, for the platform in use
+    labelBack() {
+        const btn = $('#back-btn');
+        if (!btn) return;
+        const mac = App.isMac();
+        btn.title = mac ? 'Back (⌘[)' : 'Back (Alt+←)';
+        btn.setAttribute('aria-keyshortcuts', mac ? 'Meta+[' : 'Alt+ArrowLeft');
     },
 
     // An address, taken apart: '#/reports/profit-loss?start_date=2026-07-01'
@@ -157,6 +266,9 @@ const App = {
     },
 
     async navigate(hash) {
+        // the way back to the entry a declined move left (App.stayPut):
+        // the page is still that entry's, nothing to render
+        if (App._stay) { App._stay = false; App.addressShown(); return; }
         if (App._pageCleanup) { App._pageCleanup(); App._pageCleanup = null; }
         // A dialog open over the page left (a report, a document) does not
         // stay over the page gone to: browser Back from an open report
@@ -179,7 +291,12 @@ const App = {
         // records it): a view's "Back to …" reads it to go back through
         // history, and Back/Forward restore it with the entry.
         const here = location.hash || '#/';
-        if (here !== `#${full}`) history.pushState({ from: here }, '', `#${full}`);
+        if (here !== `#${full}`) history.pushState(App.entryState(here), '', `#${full}`);
+        // An entry a link made (a hash change: the sidebar, a row's link)
+        // has no state yet: stamped with the address left, as a push is,
+        // so Back knows there is an app page behind it (App.canGoBack).
+        else if (!history.state) history.replaceState(App.entryState(App._here), '', here);
+        App.addressShown();
         let route = App.routes[path];
         let param = null;
         if (!route) {
@@ -637,7 +754,7 @@ const App = {
                         ${inactive
                             ? `<button class="btn btn-sm btn-secondary" data-write onclick="App.setAccountActive(${a.id}, true)">Reactivate</button>`
                             : `<button class="btn btn-sm btn-secondary" data-write onclick="App.setAccountActive(${a.id}, false)">Deactivate</button>`}
-                        ${a.is_control ? '' : `<button class="btn btn-sm btn-secondary" data-write onclick="App.deleteAccount(${a.id})">Delete</button>`}
+                        ${a.is_control ? '' : `<button data-destructive class="btn btn-sm btn-secondary" data-write onclick="App.deleteAccount(${a.id})">Delete</button>`}
                     </td>
                 </tr>`;
             }
@@ -1184,15 +1301,40 @@ const App = {
         // closes it too; this is sooner, so nothing of the view left is
         // still showing while the next one loads).
         window.addEventListener('popstate', () => {
+            // the way back to the entry a declined move left (App.stayPut):
+            // what is open stays open
+            if (App._stay) { App.syncBack(); return; }
             const overlay = $('#modal-overlay');
             if (overlay && !overlay.classList.contains('hidden')) closeModal();
+            App.syncBack();
         });
+        // The session's first entry: nothing of the app's behind it (a
+        // reload of a later entry keeps that entry's state, and its Back)
+        if (!history.state) history.replaceState({ from: null, n: 0 }, '', location.hash || '#/');
+        App.labelBack();
+        App.addressShown();
 
         // Load saved theme
         App.loadTheme();
 
-        // Keyboard shortcuts
+        // Keyboard shortcuts. The Alt letters go by the key's place
+        // (e.code: KeyD is the D key on any layout) with Alt alone held
+        // (Ctrl+Alt is AltGr on some layouts, Shift another shortcut), not
+        // by the character typed: on a Mac, Option-D types "∂", Option-H
+        // "˙" and Option-Q "œ", and e.key carried those, so none of the
+        // documented shortcuts fired (macOS gate NEW-41). Inside a field,
+        // though, that character is what the Mac is typing — "∂", or the
+        // dead key of Option-N's tilde — and it must go through: there the
+        // plain letter alone is the shortcut, which is what Windows and
+        // Linux send for Alt+N (NEW-41 review).
         document.addEventListener('keydown', (e) => {
+            const alt = e.altKey && !e.ctrlKey && !e.metaKey && !e.shiftKey;
+            const editing = !!(e.target && e.target.closest && e.target.closest('input, textarea, select, [contenteditable]:not([contenteditable="false"])'));
+            const letter = (code, key) => alt && e.code === code && (!editing || String(e.key).toLowerCase() === key);
+            // Back: ⌘[ on a Mac, Alt+← elsewhere, while an app page is
+            // behind and no form is open over the page (the Mac app's
+            // window has no Back of its own, NEW-30)
+            if (App.isBackKey(e) && App.backAllowed()) { e.preventDefault(); App.goBack(); return; }
             // Ctrl+Enter: submit quick entry form
             if (e.ctrlKey && e.key === 'Enter') {
                 const qeForm = $('#qe-form');
@@ -1205,23 +1347,26 @@ const App = {
             }
             // Alt+N / Alt+P / Alt+Q start new entries: a read-only sign-in is
             // told why nothing opens, rather than handed a blank locked form
-            if (e.altKey && ['n', 'p', 'q'].includes(e.key) && App.isReadOnly()) {
+            const entry = letter('KeyN', 'n') || letter('KeyP', 'p') || letter('KeyQ', 'q');
+            if (entry && App.isReadOnly()) {
                 toast(App.READ_ONLY_MESSAGE, 'info'); e.preventDefault(); return;
             }
             // Alt+N: new invoice
-            if (e.altKey && e.key === 'n') { InvoicesPage.showForm(); e.preventDefault(); }
+            if (letter('KeyN', 'n')) { InvoicesPage.showForm(); e.preventDefault(); }
             // Alt+P: receive payment
-            if (e.altKey && e.key === 'p') { PaymentsPage.showForm(); e.preventDefault(); }
+            if (letter('KeyP', 'p')) { PaymentsPage.showForm(); e.preventDefault(); }
             // Alt+Q: quick entry
-            if (e.altKey && e.key === 'q') { App.navigate('#/quick-entry'); e.preventDefault(); }
+            if (letter('KeyQ', 'q')) { App.navigate('#/quick-entry'); e.preventDefault(); }
             // Alt+H: home/dashboard
-            if (e.altKey && e.key === 'h') { App.navigate('#/'); e.preventDefault(); }
+            if (letter('KeyH', 'h')) { App.navigate('#/'); e.preventDefault(); }
             // Alt+D: toggle dark mode (Feature 12)
-            if (e.altKey && e.key === 'd') { App.toggleTheme(); e.preventDefault(); }
-            // Escape: close modal
-            if (e.key === 'Escape') { closeModal(); }
-            // Ctrl+K or /: focus search (when not in an input)
-            if ((e.ctrlKey && e.key === 'k') || (e.key === '/' && !e.target.closest('input,textarea,select'))) {
+            if (letter('KeyD', 'd')) { App.toggleTheme(); e.preventDefault(); }
+            // Escape: close modal (not the Escape that closes a date
+            // field's calendar: utils.js escapeLeavesPicker, NEW-33)
+            if (e.key === 'Escape' && !escapeLeavesPicker(e)) { closeModal(); }
+            // Ctrl+K (⌘K on a Mac, which did nothing: NEW-41) or /: focus
+            // search (when not in an input)
+            if (((e.ctrlKey || e.metaKey) && !e.altKey && e.key === 'k') || (e.key === '/' && !e.target.closest('input,textarea,select'))) {
                 const search = $('#global-search');
                 if (search) { search.focus(); e.preventDefault(); }
             }

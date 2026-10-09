@@ -24,7 +24,7 @@ const CreditMemosPage = {
                     <td class="actions">
                         <button class="btn btn-sm btn-secondary" onclick="CreditMemosPage.view(${m.id})">View</button>
                         ${m.status === 'issued' ? `<button class="btn btn-sm btn-primary" onclick="CreditMemosPage.showApply(${m.id})">Apply</button>` : ''}
-                        ${m.status !== 'void' ? `<button class="btn btn-sm btn-secondary" onclick="CreditMemosPage.void(${m.id})">Void</button>` : ''}
+                        ${m.status !== 'void' ? `<button data-destructive class="btn btn-sm btn-secondary" onclick="CreditMemosPage.void(${m.id})">Void</button>` : ''}
                     </td>
                 </tr>`,
         });
@@ -68,7 +68,7 @@ const CreditMemosPage = {
                 <button class="btn btn-secondary" onclick="window.open('/api/credit-memos/${cm.id}/pdf','_blank')">Save PDF</button>
                 <button class="btn btn-secondary" onclick="window.open('/api/credit-memos/${cm.id}/print-preview','_blank')">Print</button>
                 ${cm.status === 'issued' ? `<button class="btn btn-primary" onclick="CreditMemosPage.showApply(${cm.id})">Apply</button>` : ''}
-                ${cm.status !== 'void' ? `<button class="btn btn-danger" onclick="CreditMemosPage.void(${cm.id})">Void</button>` : ''}
+                ${cm.status !== 'void' ? `<button data-destructive class="btn btn-danger" onclick="CreditMemosPage.void(${cm.id})">Void</button>` : ''}
                 <button class="btn btn-secondary" onclick="closeModal()">Close</button>
             </div>`);
     },

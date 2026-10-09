@@ -139,14 +139,14 @@ def test_the_line_cell_is_for_every_company_and_the_function_cell_for_nonprofits
     )
     cell = np[np.index("classCellHtml(cls, fundSelected) {") : np.index("headHtml() {")]
     assert "if (!Nonprofit.lineClassShown()) return '';" in cell
-    assert 'class="${cls}-fund" data-no-search aria-label=' in cell
+    assert 'class="${cls}-fund" data-no-search>' in cell  # named by nameFields
     assert '<option value="">Same as header</option>' in cell
     # an archived class a line carries stays a choice
     assert ".filter(f => !f.is_archived || f.id === fundSelected)" in cell
     both = np[np.index("    cellHtml(cls, selected, fundSelected) {") :]
     both = both[: both.index("\n    },")]
     assert "Nonprofit.classCellHtml(cls, fundSelected) + (Nonprofit.enabled()" in both
-    assert 'aria-label="Function for this line"' in both
+    assert '<select class="${cls}">${Nonprofit.optionsHtml(selected' in both
     head = np[np.index("    headHtml() {") :]
     head = head[: head.index("\n")]
     assert "Nonprofit.classHeadHtml() + (Nonprofit.enabled() ?" in head

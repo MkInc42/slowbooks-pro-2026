@@ -40,6 +40,9 @@ def test_unsaved_changes_are_tracked_and_leaving_asks_first():
     cancelled = steps["leave-cancelled"]
     assert cancelled["confirms"] == 1 and cancelled["navigated"] == []
     assert cancelled["hash"] == "#/settings"  # the address goes back, too
+    # by going back to the Settings entry itself (App.stayPut), not by
+    # rewriting the link's new entry over it
+    assert cancelled["stayed"] == ["#/invoices"] and cancelled["replaced"] == []
     assert cancelled["dirty"] is True  # the edits are still there
 
     same = steps["same-page"]

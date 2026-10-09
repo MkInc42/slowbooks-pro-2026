@@ -16,7 +16,7 @@ query to the route's render as its second argument (a plain object of strings �
    that view, else it opens the address; a three-deep chain goes back twice through history, each view as it was left.
 
 `ReportsPage.setAddress(view, params)` applies rules 2 and 3 by itself: same view → replace (keeping the entry's state), other view → push (recording `from`;
-a note in memory would go stale on Back, Forward, Close or a reload). Look a view up with `ReportsPage._view(name)`, never `_VIEWS[name]` (`constructor` is not a report). A date or period in the address that is not one is ignored, and a toast says so.
+a note in memory would go stale on Back, Forward, Close or a reload). Look a view up with `ReportsPage._view(name)`, never `_VIEWS[name]` (`constructor` is not a report). A date or period in the address that is not one is ignored, and a toast says so. **The toolbar's Back** (`App.canGoBack`, v2.22.0) reads the same `from`: an entry with one has an app page behind it (`history.length` is never asked); every push writes it (`App.entryState`: `from`, and `n`, the entry's place in the chain, which a declined leave reads to find its way back, `App.stayPut`), `App.navigate` stamps a plain `<a href>`'s entry when first seen, and the session's first entry gets none — so a `replaceState` of your own must carry the state along (`history.replaceState(history.state, '', url)`, as `setAddress` does; `null` makes Back go dark on that entry), followed by `App.addressShown()`.
 
 ## Registering a new view
 

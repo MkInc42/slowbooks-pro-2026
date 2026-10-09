@@ -37,7 +37,7 @@ const ExpensesPage = {
                     <td class="amount">${formatCurrency(x.amount)}</td>
                     <td class="actions" style="text-decoration:none;">
                         <button class="btn btn-sm btn-secondary" onclick="ExpensesPage.showDetail(${x.id})">View</button>
-                        ${isVoid ? '' : `<button class="btn btn-sm btn-danger" onclick="ExpensesPage.void(${x.id})">Void</button>`}
+                        ${isVoid ? '' : `<button data-destructive class="btn btn-sm btn-danger" onclick="ExpensesPage.void(${x.id})">Void</button>`}
                     </td>
                 </tr>`;
             }
@@ -241,7 +241,7 @@ const ExpensesPage = {
                 </div>
             </div>
             <div class="form-actions">
-                ${isVoid ? '' : `<button type="button" class="btn btn-danger" onclick="ExpensesPage.void(${x.id})">Void</button>`}
+                ${isVoid ? '' : `<button data-destructive type="button" class="btn btn-danger" onclick="ExpensesPage.void(${x.id})">Void</button>`}
                 <button type="button" class="btn btn-secondary" onclick="closeModal()">Close</button>
             </div>`);
         ExpensesPage.loadAttachments(x.id);
@@ -259,7 +259,7 @@ const ExpensesPage = {
                     `<div style="display:flex; flex-wrap:wrap; align-items:center; gap:0 8px; padding:2px 0;">
                         ${a.missing ? `<span>${escapeHtml(a.filename)}</span>` : `<a href="/api/attachments/download/${a.id}" target="_blank">${escapeHtml(a.filename)}</a>`}
                         ${a.file_size == null ? '' : `<span style="color:var(--gray-400);">(${formatFileSize(a.file_size)})</span>`}
-                        <button aria-label="Delete attachment" class="btn btn-sm btn-danger" onclick="ExpensesPage.deleteAttachment(${a.id},${id})" style="padding:0 4px; font-size:10px;">X</button>
+                        <button data-destructive aria-label="Delete attachment" class="btn btn-sm btn-danger" onclick="ExpensesPage.deleteAttachment(${a.id},${id})" style="padding:0 4px; font-size:10px;">X</button>
                         ${storedFileNote(a)}
                     </div>`
                 ).join('');

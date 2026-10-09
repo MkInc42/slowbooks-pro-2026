@@ -663,7 +663,12 @@ const SettingsPage = {
             const target = String(hash || '').replace('#', '') || '/';
             if (target !== '/settings' && SettingsPage.isDirty()) {
                 if (!confirm('You have unsaved changes in Settings. Leave without saving them?')) {
-                    if (location.hash !== '#/settings') history.replaceState(null, '', '#/settings');
+                    // The browser has already moved to the link's new entry
+                    // (or the one Back/Forward went to); the page is still
+                    // Settings, so the history goes back to the Settings
+                    // entry itself, nothing re-rendered on the way, and the
+                    // toolbar's Back keeps what that entry has behind it.
+                    if (location.hash !== '#/settings') App.stayPut();
                     return Promise.resolve();
                 }
                 SettingsPage._snapshot = null;
