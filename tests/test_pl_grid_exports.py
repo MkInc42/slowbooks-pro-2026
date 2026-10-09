@@ -657,3 +657,20 @@ def test_the_drill_down_takes_a_job_and_agrees_with_the_job_page(client, jobbed)
     both = client.get(f"{base}&job_id={kitchen}&class_id={uncat['id']}").json()
     assert both["period_net"] == 300.0 and both["class_name"] == "Uncategorized"
     assert client.get(f"{base}&job_id=99999").status_code == 404
+
+
+def test_every_amount_in_the_p_and_l_csvs_has_two_decimals(client, ledger):
+    # A's review of #232: a subtotal printed "500.0" once; the plain and the
+    # per-class P&L CSVs keep every amount at two places.
+    import re
+
+    cid = client.get("/api/classes").json()[0]["id"]
+    for url in (
+        f"/api/reports/profit-loss/csv?{PERIOD}",
+        f"/api/reports/profit-loss/csv?{PERIOD}&class_id={cid}",
+    ):
+        text = client.get(url).text
+        rows = [line for line in text.splitlines()[5:] if line.strip()]
+        assert rows, url
+        bad = [line for line in rows if not re.search(r",-?\d+\.\d\d$", line)]
+        assert not bad, (url, bad)

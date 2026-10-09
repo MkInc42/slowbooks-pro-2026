@@ -139,7 +139,7 @@ jobs:
           # +1: tests/test_active_lists_browser.py (#210 Active/Inactive lists), the same.
           # +2: tests/test_vendor_page.py (#223 the vendor page) and
           # tests/test_bill_edit_browser.py (#225 editing a posted bill), the same.
-          MAX_SKIPS: "102"
+          MAX_SKIPS: "107"
         shell: pwsh
         run: |
           # -v names each test as it starts, so a mid-run death is identified

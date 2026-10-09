@@ -251,7 +251,10 @@ def test_job_profitability_customer_cell_opens_the_customer_and_the_row_the_job(
             "td"
         ).nth(1).click()
         page.wait_for_selector("#job-tab-body")
-        assert _hash(page) == f"#/jobs/{books['job']}"
+        # on the report's dates, with the way back (A's review of #242)
+        assert _hash(page).startswith(f"#/jobs/{books['job']}?")
+        assert "start_date=" in _hash(page) and "from=job-profitability" in _hash(page)
+        assert page.locator("#page-content button", has_text="Back to").count() >= 1
         assert _history(page) == length + 1
         page.go_back()
         _report(page)

@@ -235,7 +235,7 @@ const ClassesPage = {
                 </div>
                 <div>
                     ${ClassesPage._reportLink('profit-loss-class', { class_id: c.id, start_date: p.start, end_date: p.end }, `${T('Profit & Loss')} for this ${T('class').toLowerCase()}`)}
-                    ${ClassesPage._reportLink('profit-loss-by-class', dates, T('P&L by Class'))}
+                    ${ClassesPage._reportLink('profit-loss-by-class', { ...dates, jump: c.id }, T('P&L by Class'))}
                     ${ClassesPage._settingsLink(c.is_system_default ? 'Settings' : 'Rename / Archive…')}
                 </div>
             </div>
@@ -275,7 +275,7 @@ const ClassesPage = {
         links.forEach(a => {
             const href = a.getAttribute('href');
             if (href.startsWith('#/reports/profit-loss-class')) a.setAttribute('href', ReportsPage.viewUrl('profit-loss-class', { class_id: c.id, start_date: p.start, end_date: p.end }));
-            else if (href.startsWith('#/reports/profit-loss-by-class')) a.setAttribute('href', ReportsPage.viewUrl('profit-loss-by-class', { period: p.period, start_date: p.start, end_date: p.end }));
+            else if (href.startsWith('#/reports/profit-loss-by-class')) a.setAttribute('href', ReportsPage.viewUrl('profit-loss-by-class', { jump: c.id, period: p.period, start_date: p.start, end_date: p.end }));
         });
         await ClassesPage.setTab(ClassesPage._page.tab);
     },

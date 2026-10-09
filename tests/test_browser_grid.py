@@ -604,7 +604,7 @@ def test_choosing_columns_says_filtered_and_rides_on_the_address_and_exports(
         heads = _heads(page)
         assert heads == ["Account", "Framing", "Roofing", "Total (shown)"]
         note = page.inner_text(".grid-filtered")
-        assert "Filtered: 2 of 12 classes with activity shown" in note
+        assert "Filtered: 2 of 12 classes shown" in note
         assert "not the company" in note
         whole = company.get(
             "/api/reports/profit-loss-by-class",

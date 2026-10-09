@@ -867,6 +867,7 @@ const ReportsPage = {
                 }
                 const restored = ReportsPage._refocusRow(content);
                 if (opts.spotlight !== false) ReportsPage._spotlight(content, params(), first && !restored);
+                if (typeof opts.afterRender === 'function') opts.afterRender(content, first);
             } catch (err) {
                 content.innerHTML = `<div class="empty-state"><p>${escapeHtml(err.message)}</p></div>`;
             }
@@ -1499,7 +1500,7 @@ ReportsPage._pivotGrid = function (spec) {
         return `<th scope="col" class="amount" data-col="${i}">${call ? link(call, escapeHtml(c.name)) : escapeHtml(c.name)}</th>`;
     }).join('');
     const jumpOpts = cols.map((c, i) => `<option value="${i}">${escapeHtml(c.name)}</option>`).join('');
-    ReportsPage._grid = { current: -1, count: n, names: cols.map(c => c.name) };
+    ReportsPage._grid = { current: -1, count: n, names: cols.map(c => c.name), ids: cols.map(c => c.id) };
     return `
         <div class="grid-toolbar" id="grid-toolbar" onkeydown="ReportsPage.gridKey(event)">
             <label for="grid-jump">Go to ${escapeHtml(spec.noun)}</label>
@@ -1527,6 +1528,13 @@ ReportsPage._pivotGrid = function (spec) {
 
 // Column i of the open grid: scrolled into view (the frozen Account
 // column allowed for), highlighted, named in the picker and said aloud.
+// Land on a column by its class's (job's) id: the class page's link to
+// the grid says which column it means (#238). Not part of the address.
+ReportsPage.gridJumpTo = function (id) {
+    const k = (ReportsPage._grid.ids || []).indexOf(parseInt(id, 10));
+    if (k >= 0) ReportsPage.gridGo(k);
+};
+
 ReportsPage.gridGo = function (i) {
     const g = ReportsPage._grid;
     if (!g.count) return;
@@ -1675,9 +1683,18 @@ ReportsPage._columnQs = function (params, key) {
 
 // Said above a grid that shows part of the company (R3): which part, and
 // the company's own figure for the dates.
+// A grid with no column: either nothing was posted in the period, or the
+// chooser named classes (jobs) that have nothing in it — said, with the way
+// out, rather than "No activity" under a note that counts the columns.
+ReportsPage._emptyGrid = function (data, key, noun, nouns) {
+    if (!data.filtered) return `<div class="empty-state"><p>No activity in this period</p></div>`;
+    return `<div class="empty-state grid-filtered" role="status"><p>None of the chosen ${escapeHtml(nouns)} has activity in this period.
+        <a href="javascript:void(0)" onclick="ReportsPage.setParam('${key}', '')">Show every ${escapeHtml(noun)}</a></p></div>`;
+};
+
 ReportsPage._filteredNote = function (data, shown, nouns) {
     if (!data.filtered) return '';
-    return `<div class="grid-filtered" role="status">Filtered: ${shown} of ${data.columns_total} ${escapeHtml(nouns)} with activity shown — these totals are for the ${escapeHtml(nouns)} shown, not the company. Company ${T('Net Income')} for these dates: <strong>${formatCurrency(data.unfiltered.net_income)}</strong>.</div>`;
+    return `<div class="grid-filtered" role="status">Filtered: ${shown} of ${data.columns_total} ${escapeHtml(nouns)} shown — these totals are for the ${escapeHtml(nouns)} shown, not the company. Company ${T('Net Income')} for these dates: <strong>${formatCurrency(data.unfiltered.net_income)}</strong>.</div>`;
 };
 
 // Class tracking: Profit & Loss split by the class dimension.
@@ -1694,7 +1711,7 @@ ReportsPage.profitLossByClass = async function (prefill) {
         const data = await API.get(`/reports/profit-loss-by-class?${qs}`);
         const columns = data.classes;
         if (!columns.length) {
-            return `${ReportsPage._filteredNote(data, 0, T('classes'))}<div class="empty-state"><p>No activity in this period</p></div>`;
+            return ReportsPage._emptyGrid(data, 'class_ids', T('class'), T('classes'));
         }
         // Accounts down the side and a column per class, as QuickBooks
         // lays it out; an amount opens the transactions behind it, and a
@@ -1718,7 +1735,7 @@ ReportsPage.profitLossByClass = async function (prefill) {
                 head: (c) => `ReportsPage.profitLossOfClass(${args(c.class_id, c.class_name, dates)})`,
                 sum: (c) => `ReportsPage.profitLossOfClass(${args(c.class_id, c.class_name, dates)})`,
             })}`;
-    }, "Dates", false, { reportType: 'profit_loss_by_class', view: 'profit-loss-by-class', params, prefill, toolbar, wide: true });
+    }, "Dates", false, { reportType: 'profit_loss_by_class', view: 'profit-loss-by-class', params, prefill, toolbar, wide: true, afterRender: (_c, first) => { if (first && prefill && prefill.jump) ReportsPage.gridJumpTo(prefill.jump); } });
 };
 
 // P&L by Job (R13, #242): the same grid with a column per job and "No job"
@@ -1730,8 +1747,13 @@ ReportsPage.profitLossByJob = async function (prefill) {
     const params = ReportsPage._columnParams(prefill, 'job_ids');
     let jobs = [];
     try { jobs = await API.get('/jobs?include_inactive=true'); } catch (e) { jobs = []; }
+    // One name for a job everywhere (chooser, picker, headings): the job's
+    // own, with the customer in brackets only where two jobs share a name.
+    const counts = {};
+    jobs.forEach(j => { counts[j.name] = (counts[j.name] || 0) + 1; });
+    const jobLabel = (name, customer) => (counts[name] > 1 && customer) ? `${name} (${customer})` : name;
     const items = [{ id: 0, name: Terms.text('No job'), inactive: false }].concat(
-        jobs.map(j => ({ id: j.id, name: `${j.customer_name ? `${j.customer_name} › ` : ''}${j.name}`, inactive: j.is_active === false }))
+        jobs.map(j => ({ id: j.id, name: jobLabel(j.name, j.customer_name), inactive: j.is_active === false }))
     );
     const toolbar = ReportsPage._columnChooser({
         kind: 'job', key: 'job_ids', noun: T('job'), nouns: T('jobs'), Nouns: T('Jobs'), inactiveWord: 'inactive',
@@ -1742,7 +1764,7 @@ ReportsPage.profitLossByJob = async function (prefill) {
         const data = await API.get(`/reports/profit-loss-by-job?${qs}`);
         const columns = data.jobs;
         if (!columns.length) {
-            return `${ReportsPage._filteredNote(data, 0, T('jobs'))}<div class="empty-state"><p>No activity in this period</p></div>`;
+            return ReportsPage._emptyGrid(data, 'job_ids', T('job'), T('jobs'));
         }
         const args = (...xs) => xs.map(x => JSON.stringify(x)).join(',');
         const jobKey = (c) => c.job_id === null || c.job_id === undefined ? 0 : c.job_id;
@@ -1756,7 +1778,7 @@ ReportsPage.profitLossByJob = async function (prefill) {
                 title: `${T('P&L')} by ${T('Job')}`,
                 noun: T('job'),
                 kind: 'job',
-                columns: columns.map(c => ({ ...c, id: jobKey(c), name: `${c.job_name}${c.inactive ? ' (inactive)' : ''}` })),
+                columns: columns.map(c => ({ ...c, id: jobKey(c), name: `${jobKey(c) ? jobLabel(c.job_name, c.customer_name) : c.job_name}${c.inactive ? ' (inactive)' : ''}` })),
                 accounts: data.accounts,
                 totals: { income: data.total_income, cogs: data.total_cogs, gross_profit: data.total_gross_profit, expenses: data.total_expenses, net_income: data.total_net_income },
                 note: ReportsPage._filteredNote(data, columns.length, T('jobs')),
@@ -1781,6 +1803,12 @@ ReportsPage.profitLossOfClass = async function (classId, className, prefill, fro
     // `from` names the view that opened it when it is not the by-class grid
     // (Fund Balances, #239): the "Back to …" button returns there.
     const back = from && from !== 'profit-loss-by-class' && ReportsPage._view(from) ? from : null;
+    // Prev / Next and "n of m" walk the P&L by Class grid's columns for the
+    // dates (the classes with activity, in the grid's order), so the numbers
+    // agree with the grid's "Column 2 of 12"; the picker still lists every
+    // class, so one with nothing in the period can be chosen by name.
+    let walk = [], walkKey = null;
+    ReportsPage._classWalk = null;
     // The picker lists every active class, and this one if it is archived
     // (history keeps it); the type-ahead attaches to it by its name.
     let classes = [];
@@ -1811,9 +1839,19 @@ ReportsPage.profitLossOfClass = async function (classId, className, prefill, fro
         $('#modal-title').textContent = `${T('Profit & Loss')} — ${data.class_name}`;
         const pick = $('#class-pl-pick');
         if (pick && pick.value !== String(id)) { pick.value = String(id); if (pick._cbx) pick._cbx.sync(); }
-        const at = listed.findIndex(c => c.id === id);
+        const gridKey = `${range.start}|${range.end}`;
+        if (walkKey !== gridKey) {
+            try {
+                const g = await API.get(`/reports/profit-loss-by-class?start_date=${range.start}&end_date=${range.end}`);
+                walk = (g.classes || []).map(c => ({ id: c.class_id !== undefined ? c.class_id : c.id, name: c.class_name || c.name }));
+            } catch (e) { walk = []; }
+            walkKey = gridKey;
+        }
+        ReportsPage._classWalk = walk.length ? walk.map(c => c.id) : null;
+        const order = walk.length ? walk : listed;
+        const at = order.findIndex(c => c.id === id);
         const where = $('#class-pl-where');
-        if (where) where.textContent = at >= 0 ? `${data.class_name}: ${at + 1} of ${listed.length}` : '';
+        if (where) where.textContent = at >= 0 ? `${data.class_name}: ${at + 1} of ${order.length}` : `${data.class_name}: nothing in this period`;
         const args = (...xs) => xs.map(x => JSON.stringify(x)).join(',');
         const section = items => items.length
             ? items.map(i => {
@@ -1866,6 +1904,18 @@ ReportsPage.profitLossUnclassified = async function (prefill) {
 ReportsPage.stepClass = function (delta) {
     const pick = $('#class-pl-pick');
     if (!pick || !pick.options.length) return;
+    // Along the grid's columns when the current class is one of them,
+    // else along the picker's list.
+    const walk = ReportsPage._classWalk;
+    const cur = parseInt(pick.value, 10);
+    if (walk && walk.length && walk.includes(cur)) {
+        const k = Math.max(0, Math.min(walk.length - 1, walk.indexOf(cur) + delta));
+        if (walk[k] === cur) return;
+        const opt = Array.from(pick.options).find(o => parseInt(o.value, 10) === walk[k]);
+        if (opt) { pick.value = opt.value; if (pick._cbx) pick._cbx.sync(); }
+        ReportsPage.setParam('class_id', walk[k]);
+        return;
+    }
     const i = Math.max(0, Math.min(pick.options.length - 1, pick.selectedIndex + delta));
     if (i === pick.selectedIndex) return;
     pick.selectedIndex = i;
@@ -1944,15 +1994,21 @@ ReportsPage.jobProfitability = async function (prefill) {
               </div>`
             : '';
         const pct = v => v === null || v === undefined ? '—' : `${v.toFixed(1)}%`;
-        // A job's row opens the job's page (its own address, so Back returns
-        // here); the customer's name opens the customer's page without
-        // taking the row's click (R9). "No job" is no document: text.
+        // A job's row opens the job's page on the report's dates, with the way
+        // back (its own address, so Back returns here); the customer's name
+        // opens the customer's page without taking the row's click (R9).
+        // "No job" is no document: its row opens P&L by Job on its column,
+        // the accounts behind the untagged activity (#245).
+        const dates = { period: _period, start_date: data.start_date, end_date: data.end_date };
+        const jobCall = (j) => j.job_id
+            ? `ReportsPage._leaveFrom();closeModal();App.navigate(${JSON.stringify(`#/jobs/${j.job_id}?start_date=${data.start_date}&end_date=${data.end_date}&from=job-profitability`)})`
+            : `ReportsPage._leaveFrom();App.navigate(${JSON.stringify(ReportsPage.viewUrl('profit-loss-by-job', { ...dates, job_ids: '0' }))})`;
         const customerCell = (j) => j.customer_id
             ? ReportsPage._rowLink(`event.stopPropagation(); ReportsPage.openCustomer(${j.customer_id})`, j.customer_name || '', `customer:${j.customer_id}`)
             : escapeHtml(j.customer_name || '');
-        const rows = data.jobs.map(j => `<tr ${j.job_id ? `style="cursor:pointer" onclick="ReportsPage._leaveFrom();closeModal();App.navigate('#/jobs/${j.job_id}')"` : ''}>
+        const rows = data.jobs.map(j => `<tr style="cursor:pointer" onclick="${escapeHtml(jobCall(j))}">
             <td>${customerCell(j)}</td>
-            <td>${escapeHtml(j.job_name)}</td>
+            <td>${ReportsPage._rowLink(`event.stopPropagation(); ${jobCall(j)}`, j.job_name, `job:${j.job_id || 0}`)}</td>
             <td class="amount">${j.contract_amount !== null && j.contract_amount !== undefined ? formatCurrency(j.contract_amount) : ''}</td>
             <td class="amount">${formatCurrency(j.income)}</td>
             <td class="amount">${formatCurrency(j.total_costs)}</td>

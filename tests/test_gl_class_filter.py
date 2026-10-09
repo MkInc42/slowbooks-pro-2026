@@ -22,16 +22,13 @@ from pathlib import Path
 import pytest
 
 from app.services.accounting import create_journal_entry
-from tests.test_pl_by_class_detail import ledger as _ledger_books  # noqa: F401
+from tests.test_pl_by_class_detail import (
+    ledger_fixture,
+)  # noqa: F401  (registers the ledger fixture)
 
 JS = Path(__file__).resolve().parents[1] / "app" / "static" / "js"
 PERIOD = {"start_date": "2026-07-01", "end_date": "2026-07-31"}
 D = Decimal
-
-
-@pytest.fixture(name="ledger")
-def ledger_fixture(_ledger_books):  # noqa: F811  (the fixture, by its name)
-    return _ledger_books
 
 
 def _get(client, path, **params):
@@ -298,7 +295,8 @@ def test_the_ledger_screen_draws_the_class_column_and_the_pickers():
     )
     assert re.search(r"'general-ledger':\s*\{[^\n]*keep: \['class_id'\]", js)
     # openPeriodModal reads a function's params on every render
-    assert "typeof opts.params === 'function' ? opts.params()" in js
+    assert "typeof opts.params === 'function' ? null : (opts.params || {})" in js
+    assert "paramsObj ? paramsObj : opts.params()" in js
 
 
 def test_the_register_screen_has_date_and_class_filters():

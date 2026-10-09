@@ -219,7 +219,8 @@ def test_the_shell_takes_a_toolbar_and_actions_and_saves_the_params():
     assert "${opts.actions || ''}" in shell
     assert "{ wide: !!opts.wide }" in shell
     assert (
-        "ReportsPage.saveCurrent(reportType, { ...params(), ...currentParams })" in shell
+        "ReportsPage.saveCurrent(reportType, { ...params(), ...currentParams })"
+        in shell
     )
 
 

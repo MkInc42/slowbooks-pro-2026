@@ -30,18 +30,14 @@ from pathlib import Path
 import pytest
 
 from app.services.accounting import create_journal_entry
-from tests.test_pl_by_class_detail import ledger as _ledger_books  # noqa: F401
+from tests.test_pl_by_class_detail import (
+    ledger_fixture,
+)  # noqa: F401  (registers the ledger fixture)
 
 ROOT = Path(__file__).resolve().parents[1]
 JS = ROOT / "app" / "static" / "js"
 PERIOD = {"start_date": "2026-07-01", "end_date": "2026-07-31"}
 D = Decimal
-
-
-@pytest.fixture(name="ledger")
-def ledger_fixture(_ledger_books):  # noqa: F811  (the fixture, by its name)
-    """The two classes and postings of tests/test_pl_by_class_detail.py."""
-    return _ledger_books
 
 
 def _get(client, path, **params):
