@@ -37,6 +37,7 @@ from app.services.accounting import (
 )
 from app.routes.invoices.helpers import confirm_zero_total, resolve_line_taxable
 from app.services.closing_date import check_closing_date
+from app.services.jobs_service import refuse_other_customers_jobs
 from app.services.numbering import next_credit_memo_number
 from app.services.settings_service import get_all_settings as get_settings
 from app.services.request_utils import content_disposition
@@ -133,6 +134,8 @@ def create_credit_memo(data: CreditMemoCreate, db: Session = Depends(get_db)):
     customer = db.query(Customer).filter(Customer.id == data.customer_id).first()
     if not customer:
         raise HTTPException(status_code=404, detail="Customer not found")
+    # The job is this customer's (NEW-36); a memo's lines carry no job.
+    refuse_other_customers_jobs(db, customer.id, data.job_id, (), "credit memo")
 
     # A memo that credits an invoice takes that invoice's tax rate unless
     # it states its own: the tax goes back the way it was charged. It

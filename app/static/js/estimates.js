@@ -78,6 +78,8 @@ const EstimatesPage = {
                 API.post(`/estimates/${id}/convert`, allow ? { allow_zero_total: true } : undefined));
             if (!inv) return;
             toast(`Created ${T('Invoice')} #${inv.invoice_number}`);
+            // another customer's job stored on the estimate was left off
+            if (inv.jobs_left_off && inv.jobs_left_off.length) toast(JobPicker.leftOffNote(inv.jobs_left_off), 'info');
             closeModal();
             App.navigate('#/invoices');
         } catch (err) { toast(err.message, 'error'); }

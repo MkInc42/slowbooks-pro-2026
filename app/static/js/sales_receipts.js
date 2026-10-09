@@ -124,7 +124,8 @@ const SalesReceiptsPage = {
             lines: [{ item_id: '', description: '', quantity: 1, rate: 0 }],
         };
         const classGroup = await classFormGroupHtml(null);
-        const jobGroup = await jobFormGroupHtml(null);
+        // narrowed to the customer's jobs; a blank customer is the walk-in
+        const jobGroup = await jobFormGroupHtml(null, 'sr-customer-select');
 
         SalesReceiptsPage.lineCount = sr.lines.length;
         SalesReceiptsPage._items = items;
@@ -144,7 +145,7 @@ const SalesReceiptsPage = {
                 ${ScanHelper.scanRowHtml()}
                 <div class="form-grid">
                     <div class="form-group"><label>${T('Customer')}</label>
-                        <select name="customer_id" id="sr-customer-select" onchange="SalesReceiptsPage.customerSelected(this.value)"><option value="">${walkInLabel}</option><option value="__new__">+ ${T('New Customer')}</option>${custOpts}</select>
+                        <select name="customer_id" id="sr-customer-select" data-blank-customer="${walkInId || '__new__'}" onchange="SalesReceiptsPage.customerSelected(this.value)"><option value="">${walkInLabel}</option><option value="__new__">+ ${T('New Customer')}</option>${custOpts}</select>
                         <div id="sr-new-customer-form" style="display:none; margin-top:8px; padding:8px; border:1px solid var(--gray-300); border-radius:4px; background:var(--primary-light);">
                             <div style="font-weight:700; font-size:11px; margin-bottom:6px;">Quick Add ${T('Customer')}</div>
                             <input id="sr-new-cust-name" placeholder="Name *" aria-label="${T('Customer')} name" aria-required="true" style="width:100%; margin-bottom:4px; padding:4px 8px; border:1px solid var(--gray-300); border-radius:4px;">

@@ -7,6 +7,7 @@ from datetime import date
 from decimal import Decimal
 from typing import Optional
 
+from fastapi import HTTPException
 from sqlalchemy import func as sqlfunc
 from sqlalchemy.orm import Session
 
@@ -14,6 +15,7 @@ from app.models.accounts import Account, AccountType
 from app.models.contacts import Customer
 from app.models.jobs import Job
 from app.models.transactions import Transaction, TransactionLine
+from app.services.terminology import Terms, terms_from_db
 
 NO_JOB_LABEL = "No job"
 
@@ -105,6 +107,215 @@ def resolve_customer_and_job(
     if not job and create:
         job = get_or_create_job(db, customer.id, job_name)
     return customer, job
+
+
+def _refuse_foreign_jobs(db: Session, customer_id: int, checks, document, t) -> None:
+    """`checks` are (job_id, where) pairs: each job must exist (404) and be
+    the customer's (400, with the way out named)."""
+    for wanted, where in checks:
+        if wanted is None:
+            continue
+        job = db.get(Job, wanted)
+        if job is None:
+            raise HTTPException(status_code=404, detail=f"{t('Job')} not found")
+        if job.customer_id != customer_id:
+            raise HTTPException(
+                status_code=400,
+                detail=(
+                    f"{t('Job')} {job.name} belongs to a different {t('customer')} "
+                    f"than this {document}{where} — clear the {t('Job')} field or "
+                    f"pick one of this {t('customer')}'s."
+                ),
+            )
+
+
+def refuse_other_customers_jobs(
+    db: Session,
+    customer_id: int,
+    job_id: Optional[int],
+    lines=(),
+    document: str = "invoice",
+    terms: Optional[Terms] = None,
+) -> None:
+    """A customer document carries its own customer's jobs only: the job on
+    its header and the job on each of its lines.
+
+    An invoice could be saved with another customer's job (2.22.0 gate,
+    NEW-36): the form hid other customers' jobs on the hidden select's
+    focus, which the type-ahead in front of it never gives it, and the API
+    checked nothing, so P&L by Job, the job page and Job Profitability
+    counted the invoice under a job that was not the customer's. Refused
+    with 400 the way a payment to another customer's invoice is (#189); a
+    job that does not exist is 404.
+
+    `lines` are the request's line models or the stored rows, either with
+    a job_id; `document` is the document's name for the message, in the
+    company's own words ("pledge", "donation" for a nonprofit).
+    """
+    t = terms or terms_from_db(db)
+    checks = [(job_id, "")]
+    checks += [
+        (getattr(line, "job_id", None), f" (line {n})")
+        for n, line in enumerate(lines, start=1)
+    ]
+    _refuse_foreign_jobs(db, customer_id, checks, document, t)
+
+
+def refuse_other_customers_jobs_on_edit(
+    db: Session,
+    row,
+    changes: dict,
+    lines=None,
+    document: str = "invoice",
+    terms: Optional[Terms] = None,
+) -> None:
+    """What an edit CHANGES must leave the document on its customer's jobs;
+    what it leaves alone is not judged.
+
+    A new customer: every job the document has after the edit is theirs.
+    A new header job: that job. A line's new job — one no stored line of
+    the document carried — that job. A resent line with a job some stored
+    line carried (its own, or another line's: a client that deletes line
+    1 and sends old line 2 back changed no job), a header job sent
+    unchanged, a note, a date: nothing to judge — so a document carrying a
+    mismatch from before the rule (books the old fixture seeded) still
+    saves from the form, which always sends every field, and a line's
+    stored mismatch is cleared by sending the line without it.
+
+    `row` is the stored document (customer_id, job_id, lines), `changes`
+    the edit's set fields, `lines` the resent lines or None.
+    """
+    t = terms or terms_from_db(db)
+    customer_after = changes.get("customer_id") or row.customer_id
+    header_after = changes["job_id"] if "job_id" in changes else row.job_id
+    if customer_after != row.customer_id:
+        lines_after = lines if lines is not None else list(row.lines)
+        refuse_other_customers_jobs(
+            db, customer_after, header_after, lines_after, document, t
+        )
+        return
+    checks = []
+    if "job_id" in changes and changes["job_id"] != row.job_id:
+        checks.append((changes["job_id"], ""))
+    if lines is not None:
+        carried = {ln.job_id for ln in row.lines if ln.job_id is not None}
+        for n, line in enumerate(lines, start=1):
+            after = getattr(line, "job_id", None)
+            if after is not None and after not in carried:
+                checks.append((after, f" (line {n})"))
+    _refuse_foreign_jobs(db, customer_after, checks, document, t)
+
+
+def own_job(
+    db: Session, customer_id: int, job_id: Optional[int], left_off: list
+) -> Optional[int]:
+    """The job, if it is the customer's; else None, and the job's name goes
+    on `left_off`. A copy of a document — an estimate converted, an invoice
+    duplicated, a scheduled invoice generated — carries only the customer's
+    jobs: a job of another customer stored on the original (books from
+    before the rule) is left off the copy rather than minted again, and
+    the copy is never refused for it."""
+    if job_id is None:
+        return None
+    job = db.get(Job, job_id)
+    if job is not None and job.customer_id == customer_id:
+        return job_id
+    name = job.full_name if job is not None else f"#{job_id}"
+    if name not in left_off:
+        left_off.append(name)
+    return None
+
+
+def documents_carrying_job(db: Session, job_id: int, t: Terms) -> list[tuple[str, int]]:
+    """How many live customer documents carry the job, on their header or
+    a line, by the noun each document is refused with (document_label's:
+    invoice / pledge / sales receipt / donation receipt; credit memo;
+    estimate; recurring invoice / pledge; in-kind gift), in the order a
+    person reads them. Void ones are left out: they cannot be edited, so
+    they could never be moved."""
+    from sqlalchemy import or_
+
+    from app.models.credit_memos import CreditMemo, CreditMemoStatus
+    from app.models.estimates import Estimate, EstimateLine
+    from app.models.in_kind import InKindGift, InKindGiftLine
+    from app.models.invoices import Invoice, InvoiceLine, InvoiceStatus
+    from app.models.recurring import RecurringInvoice
+    from app.services.donor_documents import document_label
+
+    on_invoice_line = db.query(InvoiceLine.invoice_id).filter(
+        InvoiceLine.job_id == job_id
+    )
+    live_invoices = (
+        db.query(Invoice)
+        .filter(
+            or_(Invoice.job_id == job_id, Invoice.id.in_(on_invoice_line)),
+            Invoice.status != InvoiceStatus.VOID,
+        )
+        .all()
+    )
+    on_estimate_line = db.query(EstimateLine.estimate_id).filter(
+        EstimateLine.job_id == job_id
+    )
+    on_gift_line = db.query(InKindGiftLine.gift_id).filter(
+        InKindGiftLine.job_id == job_id
+    )
+    counts: dict[str, int] = {}
+    for inv in live_invoices:
+        noun = document_label(inv, t).lower()
+        counts[noun] = counts.get(noun, 0) + 1
+    counts["credit memo"] = (
+        db.query(CreditMemo)
+        .filter(CreditMemo.job_id == job_id, CreditMemo.status != CreditMemoStatus.VOID)
+        .count()
+    )
+    counts["estimate"] = (
+        db.query(Estimate)
+        .filter(or_(Estimate.job_id == job_id, Estimate.id.in_(on_estimate_line)))
+        .count()
+    )
+    counts["recurring " + t("invoice")] = (
+        db.query(RecurringInvoice).filter(RecurringInvoice.job_id == job_id).count()
+    )
+    counts["in-kind gift"] = (
+        db.query(InKindGift)
+        .filter(
+            or_(InKindGift.job_id == job_id, InKindGift.id.in_(on_gift_line)),
+            InKindGift.status != "void",
+        )
+        .count()
+    )
+    order = (
+        "invoice",
+        "pledge",
+        "sales receipt",
+        "donation receipt",
+        "credit memo",
+        "estimate",
+        "recurring " + t("invoice"),
+        "in-kind gift",
+    )
+    return [(noun, counts.get(noun, 0)) for noun in order]
+
+
+def refuse_moving_a_carried_job(db: Session, job: Job, terms=None) -> None:
+    """A job moves to another customer only while no customer document
+    carries it: moving it would put those documents on another customer's
+    job, which the rule above refuses to create. 400, naming what carries
+    it by the noun each is refused with ("1 pledge and 2 donation
+    receipts"); a job with no documents still moves."""
+    t = terms or terms_from_db(db)
+    carried = [(noun, n) for noun, n in documents_carrying_job(db, job.id, t) if n]
+    if not carried:
+        return
+    parts = [f"{n} {noun}{'' if n == 1 else 's'}" for noun, n in carried]
+    listed = (
+        parts[0] if len(parts) == 1 else ", ".join(parts[:-1]) + " and " + parts[-1]
+    )
+    who = job.customer.name if job.customer else f"its {t('customer')}"
+    raise HTTPException(
+        status_code=400,
+        detail=f"{t('Job')} {job.name} is on {listed} for {who}; move those first.",
+    )
 
 
 def job_attribution():

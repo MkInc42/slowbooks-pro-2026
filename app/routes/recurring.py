@@ -13,6 +13,10 @@ from app.models.recurring import RecurringInvoice, RecurringInvoiceLine
 from app.models.contacts import Customer
 from app.schemas.recurring import RecurringCreate, RecurringUpdate, RecurringResponse
 from app.services.accounting import compute_line_totals
+from app.services.jobs_service import (
+    refuse_other_customers_jobs,
+    refuse_other_customers_jobs_on_edit,
+)
 from app.services.recurring_service import generate_due_invoices
 from app.services.terminology import terms_from_db
 
@@ -71,6 +75,8 @@ def create_recurring(data: RecurringCreate, db: Session = Depends(get_db)):
     if not customer:
         raise HTTPException(status_code=404, detail="Customer not found")
     _refuse_end_before_start(data.start_date, data.end_date)
+    # The job is this customer's (NEW-36); the schedule's lines carry none.
+    refuse_other_customers_jobs(db, customer.id, data.job_id, (), _schedule_noun(db))
 
     # Refused here rather than skipped at every run: a template that adds up
     # to nothing generated $0.00 invoices that then showed as overdue.
@@ -123,6 +129,10 @@ def update_recurring(rec_id: int, data: RecurringUpdate, db: Session = Depends(g
         raise HTTPException(status_code=404, detail="Recurring invoice not found")
     if "end_date" in data.model_fields_set:
         _refuse_end_before_start(rec.start_date, data.end_date)
+    changes = data.model_dump(exclude_unset=True, exclude={"lines"})
+    # A changed job must be the schedule's customer's (NEW-36); a job sent
+    # unchanged, or left alone, is not judged (the lines carry none).
+    refuse_other_customers_jobs_on_edit(db, rec, changes, None, _schedule_noun(db))
 
     if data.lines is not None:
         resolve_line_taxable(db, data.lines, rec.customer)
@@ -131,7 +141,7 @@ def update_recurring(rec_id: int, data: RecurringUpdate, db: Session = Depends(g
             compute_line_totals(data.lines, tax_rate)[2], _schedule_noun(db)
         )
 
-    for key, val in data.model_dump(exclude_unset=True, exclude={"lines"}).items():
+    for key, val in changes.items():
         setattr(rec, key, val)
 
     if data.lines is not None:

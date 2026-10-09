@@ -39,6 +39,7 @@ from app.services.jobs_service import (
     find_job,
     job_profitability,
     job_transactions,
+    refuse_moving_a_carried_job,
 )
 
 router = APIRouter(prefix="/api/jobs", tags=["jobs"])
@@ -277,6 +278,11 @@ def update_job(job_id: int, data: JobUpdate, db: Session = Depends(get_db)):
     customer_id = changes.get("customer_id", job.customer_id)
     if "customer_id" in changes and not db.get(Customer, customer_id):
         raise HTTPException(status_code=404, detail="Customer not found")
+    # A job moves to another customer only while no invoice, sales
+    # receipt, credit memo, estimate, schedule or in-kind gift carries it
+    # (NEW-36): moving it would put those on another customer's job.
+    if customer_id != job.customer_id:
+        refuse_moving_a_carried_job(db, job)
     if "name" in changes or "customer_id" in changes:
         _check_name_clash(db, customer_id, changes.get("name", job.name), job.id)
     for key, value in changes.items():

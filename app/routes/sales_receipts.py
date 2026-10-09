@@ -7,6 +7,8 @@
 # and void semantics stay identical to documents entered separately.
 # ============================================================================
 
+from types import SimpleNamespace
+
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import func
 from sqlalchemy.orm import Session
@@ -22,6 +24,9 @@ from app.routes.payments import create_payment
 from app.schemas.invoices import InvoiceCreate, InvoiceResponse
 from app.schemas.payments import PaymentAllocationCreate, PaymentCreate
 from app.schemas.sales_receipts import SalesReceiptCreate, SalesReceiptResponse
+from app.services.donor_documents import document_label
+from app.services.jobs_service import refuse_other_customers_jobs
+from app.services.terminology import terms_from_db
 
 router = APIRouter(prefix="/api/sales-receipts", tags=["sales-receipts"])
 
@@ -100,6 +105,18 @@ def create_sales_receipt(data: SalesReceiptCreate, db: Session = Depends(get_db)
     customer_id = data.customer_id
     if customer_id is None:
         customer_id = walk_in_customer(db).id
+    # The job is this customer's — the walk-in customer's, for a counter
+    # sale — before anything is written (NEW-36); the invoice step would
+    # refuse it too, but as an invoice.
+    words = terms_from_db(db)
+    refuse_other_customers_jobs(
+        db,
+        customer_id,
+        data.job_id,
+        data.lines,
+        document_label(SimpleNamespace(is_sales_receipt=True), words).lower(),
+        words,
+    )
 
     inv_resp = create_invoice(
         InvoiceCreate(

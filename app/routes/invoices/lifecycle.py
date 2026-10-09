@@ -19,6 +19,7 @@ from app.services.accounting import (
     get_ar_account_id,
     _q,
 )
+from app.services.jobs_service import own_job
 from app.services.numbering import next_invoice_number
 from app.services.settings_service import get_all_settings as get_settings
 from app.services.closing_date import check_closing_date
@@ -422,6 +423,7 @@ def duplicate_invoice(
         question=f"This {noun} adds up to $0.00. Duplicate it anyway?",
     )
 
+    left_off: list[str] = []
     new_invoice = Invoice(
         invoice_number=next_invoice_number(db),
         customer_id=original.customer_id,
@@ -452,7 +454,10 @@ def duplicate_invoice(
         fair_value_description=original.fair_value_description,
         notes=original.notes,
         class_id=original.class_id,
-        job_id=original.job_id,
+        # The copy carries the customer's jobs only; another customer's job
+        # stored on the original (books from before the rule) is left off,
+        # and the response says which (NEW-36).
+        job_id=own_job(db, original.customer_id, original.job_id, left_off),
     )
     db.add(new_invoice)
     db.flush()
@@ -467,7 +472,7 @@ def duplicate_invoice(
             rate=oline.rate,
             amount=_q(Decimal(str(oline.quantity)) * Decimal(str(oline.rate))),
             class_name=oline.class_name,
-            job_id=oline.job_id,
+            job_id=own_job(db, original.customer_id, oline.job_id, left_off),
             class_id=oline.class_id,
             cost_code_id=oline.cost_code_id,
             is_taxable=cline.is_taxable,
@@ -496,4 +501,5 @@ def duplicate_invoice(
     resp = InvoiceResponse.model_validate(new_invoice)
     if new_invoice.customer:
         resp.customer_name = new_invoice.customer.name
+    resp.jobs_left_off = left_off
     return resp
