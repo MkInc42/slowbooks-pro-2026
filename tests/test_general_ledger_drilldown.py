@@ -43,9 +43,10 @@ def test_the_drill_down_offers_the_way_back_to_the_ledger():
     # `from` names the view that opened the drill-down (R7): 'general-ledger'
     # is a registered view, so the button is "Back to General Ledger" and
     # it goes back to the ledger on the drill-down's dates
+    # (`extra` carries a job since #242; the way back is unchanged)
     drill = _method(
         "async openDrillDown(accountId, accountName, startDate, endDate, "
-        "classId = null, className = null, from = null)"
+        "classId = null, className = null, from = null, extra = {})"
     )
     # the view is looked up by its own name (never _VIEWS[from]: 'constructor'
     # is not a report)
@@ -58,7 +59,12 @@ def test_the_drill_down_offers_the_way_back_to_the_ledger():
     assert "{ start_date: startDate, end_date: endDate }" in drill
     assert "'general-ledger':       { label: 'General Ledger'" in JS
     # _backButton and _backText, the label resolver it uses
-    button = JS[JS.index("\n    _backButton(name, params, detail = '') {") :]
+    # (`cls` is the button's class: the job page draws it small, #242)
+    button = JS[
+        JS.index(
+            "\n    _backButton(name, params, detail = '', cls = 'btn btn-secondary') {"
+        ) :
+    ]
     button = button[: button.index("\n    // The '/reports/:view' route")]
     assert "ReportsPage.backTo(" in button
     assert "typeof view.label === 'function' ? view.label() : view.label" in button
