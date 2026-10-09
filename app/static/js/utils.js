@@ -654,6 +654,10 @@ const Nonprofit = {
     // company has a class of its own (Uncategorized alone has nothing to
     // choose); a nonprofit's funds always draw it. An archived class a line
     // already carries stays a choice, so an edit does not strip it.
+    // Neither cell names itself: nameFields names a field in a table from
+    // its column and its line ("Class, line 2", "Function, line 2"), as
+    // the Item and Account cells beside them are named. A fixed "Class for
+    // this line" read the same on every line (macOS gate NEW-37).
     _funds: null,
     _rules: null,
     async loadFunds() {
@@ -675,13 +679,13 @@ const Nonprofit = {
         const funds = (Nonprofit._funds || [])
             .filter(f => !f.is_archived || f.id === fundSelected)
             .map(f => `<option value="${f.id}" ${fundSelected === f.id ? 'selected' : ''}>${escapeHtml(f.name)}${f.is_archived ? ' (archived)' : ''}</option>`).join('');
-        return `<td><select class="${cls}-fund" data-no-search aria-label="${escapeHtml(T('Class'))} for this line"><option value="">Same as header</option>${funds}</select></td>`;
+        return `<td><select class="${cls}-fund" data-no-search><option value="">Same as header</option>${funds}</select></td>`;
     },
     headHtml() { return Nonprofit.classHeadHtml() + (Nonprofit.enabled() ? `<th scope="col">Function</th>` : ''); },
     cellHtml(cls, selected, fundSelected) {
         const split = Nonprofit.enabled() && (Nonprofit._rules || []).length ? ` <button type="button" class="btn btn-sm btn-secondary np-split" title="Split this line by an allocation rule" onclick="Nonprofit.splitRow(this)">Split</button>` : '';
         return Nonprofit.classCellHtml(cls, fundSelected) + (Nonprofit.enabled()
-            ? `<td style="white-space:nowrap"><select class="${cls}" aria-label="Function for this line">${Nonprofit.optionsHtml(selected, '—')}</select>${split}</td>`
+            ? `<td style="white-space:nowrap"><select class="${cls}">${Nonprofit.optionsHtml(selected, '—')}</select>${split}</td>`
             : '');
     },
     fromRow(row, cls) { return row.querySelector(`.${cls}`)?.value || null; },

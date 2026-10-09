@@ -655,3 +655,69 @@ def test_the_customer_pages_invoice_rows_open_from_the_keyboard(
         page.wait_for_function(f"() => {TITLE.split('=> ')[1]} === 'Payment Details'")
     finally:
         page.close()
+
+
+# ── NEW-37: a line's Class cell is named for its line ────────────────────
+
+NAMES = "(sel) => [...document.querySelectorAll(sel)].map(el => el.getAttribute('aria-label'))"
+
+
+def test_a_lines_class_cell_says_its_line(browser, company, books, classed):
+    page, handled = _open(browser, company)
+    try:
+        _visit(page, handled, "#/bills")
+        _open_dialog(page, handled, "BillsPage.showForm()", "#bill-lines tr")
+        assert page.evaluate(NAMES, "#bill-lines .line-function-fund") == [
+            "Class, line 1"
+        ]
+        page.evaluate("() => BillsPage.addLine()")
+        settle(page, handled)
+        assert page.evaluate(NAMES, "#bill-lines .line-function-fund") == [
+            "Class, line 1",
+            "Class, line 2",
+        ]
+        # as a screen reader finds them: one each
+        assert page.get_by_label("Class, line 2").count() == 1
+        page.evaluate("() => closeModal()")
+        _visit(page, handled, "#/invoices")
+        _open_dialog(page, handled, "InvoicesPage.showForm()", "#inv-lines tr")
+        page.evaluate("() => InvoicesPage.addLine()")
+        settle(page, handled)
+        assert page.evaluate(NAMES, "#inv-lines .line-class-fund") == [
+            "Class, line 1",
+            "Class, line 2",
+        ]
+        page.evaluate("() => closeModal()")
+        _visit(page, handled, "#/journal")
+        _open_dialog(page, handled, "JournalPage.showForm()", "#je-lines tr")
+        assert page.evaluate(NAMES, "#je-lines .je-function-fund") == [
+            "Class, line 1",
+            "Class, line 2",
+        ]
+    finally:
+        page.close()
+
+
+def test_a_nonprofits_fund_and_function_cells_say_their_line(
+    browser, client, nonprofit  # noqa: F811  (the fixture, imported above)
+):
+    page, handled = _open(browser, client)
+    try:
+        _visit(page, handled, "#/journal")
+        _open_dialog(page, handled, "JournalPage.showForm()", "#je-lines tr")
+        heads = page.evaluate(
+            "() => [...document.querySelectorAll('#modal .line-items-table thead th')].map(t => t.textContent.trim())"
+        )
+        fund = heads[
+            heads.index("Function") - 1
+        ]  # the class column, by the nonprofit's word
+        assert page.evaluate(NAMES, "#je-lines .je-function-fund") == [
+            f"{fund}, line 1",
+            f"{fund}, line 2",
+        ]
+        assert page.evaluate(NAMES, "#je-lines select.je-function") == [
+            "Function, line 1",
+            "Function, line 2",
+        ]
+    finally:
+        page.close()

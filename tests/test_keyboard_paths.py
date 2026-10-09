@@ -175,3 +175,19 @@ def test_the_customer_pages_invoice_and_payment_rows_carry_links():
     assert 'onclick="event.preventDefault()">${escapeHtml(text)}</a>' in src
     # the row's click still opens the document
     assert """onclick="closeModal();App.navigate('#/invoices/${i.id}')">""" in src
+
+
+# ── NEW-37 ────────────────────────────────────────────────────────────────
+
+
+def test_the_line_class_and_function_cells_leave_their_names_to_the_grid_rule():
+    utils = _src("utils.js")
+    assert "for this line" not in utils
+    assert (
+        '<select class="${cls}-fund" data-no-search><option value="">Same as header</option>'
+        in utils
+    )
+    assert '<select class="${cls}">${Nonprofit.optionsHtml(selected' in utils
+    # the rule that names them: the column heading and "line N"
+    assert "rowName = `line ${row.sectionRowIndex + 1}`;" in utils
+    assert "return [heading, rowName].filter(Boolean).join(', ');" in utils
