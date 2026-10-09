@@ -122,6 +122,56 @@ _LINKS = {
     "opening_balance": "/#/journal/{txn}",
     "qbo_ledger": "/#/journal/{txn}",
     "qbo_journal": "/#/journal/{txn}",
+    # Postings that have a page of their own (#241): the document opens
+    # over its list, as an invoice's does. A void posting links to the
+    # document it voided (its source_id is that document's).
+    "job_cost": "/#/job-costs/{id}",
+    "job_cost_void": "/#/job-costs/{id}",
+    "payroll": "/#/payroll/{id}",
+    "credit_memo": "/#/credit-memos/{id}",
+    "credit_memo_void": "/#/credit-memos/{id}",
+    "in_kind_gift": "/#/in-kind-gifts/{id}",
+    "in_kind_gift_void": "/#/in-kind-gifts/{id}",
+    "restriction_release": "/#/releases/{id}",
+    "restriction_release_void": "/#/releases/{id}",
+    "functional_allocation": "/#/functional-allocations/{id}",
+    "functional_allocation_void": "/#/functional-allocations/{id}",
+    "invoice_void": "/#/invoices/{id}",
+    "invoice_edit": "/#/invoices/{id}",
+    "late_fee": "/#/invoices/{id}",
+    "bill_void": "/#/bills/{id}",
+    "bill_edit": "/#/bills/{id}",
+    "payment_void": "/#/payments/{id}",
+    "payment_apply": "/#/payments/{id}",
+    "bill_payment_void": "/#/bill-payments/{id}",
+    "vendor_credit_void": "/#/vendor-credits/{id}",
+    # The house void (bank_posting.void_document, the expense and journal
+    # voids, the QBO import's reversals) keys its reversal by the voided
+    # posting's transaction id, and these documents' own addresses are by
+    # transaction id too — so the void links where its document does,
+    # with the voided posting's id (R11 review).
+    "expense_void": "/#/expenses/{id}",
+    "deposit_void": "/#/deposits/{id}",
+    "cc_charge_void": "/#/cc-charges/{id}",
+    "transfer_void": "/#/banking/transfers/{id}",
+    "bank_entry_void": "/#/journal/{id}",
+    "manual_void": "/#/journal/{id}",
+    "qbo_ledger_void": "/#/journal/{id}",
+    "qbo_journal_void": "/#/journal/{id}",
+    # A reversal of a posting that is itself a side effect (a payment's
+    # exchange adjustment, the local cost of goods a QBO ledger import
+    # takes back): the posting it reversed, as a journal entry.
+    "payment_apply_void": "/#/journal/{id}",
+    "qbo_cogs_void": "/#/journal/{id}",
+    # Postings that are their own document: the journal entry.
+    "pto": "/#/journal/{txn}",
+    "check": "/#/journal/{txn}",
+    "adjustment": "/#/journal/{txn}",
+    "sales_tax_payment": "/#/journal/{txn}",
+    "iif_import": "/#/journal/{txn}",
+    "depreciation": "/#/journal/{txn}",
+    "asset_acquisition": "/#/journal/{txn}",
+    "asset_disposal": "/#/journal/{txn}",
 }
 
 

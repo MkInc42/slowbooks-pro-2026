@@ -17,10 +17,10 @@ const ReportsPage = {
         'profit-loss':          { label: () => T('Profit & Loss'),      open: (p) => ReportsPage.profitLoss(p) },
         'balance-sheet':        { label: () => T('Balance Sheet'),      open: (p) => ReportsPage.balanceSheet(p), asOf: true },
         'profit-loss-by-class': { label: () => T('P&L by Class'),       open: (p) => ReportsPage.profitLossByClass(p) },
-        'profit-loss-class':    { label: () => T('Profit & Loss'),      open: (p) => ReportsPage.profitLossOfClass(p.class_id, null, p), keep: ['class_id'] },
+        'profit-loss-class':    { label: () => T('Profit & Loss'),      open: (p) => ReportsPage.profitLossOfClass(p.class_id, null, p, p.from || null), keep: ['class_id'] },
         'profit-loss-unclassified': { label: () => `${T('P&L')} Unclassified`, open: (p) => ReportsPage.profitLossUnclassified(p) },
         'profit-loss-by-job':   { label: () => `${T('P&L')} by ${T('Job')}`, open: (p) => ReportsPage.profitLossByJob(p) },
-        'account-transactions': { label: 'Drill-down',         open: (p) => ReportsPage.openDrillDown(p.account_id, null, p.start_date, p.end_date, p.class_id || null, null, p.from || null, { job_id: p.job_id }) },
+        'account-transactions': { label: 'Drill-down',         open: (p) => ReportsPage.openDrillDown(p.account_id, null, p.start_date, p.end_date, p.class_id || null, null, p.from || null, { job_id: p.job_id, period: p.period || null }) },
         'ar-aging':             { label: () => T('Accounts Receivable Aging'), open: (p) => ReportsPage.arAging(p), asOf: true },
         'ap-aging':             { label: 'Accounts Payable Aging',    open: (p) => ReportsPage.apAging(p), asOf: true },
         'sales-tax':            { label: 'Sales Tax Report',   open: (p) => ReportsPage.salesTax(p) },
@@ -79,7 +79,84 @@ const ReportsPage = {
         const here = location.hash || '#/';
         if (here === url) return;
         if (App.parseHash(here).path === `/reports/${name}`) history.replaceState(history.state, '', url);
-        else history.pushState({ from: here }, '', url);
+        else { ReportsPage._leaveFrom(); history.pushState({ from: here }, '', url); }
+    },
+
+    // The row a hop leaves from, noted on the view's own history entry
+    // (history.state.focus) so that Back puts the keyboard back on it (R9):
+    // the row's data-row-key, else its place among the dialog's controls.
+    // Nothing is kept in memory, so Back, Forward and a reload agree.
+    _leaveFrom() {
+        const el = document.activeElement;
+        if (!el || !el.closest || !el.closest('#modal-body')) return;
+        const n = [...document.querySelectorAll('#modal-body a[href], #modal-body button')].indexOf(el);
+        const key = el.getAttribute('data-row-key') || (n >= 0 ? `n:${n}` : null);
+        if (!key) return;  // a select, a date: not a row left from
+        history.replaceState({ ...(history.state || {}), focus: key }, '', location.hash || '#/');
+    },
+
+    // Focus back on the row the view was left from, once; a later render
+    // of the same view (a period change) leaves focus where the user has
+    // it. True when it did.
+    _refocusRow(root) {
+        const key = history.state && history.state.focus;
+        if (!key || !root) return false;
+        const el = key.startsWith('n:')
+            ? document.querySelectorAll('#modal-body a[href], #modal-body button')[parseInt(key.slice(2), 10)]
+            : root.querySelector(`[data-row-key="${CSS.escape(key)}"]`);
+        if (!el) return false;
+        history.replaceState({ ...history.state, focus: null }, '', location.hash || '#/');
+        try { el.focus(); } catch (e) { /* not focusable after all */ }
+        return true;
+    },
+
+    // A report opened for one customer or vendor from their page (#238):
+    // the row is marked and scrolled to, and takes focus on the view's
+    // first render only (takeFocus) — not when Back just put focus on a
+    // row, and not on a later render of the same view: a period change
+    // from the keyboard was throwing focus off the period select onto the
+    // row, so every next period needed Shift+Tab first (R8 review). The
+    // report is still the whole company's — only the row is picked out —
+    // so nothing about its totals changes.
+    _spotlight(root, params, takeFocus) {
+        const key = params.customer_id ? `customer:${params.customer_id}`
+            : params.vendor_id ? `vendor:${params.vendor_id}` : null;
+        if (!key || !root) return;
+        const el = root.querySelector(`[data-row-key="${CSS.escape(key)}"]`);
+        const row = el && el.closest('tr');
+        if (!row) return;
+        row.setAttribute('aria-current', 'true');
+        row.style.background = 'var(--primary-light)';
+        row.scrollIntoView({ block: 'center' });
+        if (takeFocus) { try { el.focus(); } catch (e) { /* nothing */ } }
+    },
+
+    // A change inside the open period report that is not its dates — a
+    // filter dropped, the drill-down's class or account — goes into the
+    // address's params and re-renders in place (the address is replaced,
+    // not pushed, as a period change is).
+    _params: null,
+
+    // A row's link to where it goes: the onclick payload is built outside
+    // the template and HTML-escaped (JSON.stringify's quotes would break
+    // the attribute); data-row-key is where focus returns on Back.
+    _rowLink(call, text, key) {
+        return `<a href="javascript:void(0)" style="color:var(--text-link); text-decoration:none;" data-row-key="${escapeHtml(key)}" onclick="${escapeHtml(call)}">${escapeHtml(text)}</a>`;
+    },
+
+    // A customer's or a vendor's page is a dialog over its list, with an
+    // address of its own (#/customers/12, #/vendors/3: App.routes): one
+    // history entry, so browser Back returns to the report, and the row
+    // it left from.
+    openCustomer(id) {
+        ReportsPage._leaveFrom();
+        closeModal();
+        App.navigate(`#/customers/${id}`);
+    },
+    openVendor(id) {
+        ReportsPage._leaveFrom();
+        closeModal();
+        App.navigate(`#/vendors/${id}`);
     },
 
     // Back to a view, as its "Back to …" button does: through the browser's
@@ -90,6 +167,7 @@ const ReportsPage = {
     backTo(name, params) {
         const from = history.state && history.state.from;
         if (from && App.parseHash(from).path === `/reports/${name}`) {
+            closeModal();
             history.back();
             return;
         }
@@ -352,7 +430,7 @@ const ReportsPage = {
     // document (R7): the names are then taken from what the server says.
     // `extra` carries a job (#242): { job_id, job_name }, job_id 0 being
     // the lines with no job; the server names the job when only the id
-    // is known.
+    // is known; `extra.period` is the address's period preset (#241).
     async openDrillDown(accountId, accountName, startDate, endDate, classId = null, className = null, from = null, extra = {}) {
         accountId = parseInt(accountId, 10);
         if (!accountId) { toast('No account_id on this row', 'error'); return; }
@@ -361,6 +439,7 @@ const ReportsPage = {
         const jobId = jobGiven ? parseInt(extra.job_id, 10) : null;
         const jobOn = jobGiven && !Number.isNaN(jobId);
         let jobName = (extra && extra.job_name) || null;
+        const period = (extra && extra.period) || null;
         if (classId && !from) from = 'profit-loss-by-class';
         if (jobOn && !from) from = 'profit-loss-by-job';
         const back = ReportsPage._view(from) ? from : null;
@@ -369,17 +448,20 @@ const ReportsPage = {
         // button says "Back to Site Prep" and returns to the page as it was
         // left, not to a report the user never opened.
         const backPage = !back && from === 'classes' && classId ? `/classes/${classId}` : null;
-        const params = new URLSearchParams();
-        params.set('account_id', accountId);
-        if (startDate) params.set('start_date', startDate);
-        if (endDate) params.set('end_date', endDate);
-        if (classId) params.set('class_id', classId);
-        if (jobOn) params.set('job_id', jobId);
-
-        ReportsPage.setAddress('account-transactions', {
-            account_id: accountId, start_date: startDate, end_date: endDate, class_id: classId,
-            job_id: jobOn ? String(jobId) : null, from: back || (backPage ? 'classes' : null),
-        });
+        // The address's params ahead of the dates: the account, the class
+        // and the way back. The toolbar's selects change the first two in
+        // place (ReportsPage.setParam), and a saved drill-down keeps all
+        // three with its period (#241).
+        // (The period and dates fill their places, so the address reads
+        // account, dates, class, from — as a link to it is written.)
+        const params = { account_id: accountId, period: undefined, start_date: undefined, end_date: undefined, class_id: classId, job_id: jobOn ? String(jobId) : undefined, from: back || (backPage ? 'classes' : undefined) };
+        ReportsPage._leaveFrom();
+        // The account and class lists are asked for afresh each time the
+        // drill-down opens: a class made, or an account first posted to,
+        // since the last one is then in the selects and the Previous/Next
+        // walk (R11 review). Within one open they are kept per key.
+        ReportsPage._drillList = null;
+        ReportsPage._classList = null;
 
         // The way back carries the dates the view was on (one as-of date
         // for a balance sheet) and whatever the view says it keeps. Back to
@@ -397,20 +479,36 @@ const ReportsPage = {
         }
 
         const title = (name, cls) => `Drill-down — ${name || `account ${accountId}`}${cls ? ` · ${cls}` : ''}${jobOn && jobName ? ` · ${T('Job')}: ${jobName}` : ''}`;
-        openModal(title(accountName, className), `
-            <div id="drilldown-body" style="font-size:11px; color:var(--gray-500);">Loading…</div>
-            <div class="form-actions">
-                ${backBtn}
-                <button type="button" class="btn btn-secondary" onclick="closeModal()">Close</button>
-            </div>
-        `);
+        // The toolbar beside the dates: the class, the account (the
+        // report's accounts, in its order, so Previous/Next walk the report)
+        // and the way back. Filled from the server on each render.
+        const toolbar = `
+            <div class="form-group"><label for="drill-class">${T('Class')}</label>
+                <select id="drill-class" data-no-search onchange="ReportsPage.setParam('class_id', this.value)">
+                    <option value="">All ${T('classes')}</option>
+                    ${classId ? `<option value="${classId}" selected>${escapeHtml(className || T('Class'))}</option>` : ''}
+                </select></div>
+            <div class="form-group"><label for="drill-account">Account</label>
+                <select id="drill-account" data-no-search onchange="ReportsPage.setParam('account_id', this.value)">
+                    <option value="${accountId}" selected>${escapeHtml(accountName || `account ${accountId}`)}</option>
+                </select></div>
+            <div style="grid-column:1 / -1; display:flex; gap:6px; align-items:center; flex-wrap:wrap;">
+                <button type="button" class="btn btn-sm btn-secondary" id="drill-prev" aria-label="Previous account" onclick="ReportsPage._drillStep(-1)">‹ Previous</button>
+                <button type="button" class="btn btn-sm btn-secondary" id="drill-next" aria-label="Next account" onclick="ReportsPage._drillStep(1)">Next ›</button>
+                <span id="drill-position" style="font-size:11px; color:var(--text-muted);"></span>
+            </div>`;
 
-        try {
-            const data = await API.get(`/reports/account-transactions?${params.toString()}`);
+        await ReportsPage.openPeriodModal(title(accountName, className), 'this_year_to_date', async (_period, range) => {
+            const q = new URLSearchParams({ account_id: params.account_id, start_date: range.start, end_date: range.end });
+            if (params.class_id) q.set('class_id', params.class_id);
+            if (params.job_id !== undefined && params.job_id !== null && params.job_id !== '') q.set('job_id', params.job_id);
+            // The report's account list first (kept per dates and class, so
+            // once), then the transactions: the one request a watcher of
+            // this view sees last is the view's own.
+            const accounts = await ReportsPage._drillAccounts(back, range, params.class_id);
+            const data = await API.get(`/reports/account-transactions?${q.toString()}`);
             if (jobOn && !jobName) jobName = data.job_name;
-            if (!accountName || (classId && !className) || jobOn) {
-                $('#modal-title').textContent = title(accountName || data.account.name, className || data.class_name);
-            }
+            $('#modal-title').textContent = title(data.account.name, data.class_name);
             // Rebuilt from the address, the class's name arrives now
             if (backToClass && !className && data.class_name) {
                 const btn = $('#modal-body [data-back-to="profit-loss-class"]');
@@ -420,40 +518,138 @@ const ReportsPage = {
                 const btn = $('#modal-body [data-back-to="classes"]');
                 if (btn) btn.textContent = `Back to ${data.class_name}`;
             }
+            await ReportsPage._fillDrillToolbar(data, accounts);
+
+            // Every field the register sends: payee, the cleared mark (✓
+            // cleared, R reconciled), a void struck through and badged; a
+            // line with no document of its own opens its journal entry, as
+            // the bank register does.
             const rows = (data.entries || []).map(e => {
-                const src = e.source_link
-                    ? `<a href="${escapeHtml(e.source_link)}" style="color:var(--text-link); text-decoration:none;">${escapeHtml(e.source_type || '')} #${e.source_id}</a>`
+                const link = e.source_link || (e.transaction_id ? `/#/journal/${e.transaction_id}` : null);
+                const num = e.source_link && e.source_id != null ? e.source_id : e.transaction_id;
+                const src = link
+                    ? `<a href="${escapeHtml(link)}" style="color:var(--text-link); text-decoration:none;">${escapeHtml(e.source_type || 'journal')} #${num}</a>`
                     : escapeHtml(e.source_type || '');
-                return `<tr>
+                const mark = e.reconciliation_id ? 'R' : (e.cleared ? '✓' : '');
+                return `<tr${e.voided ? ' class="row--void" style="color:var(--text-muted); text-decoration:line-through;"' : ''}>
                     <td>${formatDate(e.date)}</td>
+                    <td>${escapeHtml(e.payee || '')}</td>
                     <td>${escapeHtml(e.reference || '')}</td>
                     <td>${escapeHtml(e.description || '')}</td>
-                    <td>${src}</td>
+                    <td>${src}${e.voided ? ' <span class="badge badge-void" style="text-decoration:none;">void</span>' : ''}</td>
                     <td class="amount">${e.debit > 0 ? formatCurrency(e.debit) : ''}</td>
                     <td class="amount">${e.credit > 0 ? formatCurrency(e.credit) : ''}</td>
                     <td class="amount">${formatCurrency(e.running_balance)}</td>
+                    <td style="text-align:center;">${mark ? `<span title="${mark === 'R' ? 'Reconciled' : 'Cleared'}">${mark}</span>` : ''}</td>
                 </tr>`;
             }).join('');
-
-            $('#drilldown-body').innerHTML = `
+            const entries = data.entries || [];
+            const closing = entries.length ? entries[entries.length - 1].running_balance : data.opening_balance;
+            return `<div id="drilldown-body" style="font-size:11px; color:var(--gray-500);">
                 <p style="margin-bottom:8px; color:var(--gray-500); font-size:12px;">
                     ${escapeHtml(data.account.number || '')} · ${escapeHtml(data.account.name)}
                     ${data.class_name ? `&middot; ${T('Class')}: <strong>${escapeHtml(data.class_name)}</strong>` : ''}
                     ${jobOn && data.job_name ? `&middot; ${T('Job')}: <strong>${escapeHtml(data.job_name)}</strong>` : ''}
                     &middot; ${formatDate(data.start_date)} → ${formatDate(data.end_date)}
+                    &middot; Opening: <strong>${formatCurrency(data.opening_balance)}</strong>
                     &middot; Net: <strong>${formatCurrency(data.period_net)}</strong>
                 </p>
                 <div class="table-container"><table>
                     <thead><tr>
-                        <th scope="col">Date</th><th scope="col">Ref</th><th scope="col">Description</th><th scope="col">Source</th>
+                        <th scope="col">Date</th><th scope="col">Payee</th><th scope="col">Ref</th><th scope="col">Description</th><th scope="col">Source</th>
                         <th scope="col" class="amount">Debit</th><th scope="col" class="amount">Credit</th><th scope="col" class="amount">Running</th>
+                        <th scope="col" aria-label="Cleared" title="✓ cleared · R reconciled">✓</th>
                     </tr></thead>
-                    <tbody>${rows || '<tr><td colspan="7" style="text-align:center; color:var(--gray-400);">No entries in range</td></tr>'}</tbody>
-                </table></div>`;
-        } catch (err) {
-            $('#drilldown-body').innerHTML =
-                `<div class="empty-state"><p>${escapeHtml(err.message || 'Failed to load drill-down')}</p></div>`;
+                    <tbody>
+                        <tr style="color:var(--text-muted);"><td></td><td colspan="6">Balance brought forward</td><td class="amount">${formatCurrency(data.opening_balance)}</td><td></td></tr>
+                        ${rows || '<tr><td colspan="9" style="text-align:center; color:var(--gray-400);">No entries in range</td></tr>'}
+                        <tr style="font-weight:600; background:var(--gray-50);">
+                            <td colspan="5">Period total</td>
+                            <td class="amount">${formatCurrency(data.period_debit)}</td>
+                            <td class="amount">${formatCurrency(data.period_credit)}</td>
+                            <td class="amount">${formatCurrency(closing)}</td><td></td>
+                        </tr>
+                    </tbody>
+                </table></div></div>`;
+        }, 'Dates', false, { reportType: 'account_transactions', view: 'account-transactions', params, toolbar, actions: backBtn, wide: true, prefill: { period, start_date: startDate, end_date: endDate } });
+    },
+
+    // The accounts the drill-down steps through: the report's own, in its
+    // order, for the dates and class in use; every active account when it
+    // came from no report (a vendor's page, a saved report). Kept for the
+    // same key so a render asks once.
+    _drillList: null,
+    async _drillAccounts(from, range, classId) {
+        const key = `${from}|${range.start}|${range.end}|${classId || ''}`;
+        if (ReportsPage._drillList && ReportsPage._drillList.key === key) return ReportsPage._drillList.list;
+        const dates = `start_date=${range.start}&end_date=${range.end}`;
+        const label = (a) => `${a.account_number ? a.account_number + ' - ' : ''}${a.account_name || a.name}`;
+        const pick = (groups) => groups.flat().filter(a => a && a.account_id).map(a => ({ id: a.account_id, label: label(a) }));
+        let list = [];
+        try {
+            let d;
+            switch (from) {
+                case 'profit-loss': case 'profit-loss-class': case 'profit-loss-by-class':
+                    d = await API.get(`/reports/profit-loss?${dates}${classId ? `&class_id=${classId}` : ''}`);
+                    list = pick([d.income, d.cogs, d.expenses]); break;
+                case 'balance-sheet':
+                    d = await API.get(`/reports/balance-sheet?as_of_date=${range.end}`);
+                    list = pick([d.assets, d.liabilities, d.equity]); break;
+                case 'statement-of-financial-position':
+                    d = await API.get(`/reports/statement-of-financial-position?as_of_date=${range.end}`);
+                    list = pick([d.assets, d.liabilities, d.net_assets]); break;
+                case 'general-ledger':
+                    d = await API.get(`/reports/general-ledger?${dates}`);
+                    list = pick([d.accounts]); break;
+                case 'trial-balance':
+                    d = await API.get(`/reports/trial-balance?${dates}`);
+                    list = pick([d.items]); break;
+                case 'cash-flow':
+                    d = await API.get(`/reports/cash-flow?${dates}`);
+                    list = pick([d.adjustments || [], d.working_capital || [], d.investing, d.financing]); break;
+                default:
+                    d = await API.get('/accounts');
+                    list = d.map(a => ({ id: a.id, label: `${a.account_number ? a.account_number + ' - ' : ''}${a.name}` }));
+            }
+        } catch (e) { list = []; }
+        ReportsPage._drillList = { key, list };
+        return list;
+    },
+
+    // The toolbar's selects, from what the server said: the account list
+    // with the one shown (added if the report lacks it), the classes
+    // (archived ones included, so the one shown is there), and
+    // Previous/Next disabled at the ends.
+    _classList: null,
+    async _fillDrillToolbar(data, accounts) {
+        const acct = $('#drill-account');
+        const cls = $('#drill-class');
+        if (!acct || !cls) return;
+        const list = accounts.some(a => a.id === data.account.id) ? accounts
+            : [{ id: data.account.id, label: `${data.account.number ? data.account.number + ' - ' : ''}${data.account.name}` }, ...accounts];
+        acct.innerHTML = list.map(a => `<option value="${a.id}" ${a.id === data.account.id ? 'selected' : ''}>${escapeHtml(a.label)}</option>`).join('');
+        const i = list.findIndex(a => a.id === data.account.id);
+        const prev = $('#drill-prev'), next = $('#drill-next'), pos = $('#drill-position');
+        if (prev) prev.disabled = i <= 0;
+        if (next) next.disabled = i < 0 || i >= list.length - 1;
+        if (pos) pos.textContent = list.length > 1 ? `${i + 1} of ${list.length}` : '';
+        if (!ReportsPage._classList) {
+            try { ReportsPage._classList = await API.get('/classes?include_archived=true'); } catch (e) { ReportsPage._classList = []; }
         }
+        const classes = ReportsPage._classList.slice();
+        if (data.class_id && !classes.some(c => c.id === data.class_id)) classes.push({ id: data.class_id, name: data.class_name });
+        cls.innerHTML = `<option value="">All ${T('classes')}</option>`
+            + classes.map(c => `<option value="${c.id}" ${c.id === data.class_id ? 'selected' : ''}>${escapeHtml(c.name)}${c.is_archived ? ' (archived)' : ''}</option>`).join('');
+    },
+
+    // Previous / Next account: the select's neighbour, applied in place.
+    _drillStep(dir) {
+        const sel = $('#drill-account');
+        if (!sel) return;
+        const i = sel.selectedIndex + dir;
+        if (i < 0 || i >= sel.options.length) return;
+        sel.selectedIndex = i;
+        ReportsPage.setParam('account_id', sel.value);
     },
 
     periodOptions(selected) {
@@ -591,13 +787,15 @@ const ReportsPage = {
         // select, that stay as the report redraws (a class picker, Prev /
         // Next, a column chooser); the report's own body is redrawn by
         // loadContent(period, range, params) on every change.
-        // opts.wide — the wide dialog (openModal's), for a grid with a
-        // column per class or job.
+        // opts.actions (html) — buttons ahead of Save and Close (a
+        // "Back to …"). opts.wide — the wide dialog (openModal's), for a
+        // grid with a column per class or job.
         const reportType = opts.reportType || null;
         const prefill = opts.prefill || {};
         const view = opts.view || null;
         const paramsObj = typeof opts.params === 'function' ? null : (opts.params || {});
         const params = () => (paramsObj ? paramsObj : opts.params());
+        ReportsPage._params = paramsObj;
 
         const currentYear = new Date().getFullYear();
         const defaultCustomStart = prefill.start_date || `${currentYear}-01-01`;
@@ -623,6 +821,7 @@ const ReportsPage = {
                 <div style="font-size:11px; color:var(--gray-500);">Loading report...</div>
             </div>
             <div class="form-actions">
+                ${opts.actions || ''}
                 ${saveBtn}
                 <button class="btn btn-secondary" onclick="closeModal()">Close</button>
             </div>`, { wide: !!opts.wide });
@@ -645,6 +844,11 @@ const ReportsPage = {
 
         // Track current params so the Save button captures fresh values.
         let currentParams = {};
+        // The first render of the view: the only one that may move focus
+        // to a spotlighted row (ReportsPage._spotlight). opts.spotlight
+        // false leaves the row alone altogether — a view the server has
+        // already filtered to the customer has no one row to pick out.
+        let first = true;
 
         const render = async () => {
             ReportsPage.toggleCustomRange();
@@ -661,9 +865,12 @@ const ReportsPage = {
                     if (view) ReportsPage.setAddress(view, { ...params(), ...currentParams });
                     content.innerHTML = await loadContent(select.value, range, params());
                 }
+                const restored = ReportsPage._refocusRow(content);
+                if (opts.spotlight !== false) ReportsPage._spotlight(content, params(), first && !restored);
             } catch (err) {
                 content.innerHTML = `<div class="empty-state"><p>${escapeHtml(err.message)}</p></div>`;
             }
+            first = false;
         };
         // The open report, for its toolbar's controls (ReportsPage.setParam,
         // ReportsPage.refresh): one period dialog is open at a time.
@@ -923,9 +1130,10 @@ const ReportsPage = {
             const data = await API.get(`/reports/income-by-customer?start_date=${range.start}&end_date=${range.end}`);
             // Sales before tax, the tax beside it; Paid includes money not
             // yet applied to an invoice, and Balance is net of it.
+            // A customer's name opens the customer's page (R9)
             let rows = data.items.map(i =>
                 `<tr>
-                    <td>${escapeHtml(i.customer_name)}</td>
+                    <td>${i.customer_id ? ReportsPage._rowLink(`ReportsPage.openCustomer(${i.customer_id})`, i.customer_name, `customer:${i.customer_id}`) : escapeHtml(i.customer_name)}</td>
                     <td class="amount">${i.invoice_count}</td>
                     <td class="amount">${formatCurrency(i.total_sales)}</td>
                     <td class="amount">${formatCurrency(i.total_tax || 0)}</td>
@@ -947,7 +1155,7 @@ const ReportsPage = {
                     <thead><tr><th scope="col">${T('Customer')}</th><th scope="col" class="amount">${T('Invoices')}</th><th scope="col" class="amount">Sales</th><th scope="col" class="amount">Sales Tax</th><th scope="col" class="amount">Paid</th><th scope="col" class="amount">Balance</th></tr></thead>
                     <tbody>${rows || '<tr><td colspan="6" style="text-align:center; color:var(--gray-400);">No sales data</td></tr>'}</tbody>
                 </table></div>`;
-        }, "Dates", false, { reportType: 'income_by_customer', view: 'income-by-customer', prefill });
+        }, "Dates", false, { reportType: 'income_by_customer', view: 'income-by-customer', params: { customer_id: (prefill || {}).customer_id || null }, prefill });
     },
 
     async customerStatementPicker() {
@@ -999,7 +1207,11 @@ const ReportsPage = {
                     <td class="amount">${credit(r) ? formatCurrency(-credit(r)) : ''}</td>
                     <td class="amount" style="font-weight:600;">${formatCurrency(r.total)}</td>
                 </tr>`;
-            let rows = data.items.map(i => agingRow(i, escapeHtml(i.customer_name))).join("");
+            // A customer's name opens the customer's page (R9)
+            const name = (i) => i.customer_id
+                ? ReportsPage._rowLink(`ReportsPage.openCustomer(${i.customer_id})`, i.customer_name, `customer:${i.customer_id}`)
+                : escapeHtml(i.customer_name);
+            let rows = data.items.map(i => agingRow(i, name(i))).join("");
             const t = data.totals;
             rows += agingRow(t, 'TOTAL', 'font-weight:700; background:var(--gray-50);');
             return `
@@ -1021,15 +1233,16 @@ const ReportsPage = {
                     </tr></thead>
                     <tbody>${rows || '<tr><td colspan="7" style="text-align:center; color:var(--gray-400);">No outstanding receivables</td></tr>'}</tbody>
                 </table></div>`;
-        }, "As Of", true, { reportType: 'ar_aging', view: 'ar-aging', prefill });
+        }, "As Of", true, { reportType: 'ar_aging', view: 'ar-aging', params: { customer_id: (prefill || {}).customer_id || null }, prefill });
     },
 
     async apAging(prefill) {
         await ReportsPage.openPeriodModal("Accounts Payable Aging", "this_year_to_date", async (_period, params) => {
             const data = await API.get(`/reports/ap-aging?as_of_date=${params.as_of_date}`);
+            // A vendor's name opens the vendor's page (R9)
             let rows = data.items.map(i =>
                 `<tr>
-                    <td>${escapeHtml(i.vendor_name)}</td>
+                    <td>${i.vendor_id ? ReportsPage._rowLink(`ReportsPage.openVendor(${i.vendor_id})`, i.vendor_name, `vendor:${i.vendor_id}`) : escapeHtml(i.vendor_name)}</td>
                     <td class="amount">${formatCurrency(i.current)}</td>
                     <td class="amount">${formatCurrency(i.over_30)}</td>
                     <td class="amount">${formatCurrency(i.over_60)}</td>
@@ -1055,16 +1268,21 @@ const ReportsPage = {
                     </tr></thead>
                     <tbody>${rows || '<tr><td colspan="6" style="text-align:center; color:var(--gray-400);">No outstanding payables</td></tr>'}</tbody>
                 </table></div>`;
-        }, "As Of", true, { reportType: 'ap_aging', view: 'ap-aging', prefill });
+        }, "As Of", true, { reportType: 'ap_aging', view: 'ap-aging', params: { vendor_id: (prefill || {}).vendor_id || null }, prefill });
     },
 
     async trialBalance(prefill) {
         await ReportsPage.openPeriodModal("Trial Balance", "this_year_to_date", async (_period, range) => {
             const data = await API.get(`/reports/trial-balance?start_date=${range.start}&end_date=${range.end}`);
+            // An account's name opens its register for the report's dates
+            // (R9), with "Back to Trial Balance"
+            const drill = (i) => i.account_id
+                ? ReportsPage._rowLink(`ReportsPage.openDrillDown(${i.account_id},${JSON.stringify(i.account_name)},${JSON.stringify(range.start)},${JSON.stringify(range.end)},null,null,'trial-balance')`, i.account_name, `drill:${i.account_id}`)
+                : escapeHtml(i.account_name);
             let rows = data.items.map(i =>
                 `<tr>
                     <td>${escapeHtml(i.account_number)}</td>
-                    <td>${escapeHtml(i.account_name)}</td>
+                    <td>${drill(i)}</td>
                     <td style="font-size:10px; color:var(--gray-400);">${i.account_type}</td>
                     <td class="amount">${i.total_debit > 0 ? formatCurrency(i.total_debit) : ''}</td>
                     <td class="amount">${i.total_credit > 0 ? formatCurrency(i.total_credit) : ''}</td>
@@ -1093,8 +1311,13 @@ const ReportsPage = {
             // Indirect method (banking, exploratory 2.17.3 W-M6/F18): net
             // income, what moved no cash, the change in working capital;
             // then investing and financing; the net change is the bank's.
+            // An account's row opens its register for the report's dates
+            // (R9); a row the statement makes up (no account_id) stays text.
+            const name = (i) => i.account_id
+                ? ReportsPage._rowLink(`ReportsPage.openDrillDown(${i.account_id},${JSON.stringify(i.account_name)},${JSON.stringify(range.start)},${JSON.stringify(range.end)},null,null,'cash-flow')`, i.account_name, `drill:${i.account_id}`)
+                : escapeHtml(i.account_name);
             const rows = (items, indent) => items.length
-                ? items.map(i => `<tr><td style="padding-left:${indent}px;">${escapeHtml(i.account_name)}</td><td class="amount">${formatCurrency(i.amount)}</td></tr>`).join('')
+                ? items.map(i => `<tr><td style="padding-left:${indent}px;">${name(i)}</td><td class="amount">${formatCurrency(i.amount)}</td></tr>`).join('')
                 : `<tr><td style="padding-left:${indent}px; color:var(--gray-400);">None</td><td></td></tr>`;
             const head = (title, indent = 0) => `<tr><td style="padding-left:${indent}px;"><strong>${title}</strong></td><td></td></tr>`;
             const total = (title, amount) => `<tr style="font-weight:600; background:var(--gray-50);"><td>Total ${title}</td><td class="amount">${formatCurrency(amount)}</td></tr>`;
@@ -1125,10 +1348,13 @@ const ReportsPage = {
 
     // #/reports/1099-summary?year=2025 opens the year's summary straight
     // away (R7); the address takes the year when Generate is clicked.
+    // With vendor_id (from the vendor's page, #238) that vendor's row is
+    // picked out; it rides on the content element and in the address.
     async report1099(prefill) {
         const currentYear = new Date().getFullYear();
         const year = /^\d{4}$/.test((prefill || {}).year || '') ? prefill.year : null;
-        ReportsPage.setAddress('1099-summary', { year });
+        const vendorId = parseInt((prefill || {}).vendor_id, 10) || null;
+        ReportsPage.setAddress('1099-summary', { year, vendor_id: vendorId });
         openModal('1099 Summary', `
             <div class="form-grid" style="margin-bottom:12px;">
                 <div class="form-group"><label for="report-1099-year">Year</label>
@@ -1136,15 +1362,19 @@ const ReportsPage = {
                 <div class="form-group" style="align-self:end;">
                     <button type="button" class="btn btn-primary" onclick="ReportsPage.load1099()">Generate</button></div>
             </div>
-            <div id="report-1099-content"><div style="font-size:11px; color:var(--gray-500);">Select year and click Generate</div></div>
+            <div id="report-1099-content" ${vendorId ? `data-vendor-id="${vendorId}"` : ''}><div style="font-size:11px; color:var(--gray-500);">Select year and click Generate</div></div>
             <div class="form-actions"><button type="button" class="btn btn-secondary" onclick="closeModal()">Close</button></div>`);
-        if (year) await ReportsPage.load1099();
+        if (year) await ReportsPage.load1099(true);
     },
 
-    async load1099() {
+    // first: the view's opening render, the one that may move focus to a
+    // spotlighted vendor row; Generate re-renders with focus left where
+    // it is (R8 review).
+    async load1099(first = false) {
         const year = $('#report-1099-year').value;
-        ReportsPage.setAddress('1099-summary', { year });
         const content = $('#report-1099-content');
+        const vendorId = content.getAttribute('data-vendor-id') || null;
+        ReportsPage.setAddress('1099-summary', { year, vendor_id: vendorId });
         content.innerHTML = '<div style="font-size:11px; color:var(--gray-500);">Loading...</div>';
         try {
             const data = await API.get(`/reports/1099-summary?year=${year}`);
@@ -1152,9 +1382,10 @@ const ReportsPage = {
                 content.innerHTML = '<div class="empty-state"><p>No 1099 vendors found. Flag vendors as 1099 in the Vendors page.</p></div>';
                 return;
             }
+            // A vendor's name opens the vendor's page (R9)
             let rows = data.items.map(i =>
                 `<tr${i.above_threshold ? ' style="background:var(--primary-light);"' : ''}>
-                    <td>${escapeHtml(i.vendor_name)}</td>
+                    <td>${i.vendor_id ? ReportsPage._rowLink(`ReportsPage.openVendor(${i.vendor_id})`, i.vendor_name, `vendor:${i.vendor_id}`) : escapeHtml(i.vendor_name)}</td>
                     <td>${escapeHtml(i.tax_id)}</td>
                     <td>${escapeHtml(i.vendor_1099_type)}</td>
                     <td class="amount">${formatCurrency(i.total_paid)}</td>
@@ -1169,6 +1400,8 @@ const ReportsPage = {
                     <thead><tr><th scope="col">Vendor</th><th scope="col">Tax ID</th><th scope="col">Type</th><th scope="col" class="amount">Total Paid</th><th scope="col">Status</th></tr></thead>
                     <tbody>${rows}</tbody>
                 </table></div>`;
+            const restored = ReportsPage._refocusRow(content);
+            ReportsPage._spotlight(content, { vendor_id: vendorId }, first && !restored);
         } catch (err) { content.innerHTML = `<div style="color:var(--danger);">${escapeHtml(err.message)}</div>`; }
     },
 
@@ -1541,10 +1774,13 @@ ReportsPage.profitLossByJob = async function (prefill) {
 // #/reports/profit-loss-class?class_id=…&start_date=…&end_date=… (R7):
 // opened from it, the class's name comes from the server. `prefill` is the
 // query (period, start_date, end_date) the view starts on.
-ReportsPage.profitLossOfClass = async function (classId, className, prefill) {
+ReportsPage.profitLossOfClass = async function (classId, className, prefill, from = null) {
     classId = parseInt(classId, 10);
     if (!classId) { toast(`No ${T('class')} on this column`, 'error'); return; }
     prefill = prefill || {};
+    // `from` names the view that opened it when it is not the by-class grid
+    // (Fund Balances, #239): the "Back to …" button returns there.
+    const back = from && from !== 'profit-loss-by-class' && ReportsPage._view(from) ? from : null;
     // The picker lists every active class, and this one if it is archived
     // (history keeps it); the type-ahead attaches to it by its name.
     let classes = [];
@@ -1567,7 +1803,7 @@ ReportsPage.profitLossOfClass = async function (classId, className, prefill) {
                 <span id="class-pl-where" class="grid-live" role="status" aria-live="polite"></span>
             </span>
         </div>`;
-    const params = { class_id: classId };
+    const params = { class_id: classId, from: back || undefined };
     await ReportsPage.openPeriodModal(`${T('Profit & Loss')} — ${className || T('Class')}`, "this_year_to_date", async (period, range, p) => {
         const id = parseInt(p.class_id, 10) || classId;
         const qs = `start_date=${range.start}&end_date=${range.end}&class_id=${id}`;
@@ -1588,7 +1824,7 @@ ReportsPage.profitLossOfClass = async function (classId, className, prefill) {
         const subtotal = (title, amount) => `<tr style="font-weight:600; background:var(--gray-50);"><td>${title}</td><td class="amount">${formatCurrency(amount)}</td></tr>`;
         return `<div id="class-pl-body">
             <div style="display:flex; align-items:center; gap:8px; margin-bottom:6px;">
-                ${ReportsPage._backButton('profit-loss-by-class', { period, start_date: range.start, end_date: range.end })}
+                ${ReportsPage._backButton(back || 'profit-loss-by-class', back ? { start_date: range.start, end_date: range.end } : { period, start_date: range.start, end_date: range.end })}
                 ${ReportsPage._exportButtons('profit-loss', qs)}
             </div>
             <p style="margin-bottom:12px; color:var(--gray-500); font-size:12px;">${T('Class')}: <strong>${escapeHtml(data.class_name)}</strong> &middot; ${formatDate(data.start_date)} &mdash; ${formatDate(data.end_date)} &middot; this ${escapeHtml(noun)} only, not the company total</p>
@@ -1610,6 +1846,7 @@ ReportsPage.profitLossOfClass = async function (classId, className, prefill) {
     }, "Dates", false, { reportType: 'profit_loss_class', view: 'profit-loss-class', params, prefill, toolbar });
 };
 
+
 // P&L Unclassified (#235): the class P&L pointed at the system-default
 // class, the end-of-month cleanup list. Its card's address stands in for
 // the class view's (replaced, not pushed, so Back is one step).
@@ -1623,6 +1860,7 @@ ReportsPage.profitLossUnclassified = async function (prefill) {
     }
     await ReportsPage.profitLossOfClass(uncat.id, uncat.name, prefill);
 };
+
 
 // ‹ Prev / Next › through the class picker's list.
 ReportsPage.stepClass = function (delta) {
@@ -1687,12 +1925,33 @@ ReportsPage.financialStatementsPdf = async function (prefill) {
     }, "Dates", false, { view: 'financial-statements', prefill });
 };
 
+// With customer_id (from the customer's page, #238) the API keeps that
+// customer's jobs only: the report says so, its total is labelled as that
+// customer's, and "all jobs" drops the filter in place (address replaced).
 ReportsPage.jobProfitability = async function (prefill) {
+    const params = { customer_id: parseInt((prefill || {}).customer_id, 10) || null };
     await ReportsPage.openPeriodModal(T("Job Profitability"), "this_year_to_date", async (_period, range) => {
-        const data = await API.get(`/reports/job-profitability?start_date=${range.start}&end_date=${range.end}`);
+        const filter = params.customer_id ? `&customer_id=${params.customer_id}` : '';
+        const [data, customer] = await Promise.all([
+            API.get(`/reports/job-profitability?start_date=${range.start}&end_date=${range.end}${filter}`),
+            params.customer_id ? API.get(`/customers/${params.customer_id}`).catch(() => null) : null,
+        ]);
+        const who = customer ? customer.name : (params.customer_id ? `${T('customer')} #${params.customer_id}` : '');
+        const filtered = params.customer_id
+            ? `<div class="hint" style="margin-bottom:8px;" data-filtered="customer">
+                ${escapeHtml(T('Jobs'))} of <strong>${escapeHtml(who)}</strong> only — the totals below are this ${escapeHtml(T('customer'))}'s, not the company's.
+                <a href="javascript:void(0)" onclick="ReportsPage.setParam('customer_id', null)">Show all ${escapeHtml(T('jobs'))}</a>
+              </div>`
+            : '';
         const pct = v => v === null || v === undefined ? '—' : `${v.toFixed(1)}%`;
-        const rows = data.jobs.map(j => `<tr ${j.job_id ? `style="cursor:pointer" onclick="closeModal();App.navigate('#/jobs');JobsPage.showDetails(${j.job_id})"` : ''}>
-            <td>${escapeHtml(j.customer_name || '')}</td>
+        // A job's row opens the job's page (its own address, so Back returns
+        // here); the customer's name opens the customer's page without
+        // taking the row's click (R9). "No job" is no document: text.
+        const customerCell = (j) => j.customer_id
+            ? ReportsPage._rowLink(`event.stopPropagation(); ReportsPage.openCustomer(${j.customer_id})`, j.customer_name || '', `customer:${j.customer_id}`)
+            : escapeHtml(j.customer_name || '');
+        const rows = data.jobs.map(j => `<tr ${j.job_id ? `style="cursor:pointer" onclick="ReportsPage._leaveFrom();closeModal();App.navigate('#/jobs/${j.job_id}')"` : ''}>
+            <td>${customerCell(j)}</td>
             <td>${escapeHtml(j.job_name)}</td>
             <td class="amount">${j.contract_amount !== null && j.contract_amount !== undefined ? formatCurrency(j.contract_amount) : ''}</td>
             <td class="amount">${formatCurrency(j.income)}</td>
@@ -1700,23 +1959,26 @@ ReportsPage.jobProfitability = async function (prefill) {
             <td class="amount" style="font-weight:700;">${formatCurrency(j.net_income)}</td>
             <td class="amount">${pct(j.margin_pct)}</td>
         </tr>`).join('');
-        return `
+        return `${filtered}
             <div style="font-size:11px; color:var(--gray-500); margin-bottom:8px;">
-                ${escapeHtml(data.start_date)} — ${escapeHtml(data.end_date)} · ${Terms.text('"No job" holds untagged activity')} <em>and</em> ${Terms.text('the applied-cost credits behind Job Cost Entries (labor, equipment, overhead applied to jobs), so its costs can be negative and the totals still match the P&L')}
+                ${escapeHtml(data.start_date)} — ${escapeHtml(data.end_date)}${params.customer_id ? '' : ` · ${Terms.text('"No job" holds untagged activity')} <em>and</em> ${Terms.text('the applied-cost credits behind Job Cost Entries (labor, equipment, overhead applied to jobs), so its costs can be negative and the totals still match the P&L')}`}
             </div>
             <div class="table-container"><table>
                 <thead><tr><th scope="col">${T('Customer')}</th><th scope="col">${T('Job')}</th><th scope="col" class="amount">Contract</th><th scope="col" class="amount">${T('Income')}</th>
                 <th scope="col" class="amount">Costs</th><th scope="col" class="amount">Net</th><th scope="col" class="amount">Margin</th></tr></thead>
                 <tbody>${rows.length ? rows : '<tr><td colspan="7">No activity in this period</td></tr>'}</tbody>
                 <tfoot><tr style="font-weight:700; background:var(--gray-50);">
-                    <td colspan="3">Total</td>
+                    <td colspan="3">${params.customer_id ? `Total — ${escapeHtml(who)}` : 'Total'}</td>
                     <td class="amount">${formatCurrency(data.total_income)}</td>
                     <td class="amount">${formatCurrency(data.total_costs)}</td>
                     <td class="amount">${formatCurrency(data.total_net_income)}</td>
                     <td></td>
                 </tr></tfoot>
             </table></div>`;
-    }, "Dates", false, { view: 'job-profitability', prefill });
+    // No row is spotlighted: with customer_id the server already filters
+    // the rows to the customer's jobs, and the first of several would be
+    // "current" for no reason (R8 review).
+    }, "Dates", false, { view: 'job-profitability', params, prefill, spotlight: false });
 };
 
 ReportsPage.jobBudgetVsActual = async function (prefill) {
@@ -1915,7 +2177,12 @@ ReportsPage.fundBalances = async function (prefill) {
         const qs = `start_date=${range.start}&end_date=${range.end}`;
         const d = await API.get(`/reports/fund-balances?${qs}`);
         const keys = ['beginning', 'contributions', 'expenses', 'releases', 'ending', 'unreleased'];
-        const row = (f, style = '') => `<tr style="${style}"><td>${escapeHtml(f.class_name)}${f.donor_name ? `<div style="font-size:10px;color:var(--gray-500)">${escapeHtml(f.donor_name)}</div>` : ''}</td>${keys.map(k => `<td class="amount">${formatCurrency(f[k])}</td>`).join('')}</tr>`;
+        // A fund's name opens the fund's own P&L for the report's dates (R9),
+        // with "Back to Fund Balances"; the Unassigned row has no class
+        const name = (f) => f.class_id
+            ? ReportsPage._rowLink(`ReportsPage.profitLossOfClass(${f.class_id},${JSON.stringify(f.class_name)},${JSON.stringify({ start_date: range.start, end_date: range.end })},'fund-balances')`, f.class_name, `class:${f.class_id}`)
+            : escapeHtml(f.class_name);
+        const row = (f, style = '') => `<tr style="${style}"><td>${name(f)}${f.donor_name ? `<div style="font-size:10px;color:var(--gray-500)">${escapeHtml(f.donor_name)}</div>` : ''}</td>${keys.map(k => `<td class="amount">${formatCurrency(f[k])}</td>`).join('')}</tr>`;
         const rows = d.funds.map(f => row(f)).join('') + (d.unassigned ? row(d.unassigned, 'font-style:italic') : '');
         return `${ReportsPage._exportButtons('fund-balances', qs)}
             <p style="margin-bottom:12px; color:var(--gray-500);">${formatDate(d.start_date)} &mdash; ${formatDate(d.end_date)} · restricted ${T('classes')} only</p>

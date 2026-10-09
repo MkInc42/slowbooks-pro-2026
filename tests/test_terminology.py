@@ -403,10 +403,15 @@ def test_no_unwrapped_business_words_in_spa_text():
     applyTerminology — see test_route_labels_are_rewritten_at_boot); anything
     else is a leak the nonprofit switch will show."""
     keys = set(NONPROFIT)
+    # the App.routes table: from "routes: {" to the first line that closes
+    # it at the object's indent (the table grows as pages get addresses)
+    lines = (ROOT / "app/static/js/app.js").read_text(encoding="utf-8").splitlines()
+    start = next(i for i, ln in enumerate(lines, 1) if ln.strip() == "routes: {")
+    end = next(i for i, ln in enumerate(lines, 1) if i > start and ln == "    },")
     leaks = [
         h
         for h in _sweep_hits()
-        if not (h[0] == "app.js" and h[1] < 60 and h[2] in keys)
+        if not (h[0] == "app.js" and start < h[1] < end and h[2] in keys)
     ]
     assert leaks == [], "unwrapped business words in SPA text:\n" + "\n".join(
         f"  {f}:{n}: {t}" for f, n, t in leaks

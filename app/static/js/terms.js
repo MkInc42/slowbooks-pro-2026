@@ -50,6 +50,7 @@ const TERMS_NONPROFIT = {
     "Jobs": "Grants",
     "Job Costs": "Grant Costs",
     "Job Cost Entries": "Grant Cost Entries",
+    "Job Cost Entry": "Grant Cost Entry",
     "Job Budget vs Actual": "Grant Budget vs Actual",
     "Jobs: Budget vs Actual": "Grants: Budget vs Actual",
     "Job Profitability": "Grant Income & Costs",
