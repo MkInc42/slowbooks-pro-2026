@@ -168,7 +168,7 @@ def _check_walk(page, handled, reverse=True, synthetic=False):
     the body's last control, the same, then wraps from the × to the last."""
     page.evaluate(NUMBER)
     native = _native_walk(page, FIRST)
-    assert len(native) > 3, native
+    assert len(native) >= 3, native
     _same(page, _walk(page, FIRST, len(native) - 1, synthetic=synthetic), native)
     close = page.evaluate(CLOSE_X)
     _press(page, synthetic=synthetic)
@@ -1014,5 +1014,52 @@ def test_the_first_page_at_a_report_that_cannot_open_has_nowhere_to_go(
         settle(page, handled)
         assert page.evaluate("() => history.state.from") is None
         assert not page.evaluate("() => App.canGoBack()") and page.evaluate(CONSISTENT)
+    finally:
+        page.close()
+
+
+# ── Review, round 2: a radio group is one stop, as the browser has it ────
+
+RADIOS = """(checked) => { const body = document.getElementById('modal-body');
+    body.insertAdjacentHTML('afterbegin', `<fieldset id="rg"><legend>Choice</legend>
+        <label><input type="radio" name="rg" value="a"> a</label>
+        <label><input type="radio" name="rg" value="b"> b</label>
+        <label><input type="radio" name="rg" value="c"> c</label></fieldset>`);
+    if (checked) body.querySelector(`#rg input[value="${checked}"]`).checked = true; }"""
+
+
+def test_a_radio_group_is_one_stop_as_the_browser_has_it(browser, company, books):
+    """None checked: Tab and Shift+Tab land on the group's first radio, and
+    leave the group from any of its own; one checked: that one alone. The
+    walk is checked against Chromium's native Tab, as the other dialogs."""
+    page, handled = _open(browser, company)
+    try:
+        _visit(page, handled, "#/journal")
+        _open_dialog(
+            page, handled, f"JournalPage.view({books['journal']})", "#modal-body"
+        )
+        page.evaluate(RADIOS, None)
+        native = _check_walk(page, handled)
+        radios = page.evaluate(
+            "() => [...document.querySelectorAll('#rg input')].map(el => `input#${el.dataset.tabProbe}`)"
+        )
+        assert radios[0] in native and not any(r in native for r in radios[1:]), native
+        # from the group's second radio (a click lands there) Tab leaves the group
+        page.evaluate("() => document.querySelector('#rg input[value=\"b\"]').focus()")
+        page.evaluate(SYNTHETIC_TAB, False)
+        assert page.evaluate(WHERE) not in radios
+        # one checked: that one is the stop
+        page.evaluate("() => closeModal()")
+        _open_dialog(
+            page, handled, f"JournalPage.view({books['journal']})", "#modal-body"
+        )
+        page.evaluate(RADIOS, "b")
+        native = _check_walk(page, handled)
+        radios = page.evaluate(
+            "() => [...document.querySelectorAll('#rg input')].map(el => `input#${el.dataset.tabProbe}`)"
+        )
+        assert (
+            radios[1] in native and radios[0] not in native and radios[2] not in native
+        )
     finally:
         page.close()

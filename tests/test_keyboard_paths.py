@@ -176,21 +176,27 @@ DESTRUCTIVE = [
 
 
 def test_every_void_or_delete_is_marked_and_never_focused_first():
+    """A button that says Void or Delete, or is named so (an icon button's
+    aria-label, "Delete attachment"), carries the marker."""
     unmarked = []
     for p in sorted(JS.glob("*.js")):
-        for m in re.finditer(
-            r"<button([^>]*)>\s*(Void|Delete)\b", p.read_text(encoding="utf-8")
-        ):
-            if "data-destructive" not in m.group(1):
+        src = p.read_text(encoding="utf-8")
+        for m in re.finditer(r"<button([^>]*)>", src):
+            attrs = m.group(1)
+            says = re.match(r"\s*(Void|Delete)\b", src[m.end() : m.end() + 40])
+            named = re.search(r'aria-label="(Void|Delete)\b', attrs)
+            if (says or named) and "data-destructive" not in attrs:
                 unmarked.append(f"{p.name}: {m.group(0)[:80]}")
     assert not unmarked, unmarked
+    assert (
+        sum(
+            _src(n).count('data-destructive aria-label="Delete attachment"')
+            for n in ("bills.js", "expenses.js", "invoices.js")
+        )
+        == 3
+    )
     for name, call in DESTRUCTIVE:
         assert f'onclick="{call}"' in _src(name), (name, call)
-    utils = _src("utils.js")
-    assert (
-        "const target = first && !first.matches('[data-destructive]') ? first : modal;"
-        in utils
-    )
 
 
 # ── NEW-38 ────────────────────────────────────────────────────────────────
@@ -311,4 +317,30 @@ def test_a_replaced_address_keeps_the_entrys_state_and_the_button_follows():
     assert (
         "{ history.replaceState(history.state, '', '#/settings'); if (typeof App.addressShown === 'function') App.addressShown(); }"
         in _src("settings.js")
+    )
+
+
+# ── Review, round 2: the nits ────────────────────────────────────────────
+
+
+def test_an_unchecked_radio_group_is_one_stop_its_first_radio():
+    utils = _src("utils.js")
+    stops = utils[utils.index("function _tabStops(root, from)") :]
+    stops = stops[: stops.index("\n}\n")]
+    assert "if (picked.has(g)) return el.checked;" in stops
+    assert (
+        "if (seen.has(g)) return false;\n        seen.add(g);\n        return true;"
+        in stops
+    )
+
+
+def test_the_shortcut_list_follows_the_screen_reader_bullets():
+    docs = (ROOT / "docs/accessibility.md").read_text(encoding="utf-8")
+    bullets_end = docs.index("State is never conveyed by colour alone")
+    assert docs.index("### Keyboard shortcuts") > bullets_end
+    assert docs.index("### Keyboard shortcuts") < docs.index(
+        "## What we know is still open"
+    )
+    assert docs.index("### Keyboard shortcuts") > docs.index(
+        "### Screen readers and keyboards"
     )

@@ -64,6 +64,18 @@ or Alt+D.*
   report's row to a customer's page, a class's page to its P&L) have no
   "Back to …" button; this covers them all.
 
+- **Notifications** ("Invoice saved") announce through a polite live region.
+- **Every data table declares its column headers** (`scope="col"`).
+- **Icon-only buttons** (remove a line, delete an attachment, close a dialog)
+  carry accessible names.
+- **State is never conveyed by colour alone:** an invoice reads Paid, Draft or
+  Sent; a reconciliation reads "Balanced" or "Out of balance".
+
+![The New Invoice dialog with keyboard focus in the Date field](../screenshots/a11y-dialog.png)
+
+*New Invoice: focus is inside the dialog and moves from field to field with
+Tab.*
+
 ### Keyboard shortcuts
 
 | Keys | Does |
@@ -82,17 +94,6 @@ or Alt+D.*
 On a Mac the Alt key is Option; the letter shortcuts go by the key, not
 the character Option types, so Option-D toggles the theme even though it
 types "∂" (v2.22.0).
-- **Notifications** ("Invoice saved") announce through a polite live region.
-- **Every data table declares its column headers** (`scope="col"`).
-- **Icon-only buttons** (remove a line, delete an attachment, close a dialog)
-  carry accessible names.
-- **State is never conveyed by colour alone:** an invoice reads Paid, Draft or
-  Sent; a reconciliation reads "Balanced" or "Out of balance".
-
-![The New Invoice dialog with keyboard focus in the Date field](../screenshots/a11y-dialog.png)
-
-*New Invoice: focus is inside the dialog and moves from field to field with
-Tab.*
 
 ## What we know is still open
 

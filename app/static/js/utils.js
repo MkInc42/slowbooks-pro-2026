@@ -137,20 +137,25 @@ function _drawn(el) {
 // else as the document has it. What the browser skips, this skips: a
 // disabled control (a disabled fieldset's too), tabindex="-1" (a
 // type-ahead's hidden select), anything not drawn (a folded chooser, a
-// hidden input), and the radios of a group that has a checked one, bar
-// that one. A group with none checked is a stop once: the whole of it is
-// stepped over from one of its own (`from`, the control Tab leaves).
+// hidden input), and the radios of a group bar one: the checked one, or
+// the first where none is checked (Chromium lands there from either
+// side). From one of its own (`from`, the control Tab leaves) the whole
+// group is stepped over.
 function _tabStops(root, from) {
     const radio = (el) => (el.tagName === 'INPUT' && el.type === 'radio' && el.name) ? el.name : null;
     const all = [...root.querySelectorAll(_TAB_SEL)]
         .filter(el => el.tabIndex >= 0 && !el.matches(':disabled') && _drawn(el));
     const picked = new Set(all.filter(el => radio(el) && el.checked).map(radio));
     const leaving = from ? radio(from) : null;
+    const seen = new Set();
     const stops = all.filter(el => {
         const g = radio(el);
         if (!g) return true;
         if (g === leaving) return false;
-        return picked.has(g) ? el.checked : true;
+        if (picked.has(g)) return el.checked;
+        if (seen.has(g)) return false;
+        seen.add(g);
+        return true;
     });
     const ahead = stops.filter(el => el.tabIndex > 0).sort((a, b) => a.tabIndex - b.tabIndex);
     return ahead.concat(stops.filter(el => el.tabIndex === 0));
