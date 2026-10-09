@@ -65,7 +65,10 @@ class (#236); the Chart of Accounts opens the register (#240). Every report
 row goes somewhere and the customer and vendor pages open their reports
 (#238, #239); the drill-down re-dates in place and every posting links to
 its document (#241); the per-line Class cell for every company, with a
-warning for a transaction saved without one (#243).
+warning for a transaction saved without one (#243). And from the gate: a
+← Back in the toolbar (⌘[ / Alt+←), Tab reaching every control in a
+dialog on a Mac, a job that is always its customer's, and a closed report
+that stays closed.
 
 **v2.21 — Three things you'd reach for.** Click a vendor for its own
 page, with its bills, payments, credits and what's owed (#223). Edit a

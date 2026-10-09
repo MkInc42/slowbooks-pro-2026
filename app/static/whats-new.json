@@ -8,7 +8,8 @@
       "Every report view has an address, so a report, a class P&L or a drill-down can be bookmarked, pasted and reloaded, and Back returns where you were (#237)",
       "Every report row goes somewhere: aging, Income by Customer, 1099, Trial Balance, Cash Flow and Fund Balances rows open their page or drill-down, and the customer and vendor pages open their reports (#238, #239)",
       "The drill-down re-dates and re-scopes in place, shows Payee, cleared and void, and every posting links to its document; the General Ledger shows and filters by class; the Chart of Accounts opens the register (#241, #236, #240)",
-      "The per-line Class cell for every company, and a setting that warns when a transaction is saved without a class (#243)"
+      "The per-line Class cell for every company, and a setting that warns when a transaction is saved without a class (#243)",
+      "A ← Back in the toolbar (⌘[ on a Mac, Alt+← elsewhere), Tab reaching every control in a dialog, Escape no longer losing an invoice from a date field, and a job that is always its customer's — from the release gate's findings"
     ]
   },
   "2.21.0": {

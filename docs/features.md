@@ -95,6 +95,12 @@ The register is the ledger account (v2.10, issue #114). Full guide: [docs/bankin
 - **Customer Statements** — PDF statement: one list in date order (invoices, payments, credit memos), each line describing its document, with a running balance in home currency
 - **Schedule C (Tax)** — Generate Schedule C data from P&L with configurable account-to-tax-line mappings, matched to exact line ids and following the seeded chart (cost of goods on line 4; income 1, other expense 27a when unmapped); net profit equals the P&L. Export as CSV
 
+## Keyboard, Back and dialogs
+- **Back, within the app** (v2.22.0) — a ← button in the toolbar, with ⌘[ on a Mac and Alt+← elsewhere, goes back through the app's history and is lit only while an app page is behind; inert over a plain form so no half-typed form is lost, live over a report, a document or a page
+- **Tab reaches every control in a dialog** (v2.22.0) — buttons and links included, on every browser and whatever the Mac's keyboard setting; Escape in a date field leaves the field first; no dialog opens with focus on Void or Delete
+- **Shortcuts go by the key** (v2.22.0) — Option-D/N/P/Q/H on a Mac work though they type "∂", "˜", "œ", "˙", and never while typing in a field; ⌘K finds like Ctrl+K
+- **A closed report stays closed** (v2.22.0) — closing a report or a customer's page puts the page under it back on the bar; the app's own moves (a save, a void, Mark Sent) keep the address and bring the page or document back
+
 ## Classes
 - **Classes page** (v2.22.0) — `#/classes`, outside Settings: every class with its income, cost of goods, expenses and net for a period (Active / Archived / All); every class together is the Profit & Loss for the dates, and a filtered list says what it totals
 - **A class's own page** (v2.22.0) — `#/classes/<id>`: Overview with the class's P&L account by account, its net income and share of the company's, and links into its Profit & Loss and into P&L by Class landing on its column; Transactions with every posted line tagged to the class across every account, each opening its document; the Uncategorized page is the cleanup list; archived classes keep their page; fund fields in nonprofit mode. The global search finds classes and opens the page. Rename and archive stay in Settings
@@ -481,14 +487,14 @@ All endpoints under `/api/`. Swagger docs at `/docs`. 300+ routes across 50 rout
 | `/api/customers` | GET, POST, PUT, DELETE | Customer management |
 | `/api/vendors` | GET, POST, PUT, DELETE | Vendor management |
 | `/api/items` | GET, POST, PUT, DELETE | Items & services |
-| `/api/invoices` | GET, POST, PUT | Invoice CRUD with line items |
+| `/api/invoices` | GET, POST, PUT | Invoice CRUD with line items; another customer's `job_id` on the header or a line is refused (400), a job that does not exist 404; an edit touching neither customer, job nor lines saves as it is (v2.22.0) |
 | `/api/invoices/{id}/pdf` | GET | Generate invoice PDF |
 | `/api/invoices/{id}/void` | POST | Void with reversing journal entry |
 | `/api/invoices/{id}/send` | POST | Mark invoice as sent |
 | `/api/invoices/{id}/email` | POST | Email invoice as PDF attachment |
 | `/api/invoices/{id}/duplicate` | POST | Duplicate invoice as new draft |
 | `/api/invoices/{id}/print-preview` | GET | Browser print preview (HTML) |
-| `/api/estimates` | GET, POST, PUT | Estimate CRUD with line items |
+| `/api/estimates` | GET, POST, PUT | Estimate CRUD with line items; a job must be the customer's, header or line (v2.22.0) |
 | `/api/estimates/{id}/convert` | POST | Convert estimate to invoice |
 | `/api/estimates/{id}/print-preview` | GET | Browser print preview (HTML) |
 | `/api/payments` | GET, POST | Record payments with invoice allocation |
@@ -518,7 +524,7 @@ All endpoints under `/api/`. Swagger docs at `/docs`. 300+ routes across 50 rout
 | `/api/bills/{id}/pdf · /print-preview` | GET | Bill PDF / print page |
 | `/api/bill-payments` | GET, POST | Pay vendor bills with allocation (a payment pays its own vendor's bills only); `?bill_id=` lists a bill's payments; `class_id`/`job_id` are refused (they were accepted and dropped; v2.22.0) |
 | `/api/bill-payments/{id}` | GET | One bill payment with what it paid |
-| `/api/credit-memos` | GET, POST | Credit memo CRUD |
+| `/api/credit-memos` | GET, POST | Credit memo CRUD; a job must be the customer's (v2.22.0) |
 | `/api/credit-memos/{id}/apply` | POST | Apply credit to that customer's invoices |
 | `/api/credit-memos/{id}/pdf · /print-preview` | GET | Credit memo PDF / print page |
 | `/api/vendor-credits` | GET, POST | Vendor credit list and create |
@@ -528,7 +534,7 @@ All endpoints under `/api/`. Swagger docs at `/docs`. 300+ routes across 50 rout
 ### Productivity
 | Endpoint | Methods | Description |
 |----------|---------|-------------|
-| `/api/recurring` | GET, POST, PUT, DELETE | Recurring invoice templates |
+| `/api/recurring` | GET, POST, PUT, DELETE | Recurring invoice templates; a job must be the customer's (v2.22.0) |
 | `/api/recurring/generate` | POST | Generate due recurring invoices |
 | `/api/batch-payments` | POST | Batch payment application |
 
@@ -690,6 +696,7 @@ All read endpoints accept `?period=month|quarter|year` (or `mtd/qtd/ytd`), or ex
 | `/analytics` | GET | Backwards-compat 307 redirect to the SPA hash route `/#/analytics` |
 
 ## Jobs (Customer:Job / Projects)
+- **A job is its customer's** (v2.22.0) — the Job picker on an invoice, estimate or sales receipt lists the chosen customer's jobs and "No job", follows a change of customer and clears a job that stops matching; the API refuses another customer's job on an invoice, sales receipt, credit memo, estimate, recurring schedule or in-kind gift (the header's and each line's) with 400 "Job X belongs to a different customer than this invoice…", a job that does not exist with 404; an edit that touches neither customer, job nor lines saves as it is; a copy carries only the customer's jobs and says what it left off (`jobs_left_off`); a job carried by documents can't move to another customer
 
 - A job belongs to one customer; status, number, type, dates, site address,
   contract amount. Managed on the Jobs page or from the Customer Center.

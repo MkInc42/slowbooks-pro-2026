@@ -134,6 +134,79 @@ Bills offers none); a body carrying them is refused.
 new route's label); a job in the by-job chooser, picker and headings has one
 name; every amount in the plain and per-class P&L CSVs has two decimals.
 
+**From the release gate's first round** (macOS NEW-23–NEW-41, Windows W-1, W-2
+— every one fixed, the older ones included):
+
+- **Back, within the app** (NEW-30). The desktop window has no Back of
+  its own, and some hops (a report's row to a customer's page, a class's
+  page to its P&L, the chart to a register) have no "Back to …" button. A
+  ← button in the toolbar, with ⌘[ on a Mac and Alt+← elsewhere, goes back
+  through the app's history, and is lit only while an app page is behind
+  (the router's own record, not `history.length`). Over a plain form (New
+  Invoice, Edit Customer) it is inert, so no half-typed form is lost to
+  one key; over a report, a document or a page it is live.
+- **Dialogs and the keyboard** (NEW-25, NEW-32, NEW-33). Tab inside a
+  dialog reaches every control, buttons and links included, on every
+  browser and whatever the Mac's keyboard setting: the dialog moves focus
+  itself in the order the browser would. Escape in a date field leaves the
+  field (after its calendar), and the next Escape closes the dialog, so an
+  unsaved invoice is not lost to one key (on Chromium and Windows the
+  native picker swallows the first Escape, so a date field takes two). No
+  dialog opens with focus on Void or Delete; one whose first control undoes
+  something takes focus itself and reads its title.
+- **The Alt shortcuts work from a Mac keyboard** (NEW-41): Option-D, N,
+  P, Q and H go by the key, not the "∂", "˜", "œ", "˙" Option types — and
+  never while typing in a field, where the character goes through; ⌘K
+  finds, as Ctrl+K does.
+- **A closed report gives its address back** (NEW-23). Closing a report
+  (Close, ×, Escape) leaves the page under it on the bar, so the app's
+  refreshes, a reload or Back no longer reopen it; the same for a
+  customer's or vendor's page. The app's own moves keep the address: a
+  customer's page comes back after an edit or a new invoice from it, and
+  an invoice opened by its address comes back marked sent.
+- **Dates in an address** (NEW-24, NEW-35). A date that is not one shows
+  the date the report used in its box; From after To, typed or in an
+  address, is refused with a note and the dates before it are kept; a
+  register's and a job page's address drop a refused date.
+- **The grid's chooser** (NEW-26, NEW-28, W-1). A chosen class or job with
+  no activity in the period is no longer drawn as a column of zeros unless
+  "Show … with no activity" is on; when nothing chosen has activity the
+  grid says so, with "Show every class"; the note names the empty chosen
+  ones (a few, then "and n more") and the chooser's count is of its ticks.
+- **Saved Reports** (NEW-27) lists each report by its own title and the
+  class, job or account it was saved on.
+- **The exports say what they are** (NEW-29, NEW-34): a class's P&L CSV
+  reads "Class: X only, not the company total", and a class's General
+  Ledger CSV names the class on its preamble and its brought-forward rows.
+- **A class's share** (NEW-31) is a percentage only when both nets are in
+  the black; otherwise the company's figure is said beside the class's.
+- **Drill-down lines** (NEW-40) read "Expense #2220", "Bill payment #3",
+  "Journal entry #2224": the app's words, numbered by the document the
+  link opens, not by its vendor.
+- **Named for its line** (NEW-37): a line's Class (and a nonprofit's
+  Function) cell is "Class, line 2", as the cells beside it. **Reachable
+  rows** (NEW-38): the customer page's invoice numbers and payment dates,
+  and the vendor page's bills and payments, are links. **Announced**
+  (NEW-39): the drill-down's "3 of 23: 1000 - Checking" is a status.
+- **A job is its customer's** (NEW-36, older than this release). The Job
+  picker narrowed its list only when the hidden select got focus, which
+  the type-ahead never gives it, so an invoice could carry another
+  customer's job and P&L by Job counted it there. The picker lists the
+  customer's jobs the moment the customer is chosen and clears a job that
+  stops matching; the API refuses another customer's job on every customer
+  document (invoice, sales receipt, credit memo, estimate, recurring
+  schedule, in-kind gift; the header's and each line's) with 400 "Job X
+  belongs to a different customer than this invoice — clear the Job field
+  or pick one of this customer's", and a job that does not exist with 404;
+  an edit that touches neither customer, job nor lines saves as it is, so
+  old books are not blocked; a copy (convert, duplicate, a recurring run)
+  carries only the customer's jobs and says what it left off; a job
+  carried by documents can't move to another customer; a converted
+  estimate posts each line's job as create does. The QA fixture seeds each
+  invoice's job from its own customer's.
+- Tests: the bakery's books fixture lives in `conftest.py`, so the six
+  report-link tests run on Windows and macOS CI (W-2).
+
 No schema migration. 555 operations.
 
 ### v2.21.0 — Three things you'd reach for
