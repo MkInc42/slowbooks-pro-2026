@@ -539,10 +539,15 @@ const ReportsPage = {
             // the bank register does.
             const rows = (data.entries || []).map(e => {
                 const link = e.source_link || (e.transaction_id ? `/#/journal/${e.transaction_id}` : null);
-                const num = e.source_link && e.source_id != null ? e.source_id : e.transaction_id;
+                // The line is named in the app's words and numbered by the
+                // document its link opens (the last segment of the address):
+                // an expense's source_id is its vendor, so two of Deb's
+                // expenses both read "expense #6" (NEW-40).
+                const m = link ? /\/(\d+)$/.exec(link) : null;
+                const num = m ? m[1] : e.transaction_id;
                 const src = link
-                    ? `<a href="${escapeHtml(link)}" style="color:var(--text-link); text-decoration:none;">${escapeHtml(e.source_type || 'journal')} #${num}</a>`
-                    : escapeHtml(e.source_type || '');
+                    ? `<a href="${escapeHtml(link)}" style="color:var(--text-link); text-decoration:none;">${escapeHtml(sourceWord(e.source_type || 'journal'))} #${num}</a>`
+                    : (e.source_type ? escapeHtml(sourceWord(e.source_type)) : '');
                 const mark = e.reconciliation_id ? 'R' : (e.cleared ? '✓' : '');
                 return `<tr${e.voided ? ' class="row--void" style="color:var(--text-muted); text-decoration:line-through;"' : ''}>
                     <td>${formatDate(e.date)}</td>

@@ -796,7 +796,7 @@ def test_the_drill_down_shows_what_the_register_sends_and_links_a_job_cost(
             f'#drilldown-body a[href="/#/job-costs/{books["job_cost"]}"]'
         )
         assert link.count() == 1
-        assert link.text_content().strip() == f"job_cost #{books['job_cost']}"
+        assert link.text_content().strip() == f"Job cost #{books['job_cost']}"
         link.click()
         page.wait_for_function(
             "() => document.getElementById('modal-title').textContent.startsWith('Job Cost ')"
@@ -847,5 +847,61 @@ def test_a_saved_drill_down_reopens_with_its_account_and_period(
         assert q["account_id"] == str(cogs["id"]) and q["period"] == "last_month"
         assert page.input_value("#report-period-select") == "last_month"
         assert page.get_by_role("button", name="Back to Trial Balance").count() == 1
+    finally:
+        page.close()
+
+
+def test_a_drill_down_line_is_named_in_the_apps_words_and_numbered_by_its_document(
+    browser, company, books
+):
+    """A line's label was `source_type #source_id`, and an expense's
+    source_id is its vendor, so two expenses read "expense #6"; a bill
+    payment, a card charge or a manual journal read as a raw key (NEW-40).
+    The label now carries the app's word and the number of the document
+    the link opens; the links themselves are unchanged."""
+    cash = _account(company, "1000")
+    accounts = {
+        a["account_number"]: a["id"] for a in company.get("/api/accounts").json()
+    }
+    r = company.post(
+        "/api/journal",
+        json={
+            "date": "2026-09-16",
+            "description": "till float",
+            "lines": [
+                {"account_id": accounts["1000"], "debit": "40", "credit": "0"},
+                {"account_id": accounts["4000"], "debit": "0", "credit": "40"},
+            ],
+        },
+    )
+    assert r.status_code in (200, 201), r.text
+    page, handled = _open_at(
+        browser,
+        company,
+        f"#/reports/account-transactions?account_id={cash['id']}&start_date={SEPT[0]}&end_date={SEPT[1]}",
+    )
+    try:
+        _drill(page)
+        labels = page.eval_on_selector_all(
+            "#drilldown-body tbody a",
+            "els => els.map(a => [a.textContent.trim(), a.getAttribute('href')])",
+        )
+        assert labels
+        for text, href in labels:
+            n = href.rsplit("/", 1)[1]
+            assert text.endswith(f" #{n}"), (text, href)
+            word = text[: -len(f" #{n}")]
+            assert word[0].isupper() and "_" not in word, text
+        expenses = [(t, h) for t, h in labels if h.startswith("/#/expenses/")]
+        assert len(expenses) >= 2
+        assert len({t for t, _ in expenses}) == len(
+            expenses
+        ), "each expense is numbered by its own document, not its vendor"
+        assert any(t.startswith("Expense #") for t, _ in expenses)
+        assert any(t.startswith("Expense void #") for t, _ in expenses)
+        assert any(
+            t.startswith("Journal entry #") and h.startswith("/#/journal/")
+            for t, h in labels
+        )
     finally:
         page.close()

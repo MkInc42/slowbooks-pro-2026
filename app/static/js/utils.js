@@ -45,6 +45,35 @@ function formatDate(dateStr) {
     return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
 }
 
+// A posting's kind in the app's words rather than its source_type key: a
+// drill-down line says "Bill payment #3", "Card charge #2223", "Journal
+// entry #2224" (NEW-40). A void, an edit or an applied payment says so
+// after the document's word; a key nobody listed is spelled out.
+function sourceWord(type) {
+    const words = {
+        invoice: () => T('Invoice'), bill: 'Bill', payment: 'Payment', bill_payment: 'Bill payment',
+        vendor_credit: 'Vendor credit', credit_memo: 'Credit memo', sales_receipt: 'Sales receipt',
+        journal: 'Journal entry', manual_journal: 'Journal entry', manual: 'Journal entry',
+        expense: 'Expense', deposit: 'Deposit', cc_charge: 'Card charge', transfer: 'Transfer',
+        bank_entry: 'Bank entry', opening_balance: 'Opening balance', check: 'Check',
+        job_cost: () => `${T('Job')} cost`, payroll: 'Pay run', pto: 'Time off accrual',
+        in_kind_gift: 'In-kind gift', restriction_release: 'Release from restriction',
+        functional_allocation: 'Functional allocation', late_fee: 'Late fee',
+        adjustment: 'Inventory adjustment', sales_tax_payment: 'Sales tax payment',
+        iif_import: 'IIF import', depreciation: 'Depreciation',
+        asset_acquisition: 'Asset acquisition', asset_disposal: 'Asset disposal',
+        qbo_ledger: 'QuickBooks import', qbo_journal: 'QuickBooks journal', qbo_cogs: 'QuickBooks cost of goods',
+    };
+    const t = String(type || 'journal');
+    for (const [end, word] of [['_void', 'void'], ['_edit', 'edit'], ['_apply', 'applied']]) {
+        if (t.endsWith(end) && t.length > end.length) return `${sourceWord(t.slice(0, -end.length))} ${word}`;
+    }
+    const w = words[t];
+    if (w) return typeof w === 'function' ? w() : w;
+    const plain = t.replace(/_/g, ' ');
+    return plain.charAt(0).toUpperCase() + plain.slice(1);
+}
+
 // The dates an address (or a saved report's parameters) carries:
 // start_date and end_date must each be a date, and From must not be after
 // To. What is not is said so and comes back as '' — ignored, so the page
