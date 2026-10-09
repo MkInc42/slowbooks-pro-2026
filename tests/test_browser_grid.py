@@ -156,6 +156,22 @@ def _open_at(browser, client, page_hash, width=1280, height=800):
     return page, handled
 
 
+def _type_to_pick(page, box, typed, name):
+    """Type into a type-ahead box and take its match with Enter. A click
+    opens the whole list first, so an option being listed is not the typed
+    match being listed: the wait is for the list to hold the one match,
+    highlighted (aria-selected), which is what Enter takes."""
+    box.click()
+    page.keyboard.type(typed)
+    page.wait_for_function(
+        "(name) => { const l = document.querySelectorAll('#cbx-listbox [role=option]');"
+        " return l.length === 1 && l[0].textContent.trim() === name"
+        " && l[0].getAttribute('aria-selected') === 'true'; }",
+        arg=name,
+    )
+    page.keyboard.press("Enter")
+
+
 def _hash(page):
     return page.evaluate("location.hash")
 
@@ -230,10 +246,7 @@ def test_go_to_class_picks_a_column_and_prev_next_step_through_them(
         page.wait_for_selector("#report-content .pivot-grid")
         picker = page.get_by_role("combobox", name="Go to class")
         assert picker.count() == 1, "the type-ahead attached to the picker, named"
-        picker.click()
-        page.keyboard.type("Site")
-        page.wait_for_selector("#cbx-listbox [role='option']")
-        page.keyboard.press("Enter")
+        _type_to_pick(page, picker, "Site", "Site Prep")
         page.wait_for_function(f"({LIVE})() === 'Column 12 of 12: Site Prep'")
         assert page.evaluate(CURRENT_HEAD).strip() == "Site Prep"
         s = page.evaluate(SCROLL)
@@ -313,10 +326,7 @@ def test_the_keyboard_moves_the_column_and_enter_opens_the_class(
         page.get_by_role("button", name="Previous class").click()
         page.wait_for_function(f"({TITLE})() === 'Profit & Loss — Roofing'")
         # the picker itself
-        pick.click()
-        page.keyboard.type("Conc")
-        page.wait_for_selector("#cbx-listbox [role='option']")
-        page.keyboard.press("Enter")
+        _type_to_pick(page, pick, "Conc", "Concrete")
         page.wait_for_function(f"({TITLE})() === 'Profit & Loss — Concrete'")
         assert _query(_hash(page))["class_id"] == str(divisions["Concrete"])
         body = page.inner_text("#class-pl-body")
