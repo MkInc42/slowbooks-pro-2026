@@ -858,3 +858,35 @@ def test_inside_a_field_an_alt_letter_is_the_plain_letter_alone(
         page.evaluate(MAC, False)
     finally:
         page.close()
+
+
+# ── Review, round 2: Tab into a textarea keeps the caret ─────────────────
+
+BEFORE = """(sel) => { const m = document.getElementById('modal'), el = document.querySelector(sel);
+    const stops = _tabStops(m, null); stops[stops.indexOf(el) - 1].focus(); }"""
+SELECTION = "(sel) => { const el = document.querySelector(sel); return [el.selectionStart, el.selectionEnd, el.value.length]; }"
+
+
+def test_tab_into_a_textarea_keeps_the_caret_and_into_a_text_box_selects(
+    browser, company, books
+):
+    page, handled = _open(browser, company)
+    try:
+        _visit(page, handled, "#/invoices")
+        _open_dialog(page, handled, "InvoicesPage.showForm()", "#inv-lines tr")
+        page.fill("#modal textarea", "two lines\nof notes")
+        page.fill("#modal .line-desc", "Rounding probe")
+        # the handler's Tab into the notes: no selection (the browser's own
+        # Tab selects nothing in a textarea, and a note must not vanish)
+        page.evaluate(BEFORE, "#modal textarea")
+        page.evaluate(SYNTHETIC_TAB, False)
+        assert page.evaluate("() => document.activeElement.tagName") == "TEXTAREA"
+        start, end, _ = page.evaluate(SELECTION, "#modal textarea")
+        assert start == end
+        # into a text box, its words selected, as the browser's Tab has it
+        page.evaluate(BEFORE, "#modal .line-desc")
+        page.evaluate(SYNTHETIC_TAB, False)
+        assert page.evaluate("() => document.activeElement.className") == "line-desc"
+        assert page.evaluate(SELECTION, "#modal .line-desc") == [0, 14, 14]
+    finally:
+        page.close()

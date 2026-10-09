@@ -48,6 +48,14 @@ def test_the_dialogs_tab_is_walked_in_script_in_the_browsers_order():
     )
     # the dialog's first control is found the same way
     assert "_tabStops($('#modal-body'), null)[0]" in utils
+    # a text box's words are selected on the way in, a textarea's are not
+    tab_to = utils[utils.index("function _tabTo(el)") :]
+    tab_to = tab_to[: tab_to.index("\n}\n")]
+    assert (
+        "el.tagName === 'INPUT' && /^(text|search|url|tel|password|email|number)$/.test(el.type)"
+        in tab_to
+    )
+    assert "TEXTAREA" not in tab_to
 
 
 # ── NEW-33 ────────────────────────────────────────────────────────────────

@@ -176,11 +176,12 @@ function escapeLeavesPicker(e) {
     return true;
 }
 
-// Focus as Tab gives it: a text box's words selected, as the browser does.
+// Focus as Tab gives it: a text box's words selected, as the browser
+// does; a textarea keeps its caret (the browser selects nothing there,
+// and a note being edited must not vanish under the next keystroke).
 function _tabTo(el) {
     try { el.focus(); } catch (e) { return; }
-    const t = el.tagName;
-    if (t === 'TEXTAREA' || (t === 'INPUT' && /^(text|search|url|tel|password|email|number)$/.test(el.type))) {
+    if (el.tagName === 'INPUT' && /^(text|search|url|tel|password|email|number)$/.test(el.type)) {
         try { el.select(); } catch (e) { /* not selectable */ }
     }
 }
