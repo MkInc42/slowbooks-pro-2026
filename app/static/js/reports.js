@@ -218,20 +218,28 @@ const ReportsPage = {
     async openView(name, params) {
         const view = ReportsPage._view(name);
         if (!view) {
-            history.replaceState(null, '', '#/reports');
+            ReportsPage._addressReportCenter();
             toast(`There is no report called "${name}"`, 'error');
             return;
         }
         try {
             await view.open(params || {});
         } catch (err) {
-            history.replaceState(null, '', '#/reports');
+            ReportsPage._addressReportCenter();
             throw err;
         }
         // Opened nothing (a drill-down with no account, say, which says so
         // in a notice): the address is the Report Center's.
         const overlay = $('#modal-overlay');
-        if (overlay && overlay.classList.contains('hidden')) history.replaceState(null, '', '#/reports');
+        if (overlay && overlay.classList.contains('hidden')) ReportsPage._addressReportCenter();
+    },
+
+    // The Report Center's address in place of a view's that opened nothing.
+    // The entry keeps its state (what it was pushed from), so the toolbar's
+    // Back still knows what is behind it, and follows (NEW-30 review).
+    _addressReportCenter() {
+        history.replaceState(history.state, '', '#/reports');
+        App.addressShown();
     },
 
     async render() {

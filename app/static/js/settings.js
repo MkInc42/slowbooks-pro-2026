@@ -663,7 +663,9 @@ const SettingsPage = {
             const target = String(hash || '').replace('#', '') || '/';
             if (target !== '/settings' && SettingsPage.isDirty()) {
                 if (!confirm('You have unsaved changes in Settings. Leave without saving them?')) {
-                    if (location.hash !== '#/settings') history.replaceState(null, '', '#/settings');
+                    // the entry keeps its state, so the toolbar's Back still
+                    // knows what is behind it, and follows (NEW-30 review)
+                    if (location.hash !== '#/settings') { history.replaceState(history.state, '', '#/settings'); if (typeof App.addressShown === 'function') App.addressShown(); }
                     return Promise.resolve();
                 }
                 SettingsPage._snapshot = null;

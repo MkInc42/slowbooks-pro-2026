@@ -285,3 +285,30 @@ def test_back_is_inert_over_a_dialog_with_no_address_of_its_own():
         src = _src(name)
         at = src.index(call)
         assert "openModal(" in src[at - 200 : at], name
+
+
+# ── Review, round 2: a replaced address keeps the entry's state ──────────
+
+
+def test_a_replaced_address_keeps_the_entrys_state_and_the_button_follows():
+    """Never lit with canGoBack() false: every replaceState of the app's
+    carries history.state along and re-syncs the button."""
+    for name in (
+        "app.js",
+        "reports.js",
+        "settings.js",
+        "utils.js",
+        "customers.js",
+        "vendors.js",
+    ):
+        assert "replaceState(null" not in _src(name), name
+    reports = _src("reports.js")
+    assert reports.count("ReportsPage._addressReportCenter();") == 3
+    assert (
+        "history.replaceState(history.state, '', '#/reports');\n        App.addressShown();"
+        in reports
+    )
+    assert (
+        "{ history.replaceState(history.state, '', '#/settings'); if (typeof App.addressShown === 'function') App.addressShown(); }"
+        in _src("settings.js")
+    )

@@ -966,3 +966,53 @@ def test_back_is_inert_over_a_form_but_live_over_an_addressed_dialog(
         page.wait_for_function(AT, arg=f"#/customers/{books['customer']}")
     finally:
         page.close()
+
+
+# ── Review, round 2: the button is never lit with nowhere to go ──────────
+
+CONSISTENT = "() => document.getElementById('back-btn').disabled === !App.canGoBack()"
+
+
+def test_a_replaced_address_keeps_the_entrys_state_and_back_follows(
+    browser, company, books
+):
+    page, handled = _open(browser, company)
+    page.on("dialog", lambda d: d.dismiss())
+    try:
+        _no_splash(page)
+        _sidebar(page, handled, "#/reports")
+        # a report nobody registered: the address falls back to the Report
+        # Center's, and the entry keeps where it was pushed from
+        _visit(page, handled, "#/reports/nonsense")
+        page.wait_for_function(AT, arg="#/reports")
+        assert page.evaluate("() => history.state.from") == "#/reports"
+        assert page.evaluate("() => App.canGoBack()") and page.evaluate(CONSISTENT)
+        # the Settings leave guard, declined: the address put back keeps the
+        # entry's state, and the button follows what is behind
+        _sidebar(page, handled, "#/settings")
+        assert page.evaluate(CONSISTENT)
+        dirty = page.evaluate(
+            """() => { const i = document.querySelector('#page-content input[type=text], #page-content input:not([type])');
+                i.value += ' x'; i.dispatchEvent(new Event('input', { bubbles: true })); return SettingsPage.isDirty(); }"""
+        )
+        assert dirty
+        page.click('#sidebar a[href="#/customers"]')  # the confirm is declined
+        page.wait_for_function(AT, arg="#/settings")
+        settle(page, handled)
+        assert page.evaluate("() => SettingsPage.isDirty()")
+        assert page.evaluate(CONSISTENT)
+    finally:
+        page.close()
+
+
+def test_the_first_page_at_a_report_that_cannot_open_has_nowhere_to_go(
+    browser, company, books
+):
+    page, handled = _open_at(browser, company, "#/reports/nonsense")
+    try:
+        page.wait_for_function(AT, arg="#/reports")
+        settle(page, handled)
+        assert page.evaluate("() => history.state.from") is None
+        assert not page.evaluate("() => App.canGoBack()") and page.evaluate(CONSISTENT)
+    finally:
+        page.close()
