@@ -81,3 +81,33 @@ def test_the_alt_shortcuts_compare_the_keys_position_and_cmd_k_finds():
     assert "['KeyN', 'KeyP', 'KeyQ'].includes(e.code) && App.isReadOnly()" in keys
     assert not re.search(r"(?<!!)e\.altKey && e\.key === '[a-z]'", keys)
     assert "((e.ctrlKey || e.metaKey) && !e.altKey && e.key === 'k')" in keys
+
+
+# ── NEW-30 ────────────────────────────────────────────────────────────────
+
+
+def test_the_toolbar_has_a_back_that_knows_whether_there_is_somewhere_to_go():
+    html = (ROOT / "index.html").read_text(encoding="utf-8")
+    btn = re.search(r'<button[^>]*id="back-btn"[^>]*>', html).group(0)
+    assert 'aria-label="Back"' in btn and "disabled" in btn and 'type="button"' in btn
+    assert "App.goBack && App.goBack()" in _src("bootstrap.js")
+    app = _src("app.js")
+    assert "canGoBack() { return !!(history.state && history.state.from); }" in app
+    assert "goBack() { if (App.canGoBack()) history.back(); }" in app
+    assert "history.length" not in re.sub(r"//.*", "", app)  # not in the code
+    # a link's entry is stamped when first seen; the first entry at start
+    assert "else if (!history.state) history.replaceState({ from: App._here }, '', here);" in app
+    assert "if (!history.state) history.replaceState({ from: null }, '', location.hash || '#/');" in app
+    # the button follows every push, stamp and history move
+    assert app.count("App.addressShown();") >= 3
+    assert "closeModal();\n            App.syncBack();" in app
+    assert "App.addressShown();  // the toolbar's Back follows (NEW-30)" in _src("reports.js")
+    # the shortcut: ⌘[ on a Mac, Alt+← elsewhere, by key position
+    assert "if (App.isBackKey(e) && App.canGoBack()) { e.preventDefault(); App.goBack(); return; }" in app
+    assert "(e.code === 'BracketLeft' || e.key === '[')" in app
+    assert "e.altKey && !e.ctrlKey && !e.metaKey && !e.shiftKey && e.code === 'ArrowLeft'" in app
+    assert "btn.title = mac ? 'Back (⌘[)' : 'Back (Alt+←)';" in app
+    css = (ROOT / "app/static/css/style.css").read_text(encoding="utf-8")
+    assert ".tb-btn:disabled {" in css
+    docs = (ROOT / "docs/accessibility.md").read_text(encoding="utf-8")
+    assert "⌘[" in docs and "Alt+←" in docs

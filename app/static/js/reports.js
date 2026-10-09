@@ -80,6 +80,7 @@ const ReportsPage = {
         if (here === url) return;
         if (App.parseHash(here).path === `/reports/${name}`) history.replaceState(history.state, '', url);
         else { ReportsPage._leaveFrom(); history.pushState({ from: here }, '', url); }
+        App.addressShown();  // the toolbar's Back follows (NEW-30)
     },
 
     // The row a hop leaves from, noted on the view's own history entry

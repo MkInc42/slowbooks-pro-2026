@@ -108,6 +108,10 @@
     const theme = document.getElementById('theme-toggle');
     if (theme) theme.addEventListener('click', () => window.App && App.toggleTheme && App.toggleTheme());
 
+    // Back, within the app (NEW-30)
+    const back = document.getElementById('back-btn');
+    if (back) back.addEventListener('click', () => window.App && App.goBack && App.goBack());
+
     const closeBtn = document.getElementById('modal-close-btn');
     if (closeBtn) closeBtn.addEventListener('click', () => typeof closeModal === 'function' && closeModal());
 

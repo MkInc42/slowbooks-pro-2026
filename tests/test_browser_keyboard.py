@@ -393,3 +393,93 @@ def test_the_alt_shortcuts_go_by_the_keys_position_and_cmd_k_finds(
         assert page.evaluate("() => document.activeElement.id") == "global-search"
     finally:
         page.close()
+
+
+# ── NEW-30: Back, within the app ──────────────────────────────────────────
+
+BACK = """() => { const b = document.getElementById('back-btn');
+    return { disabled: b.disabled, name: b.getAttribute('aria-label'), title: b.title,
+             keys: b.getAttribute('aria-keyshortcuts') }; }"""
+AT = "(h) => location.hash === h"
+
+
+def _no_splash(page):
+    page.evaluate(
+        "() => { const s = document.getElementById('splash'); if (s) s.classList.add('hidden'); }"
+    )
+
+
+def _sidebar(page, handled, href):
+    page.click(f'#sidebar a[href="{href}"]')
+    page.wait_for_function(AT, arg=href)
+    settle(page, handled)
+
+
+def test_back_goes_back_within_the_app_while_there_is_somewhere_to_go(
+    browser, company, books
+):
+    page, handled = _open(browser, company)
+    try:
+        _no_splash(page)
+        # the session's first page: named, with its shortcut, nowhere to go
+        assert page.evaluate(BACK) == {
+            "disabled": True,
+            "name": "Back",
+            "title": "Back (Alt+←)",
+            "keys": "Alt+ArrowLeft",
+        }
+        page.keyboard.press("Alt+ArrowLeft")
+        page.wait_for_timeout(100)
+        assert page.evaluate("location.hash") == "#/"
+        # a sidebar link: an entry the browser made, which Back knows about
+        _sidebar(page, handled, "#/customers")
+        assert page.evaluate(BACK)["disabled"] is False
+        page.keyboard.press("Alt+ArrowLeft")
+        page.wait_for_function(AT, arg="#/")
+        settle(page, handled)
+        assert page.evaluate(BACK)["disabled"] is True
+        # the button, and Forward's entry still ahead
+        _sidebar(page, handled, "#/vendors")
+        page.click("#back-btn")
+        page.wait_for_function(AT, arg="#/")
+        settle(page, handled)
+        assert page.evaluate(BACK)["disabled"] is True
+        # a report pushed from the Report Center: Back closes it and returns
+        _sidebar(page, handled, "#/reports")
+        page.evaluate(
+            """() => document.querySelector('#page-content .card[onclick="ReportsPage.profitLoss()"]').click()"""
+        )
+        page.wait_for_selector("#report-content table")
+        settle(page, handled)
+        assert page.evaluate("location.hash").startswith("#/reports/profit-loss?")
+        assert page.evaluate(BACK)["disabled"] is False
+        page.click("#back-btn")
+        page.wait_for_function(AT, arg="#/reports")
+        page.wait_for_function(f"!({MODAL_SHOWN})()")
+        settle(page, handled)
+        assert page.evaluate(BACK)["disabled"] is False  # the dashboard is behind
+        # a reload keeps the entry's Back
+        page.reload()
+        page.wait_for_function("window.App && document.readyState === 'complete'")
+        _no_splash(page)
+        settle(page, handled)
+        assert page.evaluate(BACK)["disabled"] is False
+        page.keyboard.press("Alt+ArrowLeft")
+        page.wait_for_function(AT, arg="#/")
+        settle(page, handled)
+        assert page.evaluate(BACK)["disabled"] is True
+        # on a Mac: ⌘[, said on the button; Alt+← is the Mac's word-left
+        page.evaluate(
+            """() => { Object.defineProperty(Navigator.prototype, 'platform',
+                { get: () => 'MacIntel', configurable: true }); App.labelBack(); }"""
+        )
+        assert page.evaluate(BACK)["title"] == "Back (⌘[)"
+        assert page.evaluate(BACK)["keys"] == "Meta+["
+        _sidebar(page, handled, "#/customers")
+        page.keyboard.press("Alt+ArrowLeft")
+        page.wait_for_timeout(100)
+        assert page.evaluate("location.hash") == "#/customers"
+        page.keyboard.press("Meta+BracketLeft")
+        page.wait_for_function(AT, arg="#/")
+    finally:
+        page.close()

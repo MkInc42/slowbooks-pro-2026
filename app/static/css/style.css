@@ -160,7 +160,9 @@ body {
     padding: 0 12px;
     gap: 2px;
     flex-shrink: 0;
-    z-index: 110;
+    /* No z-index of its own: as a flex item that made the bar a stacking
+       context, which kept its Back button under a dialog's overlay (200).
+       The search dropdown carries its own z-index. */
 }
 
 .topbar-company {
@@ -222,6 +224,28 @@ body {
 
 .tb-btn:active {
     background: rgba(0,0,0,0.05);
+}
+
+/* Back (NEW-30): dimmed while there is nowhere to go, as a browser's is;
+   an inactive control is exempt from contrast (WCAG 1.4.3). It stands
+   above a dialog's overlay (200), under toasts (300): a report, a
+   customer's page and a drill-down are dialogs, and that is where Back
+   is wanted; the rest of the bar stays under the overlay. The dialog
+   itself starts below the bar (the overlay's 40px padding). */
+.tb-back {
+    position: relative;
+    z-index: 210;
+    font-size: 15px;
+    line-height: 1;
+    padding: 2px 9px;
+}
+.tb-btn:disabled {
+    opacity: 0.45;
+    cursor: default;
+}
+.tb-btn:disabled:hover {
+    background: transparent;
+    border-color: transparent;
 }
 
 /* Theme toggle — moon (light mode) and sun (dark mode) get a colored glow

@@ -99,8 +99,9 @@ const App = {
         '/deposits':      { page: 'deposits',        label: 'Make Deposits',      render: () => DepositsPage.render() },
         '/deposits/:id':      { page: 'deposits',   label: 'Deposit',       render: (id) => App.withDocument(() => DepositsPage.render(), () => DepositsPage.view(id)) },
         // The Check Register page is the Banking register now (2.10); old bookmarks land there.
-        // (replaceState: Back from Banking must not land on the alias, which would send it forward again)
-        '/check-register': { page: 'banking',         label: 'Banking',            render: () => { history.replaceState(null, '', '#/banking'); App.navigate('#/banking'); return ''; } },
+        // (replaceState: Back from Banking must not land on the alias, which would send it forward again;
+        // the entry keeps its state, so Back still knows what is behind it)
+        '/check-register': { page: 'banking',         label: 'Banking',            render: () => { history.replaceState(history.state, '', '#/banking'); App.navigate('#/banking'); return ''; } },
         '/cc-charges':    { page: 'cc-charges',      label: 'CC Charges',         render: () => CCChargesPage.render() },
         '/cc-charges/:id':    { page: 'cc-charges', label: 'CC Charge',     render: (id) => App.withDocument(() => CCChargesPage.render(), () => JournalPage.view(id)) },
         '/expenses':      { page: 'expenses',        label: 'Enter Expenses',     render: () => ExpensesPage.render() },
@@ -136,6 +137,50 @@ const App = {
     documentAddress(hash) {
         const here = location.hash || '#/';
         if (here !== hash) history.pushState({ from: here }, '', hash);
+        App.addressShown();
+    },
+
+    // ---- Back, within the app (macOS gate NEW-30) --------------------------
+    // The Mac app's window has no Back of its own (no button, gesture or
+    // menu item), so a hop with no "Back to …" of its own was one way. The
+    // toolbar's Back and its shortcut (⌘[ on a Mac, Alt+← elsewhere) go
+    // back through history, and only while an app page is behind:
+    // history.length is no guide, it counts the entries ahead and the
+    // desktop shell's own. Each entry the app pushes records the address it
+    // was pushed from (history.state.from: App.navigate, App.documentAddress,
+    // ReportsPage.setAddress); an entry a link made (a sidebar link's hash
+    // change) is stamped the same way when the router first sees it, and
+    // the session's first entry is stamped with nothing behind it. So `from`
+    // says whether there is somewhere to go. (A replaceState elsewhere
+    // should carry history.state along, or Back goes dark on that entry.)
+    _here: null,   // the address shown, for the next stamp
+    isMac() { return typeof navigator !== 'undefined' && /Mac|iP(hone|ad|od)/.test(navigator.platform || ''); },
+    canGoBack() { return !!(history.state && history.state.from); },
+    goBack() { if (App.canGoBack()) history.back(); },
+    // ⌘[ on a Mac (the key, or where the layout puts "["), Alt+← elsewhere
+    isBackKey(e) {
+        if (App.isMac()) return e.metaKey && !e.ctrlKey && !e.shiftKey && (e.code === 'BracketLeft' || e.key === '[');
+        return e.altKey && !e.ctrlKey && !e.metaKey && !e.shiftKey && e.code === 'ArrowLeft';
+    },
+    // The toolbar's Back follows the entry shown: after every push, stamp
+    // and history move.
+    syncBack() {
+        const btn = $('#back-btn');
+        if (btn) btn.disabled = !App.canGoBack();
+    },
+    // An address is on the bar (pushed, stamped or replaced): noted for the
+    // next stamp, and Back follows it.
+    addressShown() {
+        App._here = location.hash || '#/';
+        App.syncBack();
+    },
+    // The button says its shortcut, for the platform in use
+    labelBack() {
+        const btn = $('#back-btn');
+        if (!btn) return;
+        const mac = App.isMac();
+        btn.title = mac ? 'Back (⌘[)' : 'Back (Alt+←)';
+        btn.setAttribute('aria-keyshortcuts', mac ? 'Meta+[' : 'Alt+ArrowLeft');
     },
 
     // An address, taken apart: '#/reports/profit-loss?start_date=2026-07-01'
@@ -180,6 +225,11 @@ const App = {
         // history, and Back/Forward restore it with the entry.
         const here = location.hash || '#/';
         if (here !== `#${full}`) history.pushState({ from: here }, '', `#${full}`);
+        // An entry a link made (a hash change: the sidebar, a row's link)
+        // has no state yet: stamped with the address left, as a push is,
+        // so Back knows there is an app page behind it (App.canGoBack).
+        else if (!history.state) history.replaceState({ from: App._here }, '', here);
+        App.addressShown();
         let route = App.routes[path];
         let param = null;
         if (!route) {
@@ -1186,7 +1236,13 @@ const App = {
         window.addEventListener('popstate', () => {
             const overlay = $('#modal-overlay');
             if (overlay && !overlay.classList.contains('hidden')) closeModal();
+            App.syncBack();
         });
+        // The session's first entry: nothing of the app's behind it (a
+        // reload of a later entry keeps that entry's state, and its Back)
+        if (!history.state) history.replaceState({ from: null }, '', location.hash || '#/');
+        App.labelBack();
+        App.addressShown();
 
         // Load saved theme
         App.loadTheme();
@@ -1199,6 +1255,9 @@ const App = {
         // is left alone: it is AltGr on some layouts, typing a character.
         document.addEventListener('keydown', (e) => {
             const alt = e.altKey && !e.ctrlKey && !e.metaKey;
+            // Back: ⌘[ on a Mac, Alt+← elsewhere, while an app page is
+            // behind (the Mac app's window has no Back of its own, NEW-30)
+            if (App.isBackKey(e) && App.canGoBack()) { e.preventDefault(); App.goBack(); return; }
             // Ctrl+Enter: submit quick entry form
             if (e.ctrlKey && e.key === 'Enter') {
                 const qeForm = $('#qe-form');
