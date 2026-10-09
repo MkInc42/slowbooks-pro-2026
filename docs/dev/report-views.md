@@ -8,18 +8,16 @@ query to the route's render as its second argument (a plain object of strings �
 
 ## The three rules
 
-1. **A reload reproduces the view.** Everything the view needs is in the address; nothing is kept in memory.
-   Names (an account's, a class's) are taken from the server's answer when the address has only an id.
-2. **A change inside the view replaces the address** (`history.replaceState`): a new period, a filter, a year.
-   Back never walks through every period a user tried.
+1. **A reload reproduces the view.** Everything the view needs is in the address; nothing is kept in memory. Names (an account's, a class's) are taken from the server's answer when the address has only an id.
+2. **A change inside the view replaces the address** (`history.replaceState`): a new period, a filter, a year. Back never walks through every period a user tried.
 3. **A hop pushes** (`history.pushState`): Report Center → report, report → drill-down, drill-down → class P&L, and a source link
    to a document. Browser Back returns to the view left — only that: `App.navigate` closes any open dialog before it renders. The
    view's "Back to …" button goes back through history when the current entry's `history.state.from` (written by every push) is
    that view, else it opens the address; a three-deep chain goes back twice through history, each view as it was left.
 
-`ReportsPage.setAddress(view, params)` applies rules 2 and 3 by itself: same view → replace (keeping the entry's state), other
-view → push (recording `from`; a note in memory would go stale on Back, Forward, Close or a reload). Look a view up with
-`ReportsPage._view(name)`, never `_VIEWS[name]` (`constructor` is not a report). A date or period in the address that is not one is ignored, and a toast says so.
+`ReportsPage.setAddress(view, params)` applies rules 2 and 3 by itself: same view → replace (keeping the entry's state), other view → push (recording `from`;
+a note in memory would go stale on Back, Forward, Close or a reload). Look a view up with `ReportsPage._view(name)`, never `_VIEWS[name]` (`constructor` is not a report).
+A date or period in the address that is not one is ignored, and a toast says so.
 
 ## Registering a new view
 
@@ -27,14 +25,16 @@ view → push (recording `from`; a note in memory would go stale on Back, Forwar
    `'profit-loss-by-job': { label: 'P&L by Job', open: (p) => ReportsPage.profitLossByJob(p) }`
    — `open(params)` is what the address runs; `label` is the "Back to …" wording (a function returning `T(term)` where nonprofit mode renames it);
    `asOf: true` for a view dated by one `as_of_date`; `keep: ['class_id']` for drill-down params that ride back.
-2. Put the address on the bar from the opener. A report that uses `openPeriodModal` passes
-   `{ view: 'profit-loss-by-job', params: { job_id }, prefill }` in its opts — the period and dates are written on
-   every render, `params` ahead of them, and `prefill` (the query) sets the starting period and dates. A plain-modal
-   view calls `ReportsPage.setAddress('name', { … })` itself before `openModal`.
-3. Opening a drill-down *from* the view: `ReportsPage.openDrillDown(accountId, name, start, end, classId, className, from)`
-   with `from` = your view name gives it "Back to <your label>" and `&from=<name>`; a page route (`#/classes/:id?…`) reads its query the same way.
+2. Put the address on the bar from the opener. A report that uses `openPeriodModal` passes `{ view: 'profit-loss-by-job', params: { job_id }, prefill }`
+   in its opts — the period and dates are written on every render, `params` ahead of them, and `prefill` (the query) sets the starting period and dates.
+   `params` is kept by reference and rides into a saved report: a control in `opts.toolbar` (html drawn once beside the period select) changes it with
+   `ReportsPage.setParam(key, value)` and the view redraws on the new address; `opts.wide` is the wide dialog. A plain-modal view calls
+   `ReportsPage.setAddress('name', { … })` itself before `openModal`.
+3. Opening a drill-down *from* the view: `ReportsPage.openDrillDown(accountId, name, start, end, classId, className, from, { job_id })`
+   with `from` = your view name gives it "Back to <your label>" and `&from=<name>`; a page route (`#/jobs/:id?start_date=…&from=…`) reads its query the same way
+   and `ReportsPage._backButton(from, { start_date, end_date })` is its way back.
 
-Saved reports: `report_type` is the view name with underscores (`profit_loss_by_class`) and `parameters` the query; `openSaved`
-navigates to `ReportsPage.viewUrl(view, parameters)` — the builder of any link to a report (empty values and `period=custom` are
-left out), as the dashboard cards use it (`DashboardPage._reportLink`). From any other page, open a view with `App.navigate(ReportsPage.viewUrl(…))`,
-so the Report Center is the page under it after a reload. Tests: `tests/test_report_views.py` (router, registry) and `tests/test_browser_report_views.py` (the rules in Chromium).
+Saved reports: `report_type` is the view name with underscores (`profit_loss_by_class`) and `parameters` the query; `openSaved` navigates to
+`ReportsPage.viewUrl(view, parameters)` — the builder of any link to a report (empty values and `period=custom` are left out), as the dashboard cards use it
+(`DashboardPage._reportLink`). From any other page, open a view with `App.navigate(ReportsPage.viewUrl(…))`, so the Report Center is the page under it after a reload.
+Tests: `tests/test_report_views.py` (router, registry), `tests/test_browser_report_views.py` (the rules in Chromium), `tests/test_browser_grid.py` (the grids).

@@ -132,8 +132,12 @@ def test_every_route_still_works_and_a_query_no_longer_reaches_the_id():
         ["InvoicesPage.view", "12"],
     ]
     # the id is the segment alone; the query is the route's to forward
-    # (as '/reports/:view' does), and a route that takes none ignores it
-    assert shown["#/jobs/12?tab=costs"]["calls"] == [["JobsPage.renderDetail", "12"]]
+    # (as '/reports/:view' does, and the job page since #242: its period
+    # and the report it was opened from), and a route that takes none
+    # ignores it
+    assert shown["#/jobs/12?tab=costs"]["calls"] == [
+        ["JobsPage.renderDetail", "12", {"tab": "costs"}]
+    ]
     assert shown["#/banking/transfers/9"]["calls"] == [
         ["BankingPage.render"],
         ["JournalPage.view", "9"],

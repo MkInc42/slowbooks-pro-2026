@@ -158,21 +158,35 @@ const JobsPage = {
     // =====================================================================
     // Job page
     // =====================================================================
-    async renderDetail(id) {
+    // The address can carry the period (#/jobs/12?start_date=…&end_date=…)
+    // and the report it was opened from (&from=profit-loss-by-job), so a
+    // report's heading lands on the job for the report's dates with a way
+    // back (#242); a period set on the page is written back to the address
+    // (replaced, as a change inside a view is).
+    async renderDetail(id, query) {
         JobsPage._job = null;
         JobsPage._tree = null;
         JobsPage._open = new Set();
         JobsPage._showLines = new Set();
+        const q = query || {};
+        const isDate = (v) => /^\d{4}-\d{2}-\d{2}$/.test(v || '');
+        if (isDate(q.start_date) || isDate(q.end_date)) {
+            JobsPage._period = { start: isDate(q.start_date) ? q.start_date : '', end: isDate(q.end_date) ? q.end_date : '' };
+        }
+        JobsPage._from = (typeof ReportsPage !== 'undefined' && ReportsPage._view(q.from)) ? q.from : null;
         try {
             JobsPage._job = await API.get(`/jobs/${id}`);
         } catch (err) {
             return `<div class="empty-state"><p>${escapeHtml(err.message)}</p><a href="#/jobs">Back to jobs</a></div>`;
         }
         const job = JobsPage._job;
+        const back = JobsPage._from
+            ? ReportsPage._backButton(JobsPage._from, { start_date: JobsPage._period.start, end_date: JobsPage._period.end }, '', 'btn btn-sm btn-secondary')
+            : '';
         return `
             <div class="page-header">
                 <div>
-                    <div style="font-size:11px;"><a href="#/jobs">${T('Jobs')}</a> › ${escapeHtml(job.customer_name)}</div>
+                    <div style="font-size:11px;"><a href="#/jobs">${T('Jobs')}</a> › ${escapeHtml(job.customer_name)}${back ? ` <span style="margin-left:8px;">${back}</span>` : ''}</div>
                     <h2 style="margin:2px 0 0 0;">${escapeHtml(job.name)}
                         <span class="badge" style="font-size:11px; vertical-align:middle;">${escapeHtml(JobsPage.STATUS_LABELS[job.status] || job.status)}</span>
                         ${job.is_active ? '' : '<span style="font-size:11px;color:var(--text-danger);">inactive</span>'}
@@ -205,6 +219,7 @@ const JobsPage = {
     async setPeriod() {
         JobsPage._period = { start: $('#job-period-start')?.value || '', end: $('#job-period-end')?.value || '' };
         JobsPage._tree = null;
+        JobsPage._syncAddress();
         await JobsPage.setTab(JobsPage._tab);
     },
     async clearPeriod() {
@@ -212,7 +227,19 @@ const JobsPage = {
         const s = $('#job-period-start'), e = $('#job-period-end');
         if (s) s.value = ''; if (e) e.value = '';
         JobsPage._tree = null;
+        JobsPage._syncAddress();
         await JobsPage.setTab(JobsPage._tab);
+    },
+    // The page's period on its address, replacing the entry (R7's rule 2).
+    _syncAddress() {
+        if (!JobsPage._job) return;
+        const qs = new URLSearchParams();
+        if (JobsPage._period.start) qs.set('start_date', JobsPage._period.start);
+        if (JobsPage._period.end) qs.set('end_date', JobsPage._period.end);
+        if (JobsPage._from) qs.set('from', JobsPage._from);
+        const q = qs.toString();
+        const url = `#/jobs/${JobsPage._job.id}${q ? `?${q}` : ''}`;
+        if ((location.hash || '') !== url) history.replaceState(history.state, '', url);
     },
     _periodQs() {
         const p = JobsPage._period;

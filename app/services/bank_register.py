@@ -10,7 +10,7 @@ from collections import defaultdict
 from datetime import date
 from decimal import Decimal
 
-from sqlalchemy import func
+from sqlalchemy import and_, func
 from sqlalchemy.orm import Session
 
 from app.models.accounts import Account, AccountType
@@ -220,12 +220,15 @@ def account_register(
     start: date | None = None,
     end: date | None = None,
     class_id: int | None = None,
+    job_id: int | None = None,
 ) -> dict:
     """Every ledger line on `account`, natural-balance running balance,
     period totals, and — when a start date is given — the balance carried
     in from before it. No dates = everything. With `class_id`, only the
     lines of that class (the line's own, else its transaction's, else
-    Uncategorized), the opening balance included (#213)."""
+    Uncategorized), the opening balance included (#213); with `job_id`,
+    only that job's lines the same way (the line's own, else its
+    transaction's), 0 meaning the lines with no job (#242)."""
     debit_normal = is_debit_normal(account)
     in_class = None
     if class_id is not None:
@@ -235,6 +238,13 @@ def account_register(
         )
 
         in_class = class_attribution(uncategorized_class_id(db)) == class_id
+    if job_id is not None:
+        from app.services.jobs_service import job_attribution
+
+        in_job = (
+            job_attribution().is_(None) if job_id == 0 else job_attribution() == job_id
+        )
+        in_class = in_job if in_class is None else and_(in_class, in_job)
 
     opening = ZERO
     if start:

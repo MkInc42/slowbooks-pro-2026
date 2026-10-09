@@ -815,10 +815,12 @@ const AnalyticsPage = {
     const selected = this.state.aiActionKey;
 
     let dropdown;
+    // the placeholders are named as the real picker is: every field on
+    // every page has a name (v2.18.2), a disabled one too
     if (!groups) {
-      dropdown = '<select disabled><option>Loading analyses…</option></select>';
+      dropdown = '<select disabled aria-label="Analysis"><option>Loading analyses…</option></select>';
     } else if (groups.length === 0) {
-      dropdown = '<select disabled><option>(none available)</option></select>';
+      dropdown = '<select disabled aria-label="Analysis"><option>(none available)</option></select>';
     } else {
       const opts = groups
         .map(

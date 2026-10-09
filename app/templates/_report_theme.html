@@ -2,7 +2,8 @@
    Paper size comes from the pdf_paper_size setting (letter default,
    a4 selectable) — parameterized rather than hardcoded so US and
    international installs both print natively. Ported concept from the
-   joelmacklow fork's _document_theme partial. #}
+   joelmacklow fork's _document_theme partial. `landscape` turns the page
+   on its side for a grid with a column per class or job (#232). #}
 <style>
     {# The footer takes the company name from the page itself (string-set
        on .report-company below), not from text written into this style
@@ -11,7 +12,7 @@
        CSS string. A margin box does not inherit the body's font either —
        it fell back to a serif or monospace face — so it names the font. #}
     @page {
-        size: {{ 'A4' if paper_size == 'a4' else 'letter' }};
+        size: {{ 'A4' if paper_size == 'a4' else 'letter' }}{{ ' landscape' if landscape else '' }};
         margin: 18mm 16mm 20mm 16mm;
         @bottom-center {
             content: string(company) " — page " counter(page) " of " counter(pages);

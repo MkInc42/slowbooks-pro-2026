@@ -29,6 +29,12 @@ router = APIRouter(prefix="/api/saved-reports", tags=["saved-reports"])
 
 _ALLOWED_TYPES = {
     "profit_loss",
+    # the by-class grid and one class's own P&L (#232, #235): parameters
+    # carry the dates and the class or column choice, as the view's
+    # address does
+    "profit_loss_by_class",
+    "profit_loss_class",
+    "profit_loss_by_job",
     "balance_sheet",
     "ar_aging",
     "ap_aging",

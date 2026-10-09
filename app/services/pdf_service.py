@@ -401,12 +401,15 @@ def generate_check_pdf(check_data: dict, company_settings: dict) -> bytes:
     return render_pdf(html_str)
 
 
-def generate_report_pdf(sections: list, company_settings: dict) -> bytes:
+def generate_report_pdf(
+    sections: list, company_settings: dict, landscape: bool = False
+) -> bytes:
     """Render one or more financial-report sections into a single PDF.
 
     sections: [{title, period, columns: [...], rows: [{cells, style}]}]
     Paper size comes from the pdf_paper_size setting (letter | a4) so US
-    and international installs both print natively.
+    and international installs both print natively; `landscape` turns the
+    page on its side for a grid with a column per class or job (#232).
     """
     from datetime import date
 
@@ -415,6 +418,7 @@ def generate_report_pdf(sections: list, company_settings: dict) -> bytes:
         company_settings,
         sections=sections,
         paper_size=(company_settings.get("pdf_paper_size") or "letter").lower(),
+        landscape=landscape,
         generated_on=date.today().isoformat(),
     )
     return render_pdf(html_str)
