@@ -696,6 +696,7 @@ const BankingPage = {
             check_number: form.check_number.value || null,
             class_id: classIdFromForm(form),
         };
+        if (!(await ClassWarn.ok(form))) return;
         try {
             await API.post('/banking/transactions', data);
             toast('Entry posted');

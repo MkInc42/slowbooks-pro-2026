@@ -419,6 +419,7 @@ const SalesReceiptsPage = {
             lines,
         };
 
+        if (!(await ClassWarn.ok(form))) return;
         try {
             const result = await API.post('/sales-receipts', data);
             await ScanHelper.attachAfterSave('invoice', result.invoice.id);

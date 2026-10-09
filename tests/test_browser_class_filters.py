@@ -341,3 +341,249 @@ def test_chart_rows_open_the_register_and_the_filter_box_keeps_the_grouping(
         assert _query(_hash(page))["account_id"] == str(accounts["6000"]["id"])
     finally:
         page.close()
+
+
+# ── #243: line class in business mode, and the warn-when-blank setting ──
+
+OPEN = "() => !document.getElementById('modal-overlay').classList.contains('hidden')"
+
+
+def _open_form(page, handled, call, ready):
+    page.evaluate(f"async () => {{ await {call}; }}")
+    page.wait_for_function(OPEN, timeout=5000)
+    page.wait_for_selector(ready)
+    settle(page, handled)
+
+
+def _hide_splash(page):
+    page.evaluate(
+        "() => { const s = document.getElementById('splash'); if (s) s.classList.add('hidden'); }"
+    )
+
+
+def test_the_line_class_cell_is_on_the_bill_journal_and_invoice_forms(
+    browser, company, books, classed
+):
+    site = classed["site"]
+    page, handled = _open_at(browser, company, "#/bills")
+    try:
+        # the bill: a Class column with a select per line, named, offering the
+        # active classes (the archived Old Crew is not a choice); no Function
+        # column outside nonprofit mode
+        _open_form(page, handled, "BillsPage.showForm()", "#bill-lines tr")
+        heads = page.evaluate(
+            "() => [...document.querySelectorAll('#modal-body .line-items-table thead th')].map(t => t.textContent.trim())"
+        )
+        assert "Class" in heads and "Function" not in heads, heads
+        assert page.locator("#bill-lines tr .line-function-fund").count() >= 1
+        assert page.locator("#bill-lines tr .line-function").count() == 0
+        options = page.evaluate(
+            "() => [...document.querySelector('#bill-lines tr .line-function-fund').options].map(o => o.textContent)"
+        )
+        assert options == ["Same as header", "Uncategorized", "Site Prep"], options
+        assert page.get_by_label("Class for this line").count() >= 1
+        page.evaluate("() => closeModal()")
+
+        # the journal entry: the same cell, no function cell
+        _visit(page, handled, "#/journal")
+        _open_form(page, handled, "JournalPage.showForm()", "#je-lines tr")
+        assert page.locator("#je-lines tr .je-function-fund").count() == 2
+        assert page.locator("#je-lines tr select.je-function").count() == 0
+        page.evaluate("() => closeModal()")
+
+        # the invoice: the cell is new (lines carried only a hidden id); a
+        # line saved with a class keeps it through an edit
+        _visit(page, handled, "#/invoices")
+        _open_form(page, handled, "InvoicesPage.showForm()", "#inv-lines tr")
+        heads = page.evaluate(
+            "() => [...document.querySelectorAll('#modal-body .line-items-table thead th')].map(t => t.textContent.trim())"
+        )
+        assert heads[:3] == ["Item", "Description", "Class"], heads
+        assert page.locator("#inv-lines tr .line-class-fund").count() == 1
+        page.evaluate(
+            """(args) => {
+                const form = document.querySelector('#modal-body form');
+                form.customer_id.value = String(args.customer);
+                const row = document.querySelector('#inv-lines tr');
+                row.querySelector('.line-desc').value = 'Grading, by the line';
+                row.querySelector('.line-rate').value = '75';
+                row.querySelector('.line-class-fund').value = String(args.site);
+                InvoicesPage.recalc();
+            }""",
+            {"customer": books["customer"], "site": site["id"]},
+        )
+        assert (
+            page.evaluate(
+                "() => document.querySelector('#modal-body form').class_id.value"
+            )
+            != ""
+        )
+        page.evaluate(
+            "() => document.querySelector('#modal-body form').requestSubmit()"
+        )
+        settle(page, handled)
+        page.wait_for_function(f"() => !({OPEN})()", timeout=5000)
+        listed = _ok(company.get("/api/invoices?limit=100"))
+        listed = listed if isinstance(listed, list) else listed["items"]
+        full = [_ok(company.get(f"/api/invoices/{i['id']}")) for i in listed]
+        inv = next(
+            i
+            for i in full
+            if i["lines"] and i["lines"][0]["description"] == "Grading, by the line"
+        )
+        assert inv["lines"][0]["class_id"] == site["id"]
+
+        _open_form(
+            page, handled, f"InvoicesPage.showForm({inv['id']})", "#inv-lines tr"
+        )
+        assert page.evaluate(
+            "() => document.querySelector('#inv-lines tr .line-class-fund').value"
+        ) == str(site["id"])
+        page.evaluate(
+            "() => document.querySelector('#modal-body form').requestSubmit()"
+        )
+        settle(page, handled)
+        page.wait_for_function(f"() => !({OPEN})()", timeout=5000)
+        again = _ok(company.get(f"/api/invoices/{inv['id']}"))
+        assert (
+            again["lines"][0]["class_id"] == site["id"]
+        ), "an edit does not strip the line's class"
+    finally:
+        page.close()
+
+
+def test_the_warn_setting_asks_before_saving_without_a_class(
+    browser, company, books, classed
+):
+    site = classed["site"]
+    accounts = {a["account_number"]: a for a in _ok(company.get("/api/accounts"))}
+    uncat = classed["uncat"]
+
+    def fill_journal(page, memo):
+        page.evaluate(
+            """(args) => {
+                const form = document.querySelector('#modal-body form');
+                form.description.value = args.memo;
+                const rows = document.querySelectorAll('#je-lines tr');
+                rows[0].querySelector('.je-account').value = String(args.expense);
+                rows[0].querySelector('.je-debit').value = '40';
+                rows[1].querySelector('.je-account').value = String(args.bank);
+                rows[1].querySelector('.je-credit').value = '40';
+                JournalPage.recalc();
+            }""",
+            {
+                "memo": memo,
+                "expense": accounts["6000"]["id"],
+                "bank": accounts["1000"]["id"],
+            },
+        )
+
+    dialogs = []
+
+    def on_dialog(d):
+        dialogs.append(d.message)
+        (d.dismiss if len(dialogs) == 1 else d.accept)()
+
+    # off: the picker starts on Uncategorized and nothing asks
+    page, handled = _open_at(browser, company, "#/journal")
+    page.on("dialog", on_dialog)
+    try:
+        _open_form(page, handled, "JournalPage.showForm()", "#je-lines tr")
+        assert page.evaluate(
+            "() => document.querySelector('#modal-body form').class_id.value"
+        ) == str(uncat["id"])
+        fill_journal(page, "warn off")
+        page.evaluate(
+            "() => document.querySelector('#modal-body form').requestSubmit()"
+        )
+        settle(page, handled)
+        page.wait_for_function(f"() => !({OPEN})()", timeout=5000)
+        assert dialogs == []
+    finally:
+        page.close()
+
+    # on: the picker starts blank; Save asks; Cancel keeps the form, OK saves
+    _ok(company.put("/api/settings", json={"class_warn_blank": "true"}))
+    try:
+        page, handled = _open_at(browser, company, "#/settings")
+        page.on("dialog", on_dialog)
+        try:
+            page.wait_for_selector("#class-warn-blank")
+            box = page.get_by_label("Warn when a transaction is saved without a class")
+            assert box.is_checked()
+
+            _visit(page, handled, "#/journal")
+            _open_form(page, handled, "JournalPage.showForm()", "#je-lines tr")
+            assert (
+                page.evaluate(
+                    "() => document.querySelector('#modal-body form').class_id.value"
+                )
+                == ""
+            )
+            assert "choose a class" in page.evaluate(
+                "() => document.querySelector('#modal-body form').class_id.options[0].textContent"
+            )
+            fill_journal(page, "warn on, no class")
+            page.evaluate(
+                "() => document.querySelector('#modal-body form').requestSubmit()"
+            )
+            settle(page, handled)
+            assert (
+                len(dialogs) == 1 and "reported under Uncategorized" in dialogs[0]
+            ), dialogs
+            assert page.evaluate(OPEN), "Cancel keeps the form open"
+            before = _ok(company.get(f"/api/classes/{uncat['id']}/transactions"))
+            assert not any(
+                e["description"] == "warn on, no class" for e in before["entries"]
+            )
+
+            page.evaluate(
+                "() => document.querySelector('#modal-body form').requestSubmit()"
+            )
+            settle(page, handled)
+            page.wait_for_function(f"() => !({OPEN})()", timeout=5000)
+            assert len(dialogs) == 2
+            after = _ok(company.get(f"/api/classes/{uncat['id']}/transactions"))
+            assert any(
+                e["description"] == "warn on, no class" for e in after["entries"]
+            ), "saved to Uncategorized"
+
+            # a class on every line is as good as one on the header: no question
+            _open_form(page, handled, "JournalPage.showForm()", "#je-lines tr")
+            fill_journal(page, "warn on, lines classed")
+            page.evaluate(
+                "(id) => document.querySelectorAll('#je-lines tr .je-function-fund').forEach(s => { s.value = String(id); })",
+                site["id"],
+            )
+            page.evaluate(
+                "() => document.querySelector('#modal-body form').requestSubmit()"
+            )
+            settle(page, handled)
+            page.wait_for_function(f"() => !({OPEN})()", timeout=5000)
+            assert len(dialogs) == 2
+            mine = _ok(company.get(f"/api/classes/{site['id']}/transactions"))
+            assert (
+                sum(
+                    1
+                    for e in mine["entries"]
+                    if e["description"] == "warn on, lines classed"
+                )
+                == 2
+            )
+
+            # Settings: the box, by keyboard, and Save Settings turns it off
+            _visit(page, handled, "#/settings")
+            page.wait_for_selector("#class-warn-blank")
+            box = page.get_by_label("Warn when a transaction is saved without a class")
+            box.focus()
+            page.keyboard.press("Space")
+            assert not box.is_checked()
+            page.evaluate(
+                "() => document.getElementById('settings-form').requestSubmit()"
+            )
+            settle(page, handled)
+            assert _ok(company.get("/api/settings"))["class_warn_blank"] == "false"
+        finally:
+            page.close()
+    finally:
+        _ok(company.put("/api/settings", json={"class_warn_blank": "false"}))

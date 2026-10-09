@@ -185,6 +185,7 @@ const DepositsPage = {
 
         const bankAcctId = $('#deposit-bank-acct')?.value;
         if (!bankAcctId) { toast('Select a bank account', 'error'); return; }
+        if ($('#deposit-class') && !ClassWarn.okValue($('#deposit-class').value)) return;
 
         try {
             await API.post('/deposits', {

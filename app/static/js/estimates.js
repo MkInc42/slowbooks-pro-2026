@@ -275,6 +275,7 @@ const EstimatesPage = {
             lines,
         };
 
+        if (!(await ClassWarn.ok(form))) return;
         try {
             if (id) { await API.put(`/estimates/${id}`, data); toast('Estimate updated'); }
             else { await API.post('/estimates', data); toast('Estimate created'); }

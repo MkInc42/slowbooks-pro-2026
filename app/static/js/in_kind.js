@@ -107,6 +107,7 @@ const InKindPage = {
                 debit_account_id: parseInt(row.querySelector('.ik-debit')?.value) || null,
             });
         });
+        if (!(await ClassWarn.ok(form))) return;
         try {
             const g = await API.post('/in-kind-gifts', {
                 customer_id: parseInt(form.customer_id.value),

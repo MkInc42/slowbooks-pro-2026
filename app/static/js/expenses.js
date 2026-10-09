@@ -183,6 +183,7 @@ const ExpensesPage = {
         const form = e.target;
         const paidFrom = parseInt(form.paid_from_account_id.value);
         if (!(await Overdraft.confirm(paidFrom, parseFloat(form.amount.value) || 0))) return;
+        if (!(await ClassWarn.ok(form))) return;
         try {
             const vendorId = await VendorQuickAdd.ensure('expense-vendor');
             const result = await API.post('/expenses', {

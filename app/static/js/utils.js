@@ -422,16 +422,54 @@ function countryOptions(selected) {
 // lists first and is preselected when no selectedId is given. Archived
 // classes are excluded (historical rows keep them; new entries can't).
 // ---------------------------------------------------------------------------
+// With Settings' "Warn when a transaction is saved without a class" on
+// (#243), a new document starts with no class chosen — a blank first
+// choice — and ClassWarn.ok asks before it is saved that way.
 async function classFormGroupHtml(selectedId) {
     let classes = [];
     try { classes = await API.get('/classes'); } catch (e) { return ''; }
     if (!classes.length) return '';
-    const opts = classes.map(c =>
-        `<option value="${c.id}" ${selectedId ? (c.id === selectedId ? 'selected' : '') : (c.is_system_default ? 'selected' : '')}>${escapeHtml(c.name)}</option>`
+    const blank = !selectedId && ClassWarn.enabled();
+    const opts = (blank ? `<option value="" selected>— choose a ${T('class').toLowerCase()} —</option>` : '') + classes.map(c =>
+        `<option value="${c.id}" ${selectedId ? (c.id === selectedId ? 'selected' : '') : (c.is_system_default && !blank ? 'selected' : '')}>${escapeHtml(c.name)}</option>`
     ).join('');
     return `<div class="form-group"><label>${T('Class')}</label>
         <select name="class_id">${opts}</select></div>`;
 }
+
+// Settings → Classes → "Warn when a transaction is saved without a class"
+// (#243, QuickBooks' "Prompt to assign classes"). Every document form asks
+// ClassWarn.ok before it saves: with the setting off, or a class chosen on
+// the header, or one on every line, it says yes; otherwise it asks, and the
+// person decides — a transaction saved without a class is reported under
+// Uncategorized, which is what the by-class reports always promised. The
+// setting arrives with the company settings the shell loads (App.settings).
+const ClassWarn = {
+    enabled() {
+        return typeof App !== 'undefined' && !!App.settings && App.settings.class_warn_blank === 'true';
+    },
+    message() {
+        return Terms.text('No class is chosen, so this will be reported under Uncategorized on the P&L by Class. Save it anyway?');
+    },
+    // `lines`, for a multi-line form: { rows: '#bill-lines tr', cls: 'line-function' }
+    // — the line selects are `.${cls}-fund`; a class on every line is as good
+    // as one on the header.
+    async ok(form, lines = null) {
+        if (!ClassWarn.enabled()) return true;
+        if (!form || !form.class_id) return true;   // no class picker on this form
+        if (form.class_id.value) return true;
+        if (lines) {
+            const selects = $$(lines.rows).map(r => r.querySelector(`.${lines.cls}-fund`)).filter(Boolean);
+            if (selects.length && selects.every(sel => sel.value)) return true;
+        }
+        return confirm(ClassWarn.message());
+    },
+    // a page form with its own class select (Make Deposits)
+    okValue(value) {
+        if (!ClassWarn.enabled() || value) return true;
+        return confirm(ClassWarn.message());
+    },
+};
 
 // ---------------------------------------------------------------------------
 // Nonprofit function dimension — program / management / fundraising (the
@@ -491,24 +529,46 @@ const Nonprofit = {
             <select name="function">${Nonprofit.optionsHtml(selected)}</select></div>`;
     },
     label(fn) { const f = Nonprofit.FUNCTIONS.find(([v]) => v === fn); return f ? f[1] : (fn || ''); },
-    // Per-line cells + header for multi-line documents (journal, bill):
-    // a fund, a function, and the Split button that expands the line by a
-    // saved allocation rule. Call loadFunds() before rendering rows.
+    // Per-line cells + header for multi-line documents (journal, bill,
+    // invoice): a class, and in nonprofit mode a function and the Split
+    // button that expands the line by a saved allocation rule. Call
+    // loadFunds() before rendering rows.
+    //
+    // The class cell is for every company (#243): a bill from the lumber
+    // yard splits across two divisions on its lines, and posting has always
+    // honoured a line's class over the header's. It is drawn once the
+    // company has a class of its own (Uncategorized alone has nothing to
+    // choose); a nonprofit's funds always draw it. An archived class a line
+    // already carries stays a choice, so an edit does not strip it.
     _funds: null,
     _rules: null,
     async loadFunds() {
-        if (!Nonprofit.enabled()) return;
         try {
-            [Nonprofit._funds, Nonprofit._rules] = await Promise.all([API.get('/classes'), API.get('/nonprofit/allocation-rules')]);
+            const [funds, rules] = await Promise.all([
+                API.get('/classes?include_archived=true'),
+                Nonprofit.enabled() ? API.get('/nonprofit/allocation-rules') : Promise.resolve([]),
+            ]);
+            Nonprofit._funds = funds;
+            Nonprofit._rules = rules;
         } catch (e) { Nonprofit._funds = Nonprofit._funds || []; Nonprofit._rules = Nonprofit._rules || []; }
     },
-    headHtml() { return Nonprofit.enabled() ? `<th scope="col">${T('Class')}</th><th scope="col">Function</th>` : ''; },
+    lineClassShown() {
+        return Nonprofit.enabled() || (Nonprofit._funds || []).some(f => !f.is_system_default && !f.is_archived);
+    },
+    classHeadHtml() { return Nonprofit.lineClassShown() ? `<th scope="col">${T('Class')}</th>` : ''; },
+    classCellHtml(cls, fundSelected) {
+        if (!Nonprofit.lineClassShown()) return '';
+        const funds = (Nonprofit._funds || [])
+            .filter(f => !f.is_archived || f.id === fundSelected)
+            .map(f => `<option value="${f.id}" ${fundSelected === f.id ? 'selected' : ''}>${escapeHtml(f.name)}${f.is_archived ? ' (archived)' : ''}</option>`).join('');
+        return `<td><select class="${cls}-fund" data-no-search aria-label="${escapeHtml(T('Class'))} for this line"><option value="">Same as header</option>${funds}</select></td>`;
+    },
+    headHtml() { return Nonprofit.classHeadHtml() + (Nonprofit.enabled() ? `<th scope="col">Function</th>` : ''); },
     cellHtml(cls, selected, fundSelected) {
-        if (!Nonprofit.enabled()) return '';
-        const funds = (Nonprofit._funds || []).map(f => `<option value="${f.id}" ${fundSelected === f.id ? 'selected' : ''}>${escapeHtml(f.name)}</option>`).join('');
-        const split = (Nonprofit._rules || []).length ? ` <button type="button" class="btn btn-sm btn-secondary np-split" title="Split this line by an allocation rule" onclick="Nonprofit.splitRow(this)">Split</button>` : '';
-        return `<td><select class="${cls}-fund"><option value="">header</option>${funds}</select></td>` +
-            `<td style="white-space:nowrap"><select class="${cls}">${Nonprofit.optionsHtml(selected, '—')}</select>${split}</td>`;
+        const split = Nonprofit.enabled() && (Nonprofit._rules || []).length ? ` <button type="button" class="btn btn-sm btn-secondary np-split" title="Split this line by an allocation rule" onclick="Nonprofit.splitRow(this)">Split</button>` : '';
+        return Nonprofit.classCellHtml(cls, fundSelected) + (Nonprofit.enabled()
+            ? `<td style="white-space:nowrap"><select class="${cls}" aria-label="Function for this line">${Nonprofit.optionsHtml(selected, '—')}</select>${split}</td>`
+            : '');
     },
     fromRow(row, cls) { return row.querySelector(`.${cls}`)?.value || null; },
     fundFromRow(row, cls) { const v = row.querySelector(`.${cls}-fund`)?.value; return v ? parseInt(v) : null; },
