@@ -146,8 +146,9 @@ jobs:
           # native stack (the by-class, by-job and class P&L exports).
           # Round 2: -1 (tests/test_report_links.py no longer skips without
           # Playwright: its books fixture lives in conftest), +1
-          # tests/test_browser_keyboard.py, +1 tests/test_browser_job_picker.py.
-          MAX_SKIPS: "114"
+          # tests/test_browser_keyboard.py, +1 tests/test_browser_job_picker.py,
+          # +1 a PDF test of the round-2 exports (WeasyPrint's native stack).
+          MAX_SKIPS: "115"
         shell: pwsh
         run: |
           # -v names each test as it starts, so a mid-run death is identified
