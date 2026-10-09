@@ -145,7 +145,7 @@ const App = {
     // there (the page opened through its route).
     documentAddress(hash) {
         const here = location.hash || '#/';
-        if (here !== hash) history.pushState({ from: here }, '', hash);
+        if (here !== hash) history.pushState(App.entryState(here), '', hash);
         App.dialogAddressed();  // the open dialog's own: Back stays live over it
     },
 
@@ -193,6 +193,26 @@ const App = {
     // says whether there is somewhere to go. (A replaceState elsewhere
     // should carry history.state along, or Back goes dark on that entry.)
     _here: null,   // the address shown, for the next stamp
+    _nShown: 0,    // the entry shown: its place in the chain
+    // What an entry of the app's records: the address it was pushed from
+    // (from: Back and "Back to …" read it) and its place in the chain (n,
+    // one more than the entry it follows), so a move away declined can
+    // tell which way the entry it left lies (App.stayPut).
+    entryState(from) { return { from, n: App._nShown + 1 }; },
+    // A move away declined (the Settings leave guard, with edits unsaved):
+    // the page still shows the entry it was on, so the history goes back to
+    // that entry — behind, for a link's new entry (the browser had already
+    // made it) or a Forward; ahead, for a Back — with nothing re-rendered or
+    // closed on the way (_stay: the popstate and navigate handlers let it
+    // pass). The entry's own state says what is behind it, so the toolbar's
+    // Back stays as it was. (NEW-30 review, round 3.)
+    _stay: false,
+    stayPut() {
+        const n = history.state && history.state.n;
+        App._stay = true;
+        setTimeout(() => { App._stay = false; }, 2000);  // never stuck
+        if (typeof n === 'number' && n < App._nShown) history.forward(); else history.back();
+    },
     isMac() { return typeof navigator !== 'undefined' && /Mac|iP(hone|ad|od)/.test(navigator.platform || ''); },
     canGoBack() { return !!(history.state && history.state.from); },
     goBack() { if (App.backAllowed()) history.back(); },
@@ -215,6 +235,7 @@ const App = {
     // next stamp, and Back follows it.
     addressShown() {
         App._here = location.hash || '#/';
+        if (history.state && typeof history.state.n === 'number') App._nShown = history.state.n;
         App.syncBack();
     },
     // The button says its shortcut, for the platform in use
@@ -245,6 +266,9 @@ const App = {
     },
 
     async navigate(hash) {
+        // the way back to the entry a declined move left (App.stayPut):
+        // the page is still that entry's, nothing to render
+        if (App._stay) { App._stay = false; App.addressShown(); return; }
         if (App._pageCleanup) { App._pageCleanup(); App._pageCleanup = null; }
         // A dialog open over the page left (a report, a document) does not
         // stay over the page gone to: browser Back from an open report
@@ -267,11 +291,11 @@ const App = {
         // records it): a view's "Back to …" reads it to go back through
         // history, and Back/Forward restore it with the entry.
         const here = location.hash || '#/';
-        if (here !== `#${full}`) history.pushState({ from: here }, '', `#${full}`);
+        if (here !== `#${full}`) history.pushState(App.entryState(here), '', `#${full}`);
         // An entry a link made (a hash change: the sidebar, a row's link)
         // has no state yet: stamped with the address left, as a push is,
         // so Back knows there is an app page behind it (App.canGoBack).
-        else if (!history.state) history.replaceState({ from: App._here }, '', here);
+        else if (!history.state) history.replaceState(App.entryState(App._here), '', here);
         App.addressShown();
         let route = App.routes[path];
         let param = null;
@@ -1277,13 +1301,16 @@ const App = {
         // closes it too; this is sooner, so nothing of the view left is
         // still showing while the next one loads).
         window.addEventListener('popstate', () => {
+            // the way back to the entry a declined move left (App.stayPut):
+            // what is open stays open
+            if (App._stay) { App.syncBack(); return; }
             const overlay = $('#modal-overlay');
             if (overlay && !overlay.classList.contains('hidden')) closeModal();
             App.syncBack();
         });
         // The session's first entry: nothing of the app's behind it (a
         // reload of a later entry keeps that entry's state, and its Back)
-        if (!history.state) history.replaceState({ from: null }, '', location.hash || '#/');
+        if (!history.state) history.replaceState({ from: null, n: 0 }, '', location.hash || '#/');
         App.labelBack();
         App.addressShown();
 

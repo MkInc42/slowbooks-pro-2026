@@ -1129,3 +1129,74 @@ def test_back_is_live_over_a_nonprofits_report_views_too(
         assert "giving-statements" in live, (live, silent)
     finally:
         page.close()
+
+
+# ── Review, round 3: a declined leave from Settings ──────────────────────
+
+EDIT = """() => { const i = document.querySelector('#page-content input[type=text], #page-content input:not([type])');
+    i.value += ' x'; i.dispatchEvent(new Event('input', { bubbles: true })); return i.value; }"""
+VALUE = "() => document.querySelector('#page-content input[type=text], #page-content input:not([type])').value"
+
+
+def test_a_declined_leave_from_settings_stays_on_its_entry_and_back_goes_behind(
+    browser, company, books
+):
+    page, handled = _open(browser, company)
+    answer, confirms = {"accept": False}, []
+    page.on(
+        "dialog",
+        lambda d: (
+            confirms.append(d.message),
+            d.accept() if answer["accept"] else d.dismiss(),
+        ),
+    )
+
+    def declined(n):
+        for _ in range(100):
+            if len(confirms) >= n:
+                break
+            page.wait_for_timeout(50)
+        assert len(confirms) == n, confirms
+        page.wait_for_function("() => location.hash === '#/settings' && !App._stay")
+        settle(page, handled)
+
+    try:
+        _no_splash(page)
+        _sidebar(page, handled, "#/reports")
+        _sidebar(page, handled, "#/settings")
+        edited = page.evaluate(EDIT)
+        assert page.evaluate("() => SettingsPage.isDirty()")
+        # a sidebar link, declined: the Settings entry itself again, the
+        # edits untouched (no re-render), Back lit, the Report Center behind
+        page.click('#sidebar a[href="#/customers"]')
+        declined(1)
+        assert (
+            page.evaluate("() => SettingsPage.isDirty()")
+            and page.evaluate(VALUE) == edited
+        )
+        assert page.evaluate("() => history.state.from") == "#/reports"
+        assert (
+            page.evaluate("() => App.canGoBack()")
+            and not page.evaluate(BACK)["disabled"]
+        )
+        # a Back declined: the move went behind, so the way back is forward
+        page.click("#back-btn")
+        declined(2)
+        assert (
+            page.evaluate("() => SettingsPage.isDirty()")
+            and page.evaluate(VALUE) == edited
+        )
+        assert page.evaluate("() => history.state.from") == "#/reports"
+        assert (
+            page.evaluate("() => App.canGoBack()")
+            and not page.evaluate(BACK)["disabled"]
+        )
+        # Back then goes to the page that was behind, the leave confirmed
+        answer["accept"] = True
+        page.click("#back-btn")
+        page.wait_for_function(AT, arg="#/reports")
+        settle(page, handled)
+        assert len(confirms) == 3
+        assert page.locator("#page-content .card-grid .card").count() > 5
+    finally:
+        page.close()

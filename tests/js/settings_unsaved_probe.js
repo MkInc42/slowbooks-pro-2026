@@ -7,6 +7,7 @@ const note = { textContent: '' };
 const form = { id: 'settings-form' };
 let confirmAnswer = false;
 const confirms = [];
+const stayed = [];  // App.stayPut: back to the Settings entry itself
 const navigated = [];
 const replaced = [];
 const listeners = {};
@@ -27,7 +28,7 @@ const ctx = {
   location: { hash: '#/settings' },
   history: { replaceState: (_s, _t, url) => { replaced.push(url); ctx.location.hash = url; } },
   confirm: (msg) => { confirms.push(msg); return confirmAnswer; },
-  App: { navigate: async (hash) => { navigated.push(hash); } },
+  App: { navigate: async (hash) => { navigated.push(hash); }, stayPut: () => { stayed.push(ctx.location.hash); ctx.location.hash = '#/settings'; } },
 };
 vm.createContext(ctx);
 vm.runInContext(fs.readFileSync('app/static/js/settings.js', 'utf8') + '\nthis.SettingsPage = SettingsPage;', ctx);
@@ -48,7 +49,7 @@ const log = (step, extra) => console.log(JSON.stringify(Object.assign({ step, di
   ctx.location.hash = '#/invoices';
   confirmAnswer = false;
   await ctx.App.navigate(ctx.location.hash);
-  log('leave-cancelled', { navigated: navigated.slice(), replaced: replaced.slice(), hash: ctx.location.hash, confirms: confirms.length });
+  log('leave-cancelled', { navigated: navigated.slice(), replaced: replaced.slice(), stayed: stayed.slice(), hash: ctx.location.hash, confirms: confirms.length });
 
   await ctx.App.navigate('#/settings');
   log('same-page', { navigated: navigated.slice(), confirms: confirms.length });

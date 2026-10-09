@@ -79,7 +79,7 @@ const ReportsPage = {
         const here = location.hash || '#/';
         if (here === url) return;
         if (App.parseHash(here).path === `/reports/${name}`) history.replaceState(history.state, '', url);
-        else { ReportsPage._leaveFrom(); history.pushState({ from: here }, '', url); }
+        else { ReportsPage._leaveFrom(); history.pushState(App.entryState(here), '', url); }
         App.dialogAddressed();  // the view's own address: the toolbar's Back follows, live over it (NEW-30)
     },
 

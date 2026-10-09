@@ -133,11 +133,11 @@ def test_the_toolbar_has_a_back_that_knows_whether_there_is_somewhere_to_go():
     assert "history.length" not in re.sub(r"//.*", "", app)  # not in the code
     # a link's entry is stamped when first seen; the first entry at start
     assert (
-        "else if (!history.state) history.replaceState({ from: App._here }, '', here);"
+        "else if (!history.state) history.replaceState(App.entryState(App._here), '', here);"
         in app
     )
     assert (
-        "if (!history.state) history.replaceState({ from: null }, '', location.hash || '#/');"
+        "if (!history.state) history.replaceState({ from: null, n: 0 }, '', location.hash || '#/');"
         in app
     )
     # the button follows every push, stamp and history move
@@ -324,10 +324,7 @@ def test_a_replaced_address_keeps_the_entrys_state_and_the_button_follows():
         "history.replaceState(history.state, '', '#/reports');\n        App.addressShown();"
         in reports
     )
-    assert (
-        "{ history.replaceState(history.state, '', '#/settings'); if (typeof App.addressShown === 'function') App.addressShown(); }"
-        in _src("settings.js")
-    )
+    assert "if (location.hash !== '#/settings') App.stayPut();" in _src("settings.js")
 
 
 # ── Review, round 2: the nits ────────────────────────────────────────────
@@ -354,3 +351,23 @@ def test_the_shortcut_list_follows_the_screen_reader_bullets():
     assert docs.index("### Keyboard shortcuts") > docs.index(
         "### Screen readers and keyboards"
     )
+
+
+# ── Review, round 3: a declined leave goes back to its entry ─────────────
+
+
+def test_a_declined_leave_goes_back_to_the_entry_it_left():
+    app = _src("app.js")
+    assert "entryState(from) { return { from, n: App._nShown + 1 }; }" in app
+    assert (
+        "if (typeof n === 'number' && n < App._nShown) history.forward(); else history.back();"
+        in app
+    )
+    assert (
+        "if (App._stay) { App._stay = false; App.addressShown(); return; }" in app
+    )  # navigate
+    assert "if (App._stay) { App.syncBack(); return; }" in app  # popstate
+    # every entry the app makes carries its place
+    assert app.count("App.entryState(") == 3
+    assert "history.pushState(App.entryState(here), '', url);" in _src("reports.js")
+    assert "if (location.hash !== '#/settings') App.stayPut();" in _src("settings.js")
