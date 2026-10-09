@@ -81,7 +81,7 @@ const BudgetsPage = {
         } catch (err) { toast(err.message, 'error'); }
     },
 
-    async showVariance() {
+    async showVariance(prefill) {
         const year = BudgetsPage._year;
         await ReportsPage.openPeriodModal(`Budget vs Actual — ${year}`, 'this_year', async () => {
             const data = await API.get(`/budgets/variance?year=${year}`);
@@ -112,6 +112,6 @@ const BudgetsPage = {
             }
             html += '</div>';
             return html;
-        });
+        }, "Dates", false, { view: 'budget-vs-actual', params: { year }, prefill });
     },
 };

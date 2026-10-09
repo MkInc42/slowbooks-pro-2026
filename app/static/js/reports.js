@@ -3,23 +3,114 @@
  * renders the tables, print/PDF is WeasyPrint server-side.
  */
 const ReportsPage = {
-    // Map of report_type → opener method, for re-opening saved reports.
-    // Keys here MUST match the report_type strings the openers pass to
-    // openPeriodModal so save-then-reload roundtrips cleanly.
-    _OPENERS: {
-        profit_loss:        (params) => ReportsPage.profitLoss(params),
-        balance_sheet:      (params) => ReportsPage.balanceSheet(params),
-        ar_aging:           (params) => ReportsPage.arAging(params),
-        ap_aging:           (params) => ReportsPage.apAging(params),
-        sales_tax:          (params) => ReportsPage.salesTax(params),
-        general_ledger:     (params) => ReportsPage.generalLedger(params),
-        income_by_customer: (params) => ReportsPage.incomeByCustomer(params),
-        cash_flow:          (params) => ReportsPage.cashFlow(params),
-        statement_of_financial_position: (params) => ReportsPage.statementOfFinancialPosition(params),
-        statement_of_activities:         (params) => ReportsPage.statementOfActivities(params),
-        fund_balances:                   (params) => ReportsPage.fundBalances(params),
-        functional_expenses:             (params) => ReportsPage.functionalExpenses(params),
-        pledges:                         (params) => ReportsPage.pledges(params),
+    // Every report view by its address name: #/reports/<name>?<params>
+    // (R7, docs/dev/report-views.md). `open(params)` is what the address
+    // runs, with the query as a plain object of strings; `label` names the
+    // view on a "Back to …" button (through T(), so nonprofit vocabulary
+    // applies); `asOf: true` marks a view dated by one as_of_date rather
+    // than a range; `keep` lists the drill-down params (beyond the dates)
+    // that ride on the way back to the view. A saved report's report_type
+    // is the name with underscores (profit_loss ↔ profit-loss), so saving
+    // and reopening round-trip through the same address.
+    _VIEWS: {
+        'profit-loss':          { label: 'Profit & Loss',      open: (p) => ReportsPage.profitLoss(p) },
+        'balance-sheet':        { label: 'Balance Sheet',      open: (p) => ReportsPage.balanceSheet(p), asOf: true },
+        'profit-loss-by-class': { label: 'P&L by Class',       open: (p) => ReportsPage.profitLossByClass(p) },
+        'profit-loss-class':    { label: 'Profit & Loss',      open: (p) => ReportsPage.profitLossOfClass(p.class_id, null, p.start_date, p.end_date), keep: ['class_id'] },
+        'account-transactions': { label: 'Drill-down',         open: (p) => ReportsPage.openDrillDown(p.account_id, null, p.start_date, p.end_date, p.class_id || null, null, p.from || null) },
+        'ar-aging':             { label: 'Accounts Receivable Aging', open: (p) => ReportsPage.arAging(p), asOf: true },
+        'ap-aging':             { label: 'Accounts Payable Aging',    open: (p) => ReportsPage.apAging(p), asOf: true },
+        'sales-tax':            { label: 'Sales Tax Report',   open: (p) => ReportsPage.salesTax(p) },
+        'general-ledger':       { label: 'General Ledger',     open: (p) => ReportsPage.generalLedger(p) },
+        'income-by-customer':   { label: 'Income by Customer', open: (p) => ReportsPage.incomeByCustomer(p) },
+        'trial-balance':        { label: 'Trial Balance',      open: (p) => ReportsPage.trialBalance(p) },
+        'cash-flow':            { label: 'Cash Flow Statement', open: (p) => ReportsPage.cashFlow(p) },
+        'job-profitability':    { label: 'Job Profitability',  open: (p) => ReportsPage.jobProfitability(p) },
+        'job-budget-vs-actual': { label: 'Job Budget vs Actual', open: (p) => ReportsPage.jobBudgetVsActual(p) },
+        'budget-vs-actual':     { label: 'Budget vs Actual',   open: (p) => { if (/^\d{4}$/.test(p.year || '')) BudgetsPage._year = parseInt(p.year, 10); return BudgetsPage.showVariance(p); } },
+        'financial-statements': { label: 'Financial Statements Pack', open: (p) => ReportsPage.financialStatementsPdf(p) },
+        'fixed-asset-reconciliation': { label: 'Fixed Asset Reconciliation', open: () => ReportsPage.fixedAssetReconciliation() },
+        'customer-statement':   { label: 'Customer Statement', open: () => ReportsPage.customerStatementPicker() },
+        '1099-summary':         { label: '1099 Summary',       open: (p) => ReportsPage.report1099(p) },
+        'statement-of-financial-position': { label: 'Statement of Financial Position', open: (p) => ReportsPage.statementOfFinancialPosition(p), asOf: true },
+        'statement-of-activities':         { label: 'Statement of Activities', open: (p) => ReportsPage.statementOfActivities(p) },
+        'fund-balances':        { label: 'Fund Balances',      open: (p) => ReportsPage.fundBalances(p) },
+        'functional-expenses':  { label: 'Statement of Functional Expenses', open: (p) => ReportsPage.functionalExpenses(p) },
+        'pledges':              { label: 'Pledge Report',      open: (p) => ReportsPage.pledges(p) },
+        'giving-statements':    { label: 'Year-End Giving Statements', open: (p) => ReportsPage.givingStatements(p) },
+    },
+
+    // The address of a view: '#/reports/<name>?<params>'. Empty values are
+    // left out, and so is period=custom — dates alone mean custom, and a
+    // preset period (this_month) names what to recompute on a later day.
+    viewUrl(name, params) {
+        const qs = new URLSearchParams();
+        for (const [k, v] of Object.entries(params || {})) {
+            if (v === null || v === undefined || v === '') continue;
+            if (k === 'period' && v === 'custom') continue;
+            qs.set(k, String(v));
+        }
+        const q = qs.toString();
+        return `#/reports/${name}${q ? `?${q}` : ''}`;
+    },
+
+    // Put the view on the address bar. The same view with other params
+    // (the period changed, a filter set) replaces the entry, so Back never
+    // walks through every period a user tried; a different view (the
+    // Report Center to a report, a report to its drill-down) pushes, so
+    // Back returns to it. The address a push left is remembered for
+    // backTo, which can then go back through history rather than forward
+    // onto a copy.
+    _cameFrom: null,
+    setAddress(name, params) {
+        const url = ReportsPage.viewUrl(name, params);
+        const here = location.hash || '#/';
+        if (here === url) return;
+        if (App.parseHash(here).path === `/reports/${name}`) history.replaceState(null, '', url);
+        else { ReportsPage._cameFrom = here; history.pushState(null, '', url); }
+    },
+
+    // Back to a view, as its "Back to …" button does: through the browser's
+    // history when the previous entry is that view (so Back and the button
+    // agree), otherwise by opening the address.
+    backTo(name, params) {
+        const from = ReportsPage._cameFrom;
+        if (from && App.parseHash(from).path === `/reports/${name}`) {
+            ReportsPage._cameFrom = null;
+            history.back();
+            return;
+        }
+        App.navigate(ReportsPage.viewUrl(name, params));
+    },
+
+    _backButton(name, params) {
+        const view = ReportsPage._VIEWS[name];
+        if (!view) return '';
+        const call = escapeHtml(`ReportsPage.backTo(${JSON.stringify(name)}, ${JSON.stringify(params || {})})`);
+        return `<button type="button" class="btn btn-secondary" onclick="${call}">Back to ${escapeHtml(T(view.label))}</button>`;
+    },
+
+    // The '/reports/:view' route: the view named in the address, opened
+    // over the Report Center from its query. A name nobody registered, or a
+    // view that cannot open, leaves the Report Center showing and says so;
+    // the address falls back to the Report Center's.
+    async openView(name, params) {
+        const view = ReportsPage._VIEWS[name];
+        if (!view) {
+            history.replaceState(null, '', '#/reports');
+            toast(`There is no report called "${name}"`, 'error');
+            return;
+        }
+        try {
+            await view.open(params || {});
+        } catch (err) {
+            history.replaceState(null, '', '#/reports');
+            throw err;
+        }
+        // Opened nothing (a drill-down with no account, say, which says so
+        // in a notice): the address is the Report Center's.
+        const overlay = $('#modal-overlay');
+        if (overlay && overlay.classList.contains('hidden')) history.replaceState(null, '', '#/reports');
     },
 
     async render() {
@@ -161,12 +252,14 @@ const ReportsPage = {
             const all = await API.get('/saved-reports');
             const saved = all.find(s => s.id === id);
             if (!saved) { toast('Saved report not found', 'error'); return; }
-            const opener = ReportsPage._OPENERS[saved.report_type];
-            if (!opener) {
+            // Through the view's address, as a bookmark would open it: the
+            // report is then on the address bar and a step back in history.
+            const name = String(saved.report_type).replace(/_/g, '-');
+            if (!ReportsPage._VIEWS[name]) {
                 toast(`No opener registered for "${saved.report_type}"`, 'error');
                 return;
             }
-            await opener(saved.parameters || {});
+            await App.navigate(ReportsPage.viewUrl(name, saved.parameters || {}));
         } catch (err) { toast(err.message || 'Failed to open', 'error'); }
     },
 
@@ -199,29 +292,54 @@ const ReportsPage = {
     // range and shows the journal entries that rolled up into the row the
     // user clicked. Each entry's source_link routes to the originating
     // invoice / bill / payment / journal entry.
-    // With `classId`, only that class's lines (#213), and a way back to
-    // P&L by Class for the same dates. `from` = 'general-ledger' when an
-    // account heading in the General Ledger opened it (#224): the way back
-    // is to the ledger instead.
+    // With `classId`, only that class's lines (#213). `from` names the view
+    // that opened it (a ReportsPage._VIEWS key: 'profit-loss',
+    // 'general-ledger' (#224), 'profit-loss-by-class', …): the "Back to …"
+    // button returns there for the same dates, and the browser's Back does
+    // the same. The view has an address of its own
+    // (#/reports/account-transactions?account_id=…&from=…), so it is
+    // rebuilt from the address after a reload, or on Back from a source
+    // document (R7): the names are then taken from what the server says.
     async openDrillDown(accountId, accountName, startDate, endDate, classId = null, className = null, from = null) {
+        accountId = parseInt(accountId, 10);
         if (!accountId) { toast('No account_id on this row', 'error'); return; }
+        classId = classId ? parseInt(classId, 10) || null : null;
+        if (classId && !from) from = 'profit-loss-by-class';
+        const back = ReportsPage._VIEWS[from] ? from : null;
         const params = new URLSearchParams();
         params.set('account_id', accountId);
         if (startDate) params.set('start_date', startDate);
         if (endDate) params.set('end_date', endDate);
         if (classId) params.set('class_id', classId);
 
-        openModal(`Drill-down — ${accountName}${className ? ` · ${className}` : ''}`, `
+        ReportsPage.setAddress('account-transactions', {
+            account_id: accountId, start_date: startDate, end_date: endDate, class_id: classId, from: back,
+        });
+
+        // The way back carries the dates the view was on (one as-of date
+        // for a balance sheet) and whatever the view says it keeps.
+        let backBtn = '';
+        if (back) {
+            const v = ReportsPage._VIEWS[back];
+            const backParams = v.asOf ? { as_of_date: endDate } : { start_date: startDate, end_date: endDate };
+            if ((v.keep || []).includes('class_id') && classId) backParams.class_id = classId;
+            backBtn = ReportsPage._backButton(back, backParams);
+        }
+
+        const title = (name, cls) => `Drill-down — ${name || `account ${accountId}`}${cls ? ` · ${cls}` : ''}`;
+        openModal(title(accountName, className), `
             <div id="drilldown-body" style="font-size:11px; color:var(--gray-500);">Loading…</div>
             <div class="form-actions">
-                ${classId ? ReportsPage._backToByClass(startDate, endDate) : ''}
-                ${from === 'general-ledger' ? ReportsPage._backToGeneralLedger(startDate, endDate) : ''}
-                <button class="btn btn-secondary" onclick="closeModal()">Close</button>
+                ${backBtn}
+                <button type="button" class="btn btn-secondary" onclick="closeModal()">Close</button>
             </div>
         `);
 
         try {
             const data = await API.get(`/reports/account-transactions?${params.toString()}`);
+            if (!accountName || (classId && !className)) {
+                $('#modal-title').textContent = title(accountName || data.account.name, className || data.class_name);
+            }
             const rows = (data.entries || []).map(e => {
                 const src = e.source_link
                     ? `<a href="${escapeHtml(e.source_link)}" style="color:var(--text-link); text-decoration:none;">${escapeHtml(e.source_type || '')} #${e.source_id}</a>`
@@ -374,15 +492,22 @@ const ReportsPage = {
         // opts.reportType (string) — when set, adds an "Add to Saved Reports" button
         // that captures the current period/range as parameters.
         // opts.prefill ({period?, start_date?, end_date?, as_of_date?}) —
-        // used when reopening a saved report; overrides initialPeriod and
-        // pre-populates the date inputs.
+        // used when reopening a saved report or a view's address; overrides
+        // initialPeriod and pre-populates the date inputs. Dates with no
+        // period mean a custom range; a period nobody knows is ignored.
+        // opts.view (string) — the view's address name (ReportsPage._VIEWS):
+        // each render puts the period and dates on the address bar, with
+        // opts.params (an object: class_id, account_id, …) ahead of them.
         const reportType = opts.reportType || null;
         const prefill = opts.prefill || {};
+        const view = opts.view || null;
 
         const currentYear = new Date().getFullYear();
         const defaultCustomStart = prefill.start_date || `${currentYear}-01-01`;
         const defaultCustomEnd = prefill.end_date || prefill.as_of_date || todayISO();
-        const startingPeriod = prefill.period || initialPeriod;
+        const known = ReportsPage.periodOptions('').includes(`value="${prefill.period}"`);
+        const dated = !!(prefill.start_date || prefill.end_date || prefill.as_of_date);
+        const startingPeriod = (prefill.period && known) ? prefill.period : (dated ? 'custom' : initialPeriod);
 
         const saveBtn = reportType
             ? `<button class="btn btn-secondary" id="report-save-btn" data-write>Add to Saved Reports…</button>`
@@ -419,10 +544,12 @@ const ReportsPage = {
                 if (useAsOfOnly) {
                     const asOfDate = ReportsPage.getAsOfDate(select.value, endInput.value || todayISO());
                     currentParams = { period: select.value, as_of_date: asOfDate };
+                    if (view) ReportsPage.setAddress(view, { ...(opts.params || {}), ...currentParams });
                     content.innerHTML = await loadContent(select.value, { as_of_date: asOfDate });
                 } else {
                     const range = ReportsPage.getDateRange(select.value, startInput.value, endInput.value);
                     currentParams = { period: select.value, start_date: range.start, end_date: range.end };
+                    if (view) ReportsPage.setAddress(view, { ...(opts.params || {}), ...currentParams });
                     content.innerHTML = await loadContent(select.value, range);
                 }
             } catch (err) {
@@ -452,7 +579,7 @@ const ReportsPage = {
             // HTML-escape the embedded double quotes from JSON.stringify().
             // Otherwise the inner " breaks the outer onclick="…" attribute.
             const drillCall = (i) => escapeHtml(
-                `ReportsPage.openDrillDown(${i.account_id},${JSON.stringify(i.account_name)},${JSON.stringify(range.start)},${JSON.stringify(range.end)})`
+                `ReportsPage.openDrillDown(${i.account_id},${JSON.stringify(i.account_name)},${JSON.stringify(range.start)},${JSON.stringify(range.end)},null,null,'profit-loss')`
             );
             const section = (items) => {
                 if (!items.length) return `<tr><td colspan="2" style="color:var(--gray-400);">None</td></tr>`;
@@ -480,7 +607,7 @@ const ReportsPage = {
                         <tr style="font-weight:700; font-size:15px; background:var(--primary-light);"><td>${T('Net Income')}</td><td class="amount">${formatCurrency(data.net_income)}</td></tr>
                     </tbody>
                 </table></div>`;
-        }, "Dates", false, { reportType: 'profit_loss', prefill });
+        }, "Dates", false, { reportType: 'profit_loss', view: 'profit-loss', prefill });
     },
 
     async balanceSheet(prefill) {
@@ -488,7 +615,7 @@ const ReportsPage = {
             const data = await API.get(`/reports/balance-sheet?as_of_date=${params.as_of_date}`);
             const pdfBtn = ReportsPage._exportButtons('balance-sheet', `as_of_date=${params.as_of_date}`);
             const drillCall = (i) => escapeHtml(
-                `ReportsPage.openDrillDown(${i.account_id},${JSON.stringify(i.account_name)},null,${JSON.stringify(params.as_of_date)})`
+                `ReportsPage.openDrillDown(${i.account_id},${JSON.stringify(i.account_name)},null,${JSON.stringify(params.as_of_date)},null,null,'balance-sheet')`
             );
             const section = (items) => items.map(i =>
                 `<tr><td style="padding-left:24px;">
@@ -512,7 +639,7 @@ const ReportsPage = {
                         <tr style="font-weight:600; background:var(--gray-50);"><td>${T('Total Equity')}</td><td class="amount">${formatCurrency(data.total_equity)}</td></tr>
                     </tbody>
                 </table></div>`;
-        }, "As Of", true, { reportType: 'balance_sheet', prefill });
+        }, "As Of", true, { reportType: 'balance_sheet', view: 'balance-sheet', prefill });
     },
 
     async salesTax(prefill) {
@@ -559,7 +686,7 @@ const ReportsPage = {
                     <div style="font-size:14px; font-weight:700; color:var(--qb-navy);">Tax Collected: ${formatCurrency(data.total_tax)}</div>
                     ${reconcile}
                 </div>`;
-        }, "Dates", false, { reportType: 'sales_tax', prefill });
+        }, "Dates", false, { reportType: 'sales_tax', view: 'sales-tax', prefill });
     },
 
     async generalLedger(prefill) {
@@ -605,7 +732,7 @@ const ReportsPage = {
                 }
             }
             return html;
-        }, "Dates", false, { reportType: 'general_ledger', prefill });
+        }, "Dates", false, { reportType: 'general_ledger', view: 'general-ledger', prefill });
     },
 
     async incomeByCustomer(prefill) {
@@ -637,10 +764,11 @@ const ReportsPage = {
                     <thead><tr><th scope="col">${T('Customer')}</th><th scope="col" class="amount">${T('Invoices')}</th><th scope="col" class="amount">Sales</th><th scope="col" class="amount">Sales Tax</th><th scope="col" class="amount">Paid</th><th scope="col" class="amount">Balance</th></tr></thead>
                     <tbody>${rows || '<tr><td colspan="6" style="text-align:center; color:var(--gray-400);">No sales data</td></tr>'}</tbody>
                 </table></div>`;
-        }, "Dates", false, { reportType: 'income_by_customer', prefill });
+        }, "Dates", false, { reportType: 'income_by_customer', view: 'income-by-customer', prefill });
     },
 
     async customerStatementPicker() {
+        ReportsPage.setAddress('customer-statement', {});
         const customers = await API.get("/customers?active_only=true");
         const custOpts = customers.map(c => `<option value="${c.id}">${escapeHtml(c.name)}</option>`).join("");
         openModal(T("Customer Statement"), `
@@ -710,7 +838,7 @@ const ReportsPage = {
                     </tr></thead>
                     <tbody>${rows || '<tr><td colspan="7" style="text-align:center; color:var(--gray-400);">No outstanding receivables</td></tr>'}</tbody>
                 </table></div>`;
-        }, "As Of", true, { reportType: 'ar_aging', prefill });
+        }, "As Of", true, { reportType: 'ar_aging', view: 'ar-aging', prefill });
     },
 
     async apAging(prefill) {
@@ -744,10 +872,10 @@ const ReportsPage = {
                     </tr></thead>
                     <tbody>${rows || '<tr><td colspan="6" style="text-align:center; color:var(--gray-400);">No outstanding payables</td></tr>'}</tbody>
                 </table></div>`;
-        }, "As Of", true, { reportType: 'ap_aging', prefill });
+        }, "As Of", true, { reportType: 'ap_aging', view: 'ap-aging', prefill });
     },
 
-    async trialBalance() {
+    async trialBalance(prefill) {
         await ReportsPage.openPeriodModal("Trial Balance", "this_year_to_date", async (_period, range) => {
             const data = await API.get(`/reports/trial-balance?start_date=${range.start}&end_date=${range.end}`);
             let rows = data.items.map(i =>
@@ -773,7 +901,7 @@ const ReportsPage = {
                     <thead><tr><th scope="col">Number</th><th scope="col">Account</th><th scope="col">Type</th><th scope="col" class="amount">Debit</th><th scope="col" class="amount">Credit</th><th scope="col" class="amount">Net</th></tr></thead>
                     <tbody>${rows}</tbody>
                 </table></div>`;
-        });
+        }, "Dates", false, { view: 'trial-balance', prefill });
     },
 
     async cashFlow(prefill) {
@@ -809,24 +937,30 @@ const ReportsPage = {
                         <tr style="font-weight:700;"><td>Cash at end of period</td><td class="amount">${formatCurrency(data.ending_cash)}</td></tr>
                     </tbody>
                 </table></div>`;
-        }, "Dates", false, { reportType: 'cash_flow', prefill });
+        }, "Dates", false, { reportType: 'cash_flow', view: 'cash-flow', prefill });
     },
 
-    async report1099() {
+    // #/reports/1099-summary?year=2025 opens the year's summary straight
+    // away (R7); the address takes the year when Generate is clicked.
+    async report1099(prefill) {
         const currentYear = new Date().getFullYear();
+        const year = /^\d{4}$/.test((prefill || {}).year || '') ? prefill.year : null;
+        ReportsPage.setAddress('1099-summary', { year });
         openModal('1099 Summary', `
             <div class="form-grid" style="margin-bottom:12px;">
-                <div class="form-group"><label>Year</label>
-                    <input id="report-1099-year" type="number" value="${currentYear}" style="width:100px;"></div>
+                <div class="form-group"><label for="report-1099-year">Year</label>
+                    <input id="report-1099-year" type="number" value="${year || currentYear}" style="width:100px;"></div>
                 <div class="form-group" style="align-self:end;">
-                    <button class="btn btn-primary" onclick="ReportsPage.load1099()">Generate</button></div>
+                    <button type="button" class="btn btn-primary" onclick="ReportsPage.load1099()">Generate</button></div>
             </div>
             <div id="report-1099-content"><div style="font-size:11px; color:var(--gray-500);">Select year and click Generate</div></div>
-            <div class="form-actions"><button class="btn btn-secondary" onclick="closeModal()">Close</button></div>`);
+            <div class="form-actions"><button type="button" class="btn btn-secondary" onclick="closeModal()">Close</button></div>`);
+        if (year) await ReportsPage.load1099();
     },
 
     async load1099() {
         const year = $('#report-1099-year').value;
+        ReportsPage.setAddress('1099-summary', { year });
         const content = $('#report-1099-content');
         content.innerHTML = '<div style="font-size:11px; color:var(--gray-500);">Loading...</div>';
         try {
@@ -947,24 +1081,30 @@ ReportsPage.profitLossByClass = async function (prefill) {
                     ${sum(T('Net Income'), 'net_income', data.total_net_income, 'font-weight:700; background:var(--primary-light);')}
                 </tbody>
             </table></div>`;
-    }, "Dates", false, { prefill });
+    }, "Dates", false, { view: 'profit-loss-by-class', prefill });
 };
 
 // One class's own P&L (#213): the P&L by Class column, account by account,
 // each opening its transactions for that class.
+// Its address is #/reports/profit-loss-class?class_id=…&start_date=…&end_date=…
+// (R7): opened from it, the class's name comes from the server.
 ReportsPage.profitLossOfClass = async function (classId, className, startDate, endDate) {
-    openModal(`${T('Profit & Loss')} — ${className}`, `
+    classId = parseInt(classId, 10);
+    if (!classId) { toast(`No ${T('class')} on this column`, 'error'); return; }
+    ReportsPage.setAddress('profit-loss-class', { class_id: classId, start_date: startDate, end_date: endDate });
+    openModal(`${T('Profit & Loss')} — ${className || T('Class')}`, `
         <div id="class-pl-body" style="font-size:11px; color:var(--gray-500);">Loading…</div>
         <div class="form-actions">
-            ${ReportsPage._backToByClass(startDate, endDate)}
-            <button class="btn btn-secondary" onclick="closeModal()">Close</button>
+            ${ReportsPage._backButton('profit-loss-by-class', { start_date: startDate, end_date: endDate })}
+            <button type="button" class="btn btn-secondary" onclick="closeModal()">Close</button>
         </div>`);
     try {
         const data = await API.get(`/reports/profit-loss?start_date=${startDate}&end_date=${endDate}&class_id=${classId}`);
+        if (!className) $('#modal-title').textContent = `${T('Profit & Loss')} — ${data.class_name}`;
         const args = (...xs) => xs.map(x => JSON.stringify(x)).join(',');
         const section = items => items.length
             ? items.map(i => {
-                const call = escapeHtml(`ReportsPage.openDrillDown(${args(i.account_id, i.account_name, startDate, endDate, classId, className)})`);
+                const call = escapeHtml(`ReportsPage.openDrillDown(${args(i.account_id, i.account_name, startDate, endDate, classId, className, 'profit-loss-class')})`);
                 return `<tr><td style="padding-left:24px;"><a href="javascript:void(0)" style="color:var(--text-link); text-decoration:none;" onclick="${call}">${escapeHtml(i.account_name)}</a></td><td class="amount">${formatCurrency(i.amount)}</td></tr>`;
             }).join('')
             : '<tr><td colspan="2" style="color:var(--gray-400);">None</td></tr>';
@@ -991,20 +1131,19 @@ ReportsPage.profitLossOfClass = async function (classId, className, startDate, e
     }
 };
 
-// Back to P&L by Class, on the dates it was opened with.
+// Back to P&L by Class / the General Ledger, on the dates each was opened
+// with (#213, #224): now ReportsPage._backButton, through the view's
+// address and the browser's history (R7). Kept by name for callers.
 ReportsPage._backToByClass = function (startDate, endDate) {
-    const call = escapeHtml(`ReportsPage.profitLossByClass({period: 'custom', start_date: ${JSON.stringify(startDate)}, end_date: ${JSON.stringify(endDate)}})`);
-    return `<button class="btn btn-secondary" onclick="${call}">Back to ${T('P&L by Class')}</button>`;
+    return ReportsPage._backButton('profit-loss-by-class', { start_date: startDate, end_date: endDate });
 };
-
-// Back to the General Ledger, on the dates it was opened with (#224).
 ReportsPage._backToGeneralLedger = function (startDate, endDate) {
-    const call = escapeHtml(`ReportsPage.generalLedger({period: 'custom', start_date: ${JSON.stringify(startDate)}, end_date: ${JSON.stringify(endDate)}})`);
-    return `<button class="btn btn-secondary" onclick="${call}">Back to General Ledger</button>`;
+    return ReportsPage._backButton('general-ledger', { start_date: startDate, end_date: endDate });
 };
 
 // Fixed assets: register totals per type for GL reconciliation.
 ReportsPage.fixedAssetReconciliation = async function () {
+    ReportsPage.setAddress('fixed-asset-reconciliation', {});
     const data = await API.get('/fixed-assets/reports/reconciliation');
     const rows = data.types.map(t => `<tr>
         <td>${escapeHtml(t.asset_type)}</td>
@@ -1032,7 +1171,7 @@ ReportsPage.fixedAssetReconciliation = async function () {
 };
 
 // Financial statements pack — one PDF with P&L, Balance Sheet, Trial Balance.
-ReportsPage.financialStatementsPdf = async function () {
+ReportsPage.financialStatementsPdf = async function (prefill) {
     await ReportsPage.openPeriodModal("Financial Statements Pack", "this_year_to_date", async (_period, range) => {
         window.open(`/api/reports/financial-statements/pdf?start_date=${range.start}&end_date=${range.end}`, '_blank');
         // Said for both: a browser opens a tab, the desktop app saves the PDF,
@@ -1041,10 +1180,10 @@ ReportsPage.financialStatementsPdf = async function () {
             ${T('P&L')} and Trial Balance for ${escapeHtml(range.start)} — ${escapeHtml(range.end)},
             ${T('Balance Sheet')} as of ${escapeHtml(range.end)}. Paper size follows
             Settings → Report PDF Paper Size.</div>`;
-    });
+    }, "Dates", false, { view: 'financial-statements', prefill });
 };
 
-ReportsPage.jobProfitability = async function () {
+ReportsPage.jobProfitability = async function (prefill) {
     await ReportsPage.openPeriodModal(T("Job Profitability"), "this_year_to_date", async (_period, range) => {
         const data = await API.get(`/reports/job-profitability?start_date=${range.start}&end_date=${range.end}`);
         const pct = v => v === null || v === undefined ? '—' : `${v.toFixed(1)}%`;
@@ -1073,10 +1212,10 @@ ReportsPage.jobProfitability = async function () {
                     <td></td>
                 </tr></tfoot>
             </table></div>`;
-    });
+    }, "Dates", false, { view: 'job-profitability', prefill });
 };
 
-ReportsPage.jobBudgetVsActual = async function () {
+ReportsPage.jobBudgetVsActual = async function (prefill) {
     await ReportsPage.openPeriodModal(T("Job Budget vs Actual"), "this_year_to_date", async (_period, range) => {
         const data = await API.get(`/jobs/budget-vs-actual?start_date=${range.start}&end_date=${range.end}`);
         const pct = v => v === null || v === undefined ? '—' : `${v.toFixed(1)}%`;
@@ -1109,7 +1248,7 @@ ReportsPage.jobBudgetVsActual = async function () {
                     <td class="amount">${formatCurrency(t.variance)}</td><td></td><td class="amount">${formatCurrency(t.act_revenue)}</td>
                 </tr></tfoot>
             </table></div>`;
-    });
+    }, "Dates", false, { view: 'job-budget-vs-actual', prefill });
 };
 
 
@@ -1147,12 +1286,15 @@ ReportsPage._nonprofitCards = function () {
         </div>`;
 };
 
-ReportsPage.givingStatements = function () {
+ReportsPage.givingStatements = function (prefill) {
     const y = new Date().getFullYear();
-    const opts = [y, y - 1, y - 2].map(v => `<option value="${v}" ${v === y - 1 ? 'selected' : ''}>${v}</option>`).join('');
+    const picked = parseInt((prefill || {}).year, 10);
+    const chosen = [y, y - 1, y - 2].includes(picked) ? picked : y - 1;
+    ReportsPage.setAddress('giving-statements', { year: chosen });
+    const opts = [y, y - 1, y - 2].map(v => `<option value="${v}" ${v === chosen ? 'selected' : ''}>${v}</option>`).join('');
     openModal('Year-End Giving Statements', `
         <div class="form-grid">
-            <div class="form-group"><label>Tax year</label><select id="gs-year">${opts}</select></div>
+            <div class="form-group"><label for="gs-year">Tax year</label><select id="gs-year" onchange="ReportsPage.setAddress('giving-statements', { year: this.value })">${opts}</select></div>
         </div>
         <p style="font-size:12px;color:var(--gray-500);margin:8px 0;">Every ${T('customer')} with a gift in the year gets a statement: cash contributions with the deductible portion, non-cash gifts described without a value. ${T('Customers')} who opted out in their record are skipped when emailing.</p>
         <div id="gs-result" style="font-size:12px;margin:8px 0;"></div>
@@ -1191,7 +1333,7 @@ ReportsPage.pledges = async function (prefill) {
             <div class="table-container"><table>${head}<tbody>${donors || `<tr><td colspan="7" style="color:var(--gray-400);">No pledges in this period</td></tr>`}</tbody>${foot}</table></div>
             <h4 style="margin:12px 0 4px;font-size:12px;">By campaign (${T('class')})</h4>
             <div class="table-container"><table>${head}<tbody>${classes || `<tr><td colspan="7" style="color:var(--gray-400);">—</td></tr>`}</tbody></table></div>`;
-    }, "Dates", false, { reportType: 'pledges', prefill });
+    }, "Dates", false, { reportType: 'pledges', view: 'pledges', prefill });
 };
 
 ReportsPage._exportButtons = function (path, qs) {
@@ -1235,14 +1377,14 @@ ReportsPage.statementOfActivities = async function (prefill) {
                     ${line('Change in Net Assets', t.change_without, t.change_with, t.change_total, pt.change_total, 'font-weight:700; font-size:15px; background:var(--primary-light);')}
                 </tbody>
             </table></div>`;
-    }, "Dates", false, { reportType: 'statement_of_activities', prefill });
+    }, "Dates", false, { reportType: 'statement_of_activities', view: 'statement-of-activities', prefill });
 };
 
 ReportsPage.statementOfFinancialPosition = async function (prefill) {
     await ReportsPage.openPeriodModal("Statement of Financial Position", "this_year_to_date", async (_period, params) => {
         const qs = `as_of_date=${params.as_of_date}`;
         const d = await API.get(`/reports/statement-of-financial-position?${qs}`);
-        const drillCall = (i) => escapeHtml(`ReportsPage.openDrillDown(${i.account_id},${JSON.stringify(i.account_name)},null,${JSON.stringify(params.as_of_date)})`);
+        const drillCall = (i) => escapeHtml(`ReportsPage.openDrillDown(${i.account_id},${JSON.stringify(i.account_name)},null,${JSON.stringify(params.as_of_date)},null,null,'statement-of-financial-position')`);
         const section = (items) => items.map(i => `<tr><td style="padding-left:24px;">
                 ${i.account_id ? `<a href="javascript:void(0)" style="color:var(--text-link); text-decoration:none;" onclick="${drillCall(i)}">${escapeHtml(i.account_name)}</a>` : escapeHtml(i.account_name)}
                 </td><td class="amount">${formatCurrency(i.amount)}</td></tr>`).join('') || `<tr><td colspan="2" style="color:var(--gray-400);">None</td></tr>`;
@@ -1261,7 +1403,7 @@ ReportsPage.statementOfFinancialPosition = async function (prefill) {
                     <tr style="font-weight:700; font-size:15px; background:var(--primary-light);"><td>Liabilities + Net Assets</td><td class="amount">${formatCurrency(d.total_liabilities_and_net_assets)}</td></tr>
                 </tbody>
             </table></div>`;
-    }, "As of", true, { reportType: 'statement_of_financial_position', prefill });
+    }, "As of", true, { reportType: 'statement_of_financial_position', view: 'statement-of-financial-position', prefill });
 };
 
 ReportsPage.fundBalances = async function (prefill) {
@@ -1278,7 +1420,7 @@ ReportsPage.fundBalances = async function (prefill) {
                 <tbody>${rows || `<tr><td colspan="7" style="color:var(--gray-400);">No restricted ${T('classes')} yet</td></tr>`}</tbody>
                 <tfoot>${row({ class_name: 'Total', ...d.totals }, 'font-weight:700; background:var(--gray-50);')}</tfoot>
             </table></div>`;
-    }, "Dates", false, { reportType: 'fund_balances', prefill });
+    }, "Dates", false, { reportType: 'fund_balances', view: 'fund-balances', prefill });
 };
 
 ReportsPage.functionalExpenses = async function (prefill) {
@@ -1300,5 +1442,5 @@ ReportsPage.functionalExpenses = async function (prefill) {
                 <tbody>${rows || `<tr><td colspan="${cmp ? 8 : 6}" style="color:var(--gray-400);">No expenses in this period</td></tr>`}</tbody>
                 <tfoot>${row('Total', d.totals, 'font-weight:700; background:var(--gray-50);', pt.total || 0)}</tfoot>
             </table></div>${programs}`;
-    }, "Dates", false, { reportType: 'functional_expenses', prefill });
+    }, "Dates", false, { reportType: 'functional_expenses', view: 'functional-expenses', prefill });
 };

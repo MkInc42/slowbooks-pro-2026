@@ -228,7 +228,7 @@ const DashboardPage = {
             const row = (m) => `<tr><td>${escapeHtml(m.label)}</td><td class="amount">${formatCurrency(m.income)}</td><td class="amount">${formatCurrency(m.expenses)}</td><td class="amount" style="font-weight:700;color:${m.net < 0 ? 'var(--text-danger)' : 'var(--text-success)'}">${formatCurrency(m.net)}</td></tr>`;
             return `<table class="data-table" style="font-size:12px"><thead><tr><th scope="col"></th><th scope="col" class="amount">${T('Income')}</th><th scope="col" class="amount">Expenses</th><th scope="col" class="amount">Net</th></tr></thead>
                 <tbody>${row(d.this_month)}${row(d.last_month)}</tbody></table>
-                <div style="font-size:11px;margin-top:4px;color:${d.net_change < 0 ? 'var(--text-danger)' : 'var(--text-success)'}">${d.net_change >= 0 ? '▲' : '▼'} ${formatCurrency(Math.abs(d.net_change))} vs last month · <a href="#/reports">Full ${T('P&L')}</a></div>`;
+                <div style="font-size:11px;margin-top:4px;color:${d.net_change < 0 ? 'var(--text-danger)' : 'var(--text-success)'}">${d.net_change >= 0 ? '▲' : '▼'} ${formatCurrency(Math.abs(d.net_change))} vs last month · <a href="${DashboardPage._reportLink('pnl', 'this_month')}">Full ${T('P&L')}</a></div>`;
         },
         pnl_ytd(d) {
             const max = Math.max(...d.months.map(m => Math.abs(m.cumulative)), 1);
@@ -242,7 +242,7 @@ const DashboardPage = {
                     <tr><td>Expenses</td><td class="amount">${formatCurrency(d.expenses)}</td></tr>
                 </tbody></table>
                 <div style="display:flex;align-items:flex-end;gap:4px;height:70px;margin-top:8px">${bars}</div>
-                <div style="font-size:10px;color:var(--gray-500);margin-top:2px">cumulative net by month · <a href="#/reports">Full ${T('P&L')}</a></div>`;
+                <div style="font-size:10px;color:var(--gray-500);margin-top:2px">cumulative net by month · <a href="${DashboardPage._reportLink('pnl', 'this_year_to_date')}">Full ${T('P&L')}</a></div>`;
         },
         cash_position(d) {
             return `<div class="card-value">${formatCurrency(d.cash)}</div>
@@ -286,8 +286,22 @@ const DashboardPage = {
                     <span>${chip('var(--chart-green)')} ${T('Equity')} ${formatCurrency(last.equity)}</span>
                 </div>
                 <div style="position:relative;height:150px"><canvas id="chart-bs-trend"></canvas></div>
-                <div style="font-size:10px;color:var(--gray-500);margin-top:2px">Month-end balances, last 12 months (this month to date) · <a href="#/reports">Full ${T('Balance Sheet')}</a></div>`;
+                <div style="font-size:10px;color:var(--gray-500);margin-top:2px">Month-end balances, last 12 months (this month to date) · <a href="${DashboardPage._reportLink('bs')}">Full ${T('Balance Sheet')}</a></div>`;
         },
+    },
+
+    // The card's report, dated as the card is (R7): this month's or the
+    // year-to-date P&L, the balance sheet as of today — the Statement of
+    // Activities / of Financial Position for a nonprofit. The period rides
+    // with the dates, so a bookmark of the link is "this month" next month
+    // too.
+    _reportLink(which, period) {
+        const np = Terms.isNonprofit();
+        if (which === 'bs') {
+            return ReportsPage.viewUrl(np ? 'statement-of-financial-position' : 'balance-sheet', { as_of_date: todayISO() });
+        }
+        const range = ReportsPage.getDateRange(period);
+        return ReportsPage.viewUrl(np ? 'statement-of-activities' : 'profit-loss', { period, start_date: range.start, end_date: range.end });
     },
 
     _bsChart: null,

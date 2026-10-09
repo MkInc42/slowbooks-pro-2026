@@ -31,6 +31,12 @@ const App = {
         '/banking/transfers/:id': { page: 'banking', label: 'Transfer',     render: (id) => App.withDocument(() => BankingPage.render(), () => JournalPage.view(id)) },
         '/accounts':      { page: 'accounts',        label: 'Chart of Accounts',  render: () => App.renderAccounts() },
         '/reports':       { page: 'reports',         label: 'Report Center',      render: () => ReportsPage.render() },
+        // A report view's own address (#/reports/profit-loss?start_date=…,
+        // #/reports/account-transactions?account_id=…): the Report Center is
+        // the page, and the view opens over it from the query, as a document
+        // opens over its list. Which views exist, and what each takes, is
+        // ReportsPage._VIEWS (docs/dev/report-views.md).
+        '/reports/:view': { page: 'reports',         label: 'Report',             render: (view, query) => App.withDocument(() => ReportsPage.render(), () => ReportsPage.openView(view, query)) },
         '/settings':      { page: 'settings',        label: 'Company Settings',   render: () => SettingsPage.render() },
         '/iif':           { page: 'iif',             label: 'QuickBooks Interop', render: () => IIFPage.render() },
         '/quick-entry':   { page: 'quick-entry',     label: 'Quick Entry',        render: () => App.renderQuickEntry() },
@@ -101,17 +107,37 @@ const App = {
         return html;
     },
 
+    // An address, taken apart: '#/reports/profit-loss?start_date=2026-07-01'
+    // is the path '/reports/profit-loss' and the query
+    // {start_date: '2026-07-01'}. The path picks the route; the query is
+    // handed to the route's render as its second argument, so a report's
+    // dates and filters, or a page's tab, ride in the address (R7). Before
+    // this the whole string was the path, and a query was swallowed into
+    // the :id parameter of whichever route it reached.
+    parseHash(hash) {
+        const full = String(hash || '').replace(/^#/, '') || '/';
+        const i = full.indexOf('?');
+        const path = (i < 0 ? full : full.slice(0, i)) || '/';
+        const query = {};
+        if (i >= 0) {
+            for (const [k, v] of new URLSearchParams(full.slice(i + 1))) query[k] = v;
+        }
+        return { path, query };
+    },
+
     async navigate(hash) {
         if (App._pageCleanup) { App._pageCleanup(); App._pageCleanup = null; }
-        const path = hash.replace('#', '') || '/';
+        const { path, query } = App.parseHash(hash);
+        const full = String(hash || '').replace(/^#/, '') || '/';
         // Keep the address in step with the page shown. The toolbar's Home,
         // Quick Entry and Reports (and the shortcuts, search results and the
         // pages that move on by themselves) came here without changing it,
         // so the sidebar link of the page left behind then did nothing:
         // clicking it changed no hash (2.18.0 gate, macbase1 NEW-9).
         // pushState gives Back an entry, as a link does, and fires no
-        // hashchange to navigate a second time.
-        if ((location.hash || '#/') !== `#${path}`) history.pushState(null, '', `#${path}`);
+        // hashchange to navigate a second time. The query rides along: the
+        // address is the whole of it.
+        if ((location.hash || '#/') !== `#${full}`) history.pushState(null, '', `#${full}`);
         let route = App.routes[path];
         let param = null;
         if (!route) {
@@ -167,7 +193,7 @@ const App = {
         if (adminOnly()) return showAdminOnly();
 
         try {
-            const html = await route.render(param);
+            const html = await route.render(param, query);
             if (adminOnly()) return showAdminOnly();
             $('#page-content').innerHTML = html;
             App.setStatus(`${route.label} — Ready`);
