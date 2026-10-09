@@ -16,6 +16,20 @@ Chromium on the bakery's books of tests/test_theme_contrast.py:
   report; a saved report opens through the same address; a view nobody
   registered leaves the Report Center showing.
 
+And, from the R7 review:
+
+- browser Back from an open report closes it: the page gone back to (the
+  Report Center, the dashboard) is not left under the dialog;
+- a drill-down reached by its address alone (a hash set by hand, after
+  history went elsewhere) sends "Back to …" forward to the report, never
+  back through history to the wrong place;
+- the three-deep chain by-class → class P&L → drill-down goes back twice
+  through history, each view as it was left, period preset included, with
+  no copy piled on; the drill-down's button names the class it returns to;
+- Object.prototype names ('__proto__', 'constructor') are not registered
+  views: no crash, no "Back to " button going nowhere;
+- a date in the address that is not one is said so, not quietly replaced.
+
 Skipped, as one module, where playwright or its Chromium is not installed
 (tests/test_report_views.py drives the router in node).
 """
@@ -260,10 +274,262 @@ def test_the_dashboard_cards_open_the_dated_report(browser, company, books):
         assert page.evaluate(TITLE) == "Balance Sheet"
         assert page.evaluate(PERIOD)["period"] == "custom"
         assert page.evaluate(PERIOD)["end"] == today.isoformat()
-        # and Back is the dashboard
+        # and Back is the dashboard, with the report closed (review finding
+        # 1: the dialog stayed open over the dashboard and swallowed every
+        # click), so the card's own link opens the report again
         page.go_back()
         page.wait_for_selector("#page-content a:has-text('Full P&L')")
         assert _hash(page) == "#/"
+        page.wait_for_function(f"!({MODAL_SHOWN})()")
+        page.click("#page-content a:has-text('Full P&L')", timeout=5000)
+        page.wait_for_selector("#report-content table")
+        assert page.evaluate(TITLE) == "Profit & Loss"
+        assert page.evaluate(PERIOD)["period"] == "this_month"
+        assert _hash(page).startswith("#/reports/profit-loss?period=this_month")
+    finally:
+        page.close()
+
+
+# ── the R7 review ────────────────────────────────────────────────────────
+
+
+def _buttons(page):
+    return page.evaluate(
+        "() => [...document.querySelectorAll('#modal-body .form-actions button')].map(b => b.textContent.trim())"
+    )
+
+
+def _toasts(page):
+    return page.evaluate(
+        "() => [...document.querySelectorAll('#toast-container .toast')].map(t => t.textContent).join(' | ')"
+    )
+
+
+def test_browser_back_from_an_open_report_closes_it(browser, company, books):
+    page, handled = _open_at(browser, company, "#/reports")
+    try:
+        length = _history(page)
+        page.get_by_text("Profit & Loss", exact=True).click()
+        page.wait_for_selector("#report-content table")
+        assert page.evaluate(MODAL_SHOWN)
+        assert _hash(page).startswith("#/reports/profit-loss?")
+        assert _history(page) == length + 1
+
+        page.go_back()
+        page.wait_for_function("() => location.hash === '#/reports'")
+        page.wait_for_function(f"!({MODAL_SHOWN})()")
+        # the Report Center, usable: a card opens its report
+        assert page.locator("#page-content .card-grid .card").count() > 5
+        page.get_by_text("P&L by Class", exact=True).click(timeout=5000)
+        page.wait_for_selector("#report-content table")
+        assert page.evaluate(TITLE) == "P&L by Class"
+        assert page.evaluate(MODAL_SHOWN)
+
+        # and Forward brings the report back, from its entry
+        page.go_back()
+        page.wait_for_function(f"!({MODAL_SHOWN})()")
+        page.go_forward()
+        page.wait_for_selector("#report-content table")
+        assert page.evaluate(TITLE) == "P&L by Class"
+    finally:
+        page.close()
+
+
+def test_a_drill_down_reached_by_address_alone_goes_forward_to_its_report(
+    browser, company, books
+):
+    # Review finding 2: a drill-down pushed, left by browser Back, and
+    # reached again by its address after history went elsewhere, sent
+    # "Back to Profit & Loss" back through history to the Report Center
+    # (the P&L never opened) because a note in memory was stale.
+    page, handled = _open_at(browser, company, PL_URL)
+    try:
+        page.wait_for_selector("#report-content table")
+        page.locator("#report-content tbody a").first.click()
+        page.wait_for_selector("#drilldown-body table")
+        drill = _hash(page)
+        assert drill.startswith("#/reports/account-transactions?")
+        page.go_back()
+        page.wait_for_selector("#report-content table")
+        _visit(page, handled, "#/")
+        _visit(page, handled, "#/reports")
+        assert not page.evaluate(MODAL_SHOWN)
+        length = _history(page)
+
+        page.evaluate("(h) => { location.hash = h; }", drill)
+        page.wait_for_selector("#drilldown-body table")
+        assert _history(page) == length + 1
+        page.get_by_role("button", name="Back to Profit & Loss").click()
+        page.wait_for_selector("#report-content table")
+        assert page.evaluate(TITLE) == "Profit & Loss"
+        assert page.evaluate(MODAL_SHOWN)
+        assert _hash(page) == PL_URL
+        assert page.evaluate(PERIOD) == {
+            "period": "custom",
+            "start": SEPT[0],
+            "end": SEPT[1],
+        }
+        # forward, onto the report: the drill-down is one Back away
+        assert _history(page) == length + 2
+        page.go_back()
+        page.wait_for_selector("#drilldown-body table")
+        assert _hash(page) == drill
+    finally:
+        page.close()
+
+
+def test_a_three_deep_chain_goes_back_twice_through_history_and_keeps_the_preset(
+    browser, company, books
+):
+    # Review finding 3: by-class → class P&L → drill-down; the second
+    # "Back to …" pushed a copy of the by-class report with custom dates,
+    # losing the preset, and Back from there landed on the class P&L.
+    page, handled = _open_at(browser, company, "#/reports")
+    try:
+        page.get_by_text("P&L by Class", exact=True).click()
+        page.wait_for_selector("#report-content thead a")
+        by_class = _hash(page)
+        assert _query(by_class)["period"] == "this_year_to_date"
+        length = _history(page)
+
+        page.locator("#report-content thead a").first.click()
+        page.wait_for_selector("#class-pl-body table")
+        page.wait_for_function(
+            "() => document.getElementById('modal-title').textContent === 'Profit & Loss — Uncategorized'"
+        )
+        class_pl = _hash(page)
+        assert class_pl.startswith("#/reports/profit-loss-class?class_id=")
+        assert _history(page) == length + 1
+
+        page.locator("#class-pl-body a").first.click()
+        page.wait_for_selector("#drilldown-body table")
+        assert _hash(page).startswith("#/reports/account-transactions?")
+        assert _query(_hash(page))["from"] == "profit-loss-class"
+        assert _history(page) == length + 2
+        # the button says which P&L it returns to (review nit)
+        assert _buttons(page) == ["Back to Profit & Loss — Uncategorized", "Close"]
+        back = page.get_by_role("button", name="Back to Profit & Loss — Uncategorized")
+        assert back.count() == 1
+
+        back.focus()
+        page.keyboard.press("Enter")
+        page.wait_for_selector("#class-pl-body table")
+        assert _hash(page) == class_pl
+        assert _history(page) == length + 2, "through history, not onto a copy"
+        page.wait_for_function(
+            "() => document.getElementById('modal-title').textContent === 'Profit & Loss — Uncategorized'"
+        )
+
+        page.get_by_role("button", name="Back to P&L by Class").click()
+        page.wait_for_selector("#report-content thead a")
+        assert page.evaluate(TITLE) == "P&L by Class"
+        assert _hash(page) == by_class
+        assert page.evaluate(PERIOD)["period"] == "this_year_to_date"
+        assert _history(page) == length + 2, "through history, not onto a copy"
+
+        # and from there, browser Back is the Report Center, closed
+        page.go_back()
+        page.wait_for_function("() => location.hash === '#/reports'")
+        page.wait_for_function(f"!({MODAL_SHOWN})()")
+    finally:
+        page.close()
+
+
+def test_the_drill_down_rebuilt_from_its_address_names_the_class_it_returns_to(
+    browser, company, books
+):
+    pl = company.get(
+        "/api/reports/profit-loss", params={"start_date": SEPT[0], "end_date": SEPT[1]}
+    ).json()
+    classes = company.get("/api/classes").json()
+    uncategorized = next(c for c in classes if c["name"] == "Uncategorized")
+    url = (
+        f"#/reports/account-transactions?account_id={pl['income'][0]['account_id']}"
+        f"&start_date={SEPT[0]}&end_date={SEPT[1]}&class_id={uncategorized['id']}&from=profit-loss-class"
+    )
+    page, handled = _open_at(browser, company, url)
+    try:
+        page.wait_for_selector("#drilldown-body table")
+        page.wait_for_function(
+            "() => [...document.querySelectorAll('#modal-body .form-actions button')]"
+            ".some(b => b.textContent.trim() === 'Back to Profit & Loss — Uncategorized')"
+        )
+        assert _buttons(page) == ["Back to Profit & Loss — Uncategorized", "Close"]
+        assert (
+            page.get_by_role(
+                "button", name="Back to Profit & Loss — Uncategorized"
+            ).count()
+            == 1
+        )
+    finally:
+        page.close()
+
+
+def test_object_prototype_names_are_not_registered_views(browser, company, books):
+    # Review finding 4: '__proto__' opened nothing but errored past the
+    # "no report called" path; a drill-down from=constructor had a
+    # "Back to " button going to #/reports/constructor.
+    page, handled = _open_at(
+        browser, company, "#/reports/__proto__?start_date=2026-01-01"
+    )
+    try:
+        page.wait_for_function("() => location.hash === '#/reports'")
+        assert not page.evaluate(MODAL_SHOWN)
+        assert 'no report called "__proto__"' in _toasts(page)
+
+        pl = company.get(
+            "/api/reports/profit-loss",
+            params={"start_date": SEPT[0], "end_date": SEPT[1]},
+        ).json()
+        _visit(
+            page,
+            handled,
+            f"#/reports/account-transactions?account_id={pl['income'][0]['account_id']}"
+            f"&start_date={SEPT[0]}&end_date={SEPT[1]}&from=constructor",
+        )
+        page.wait_for_selector("#drilldown-body table")
+        assert _buttons(page) == ["Close"]
+        assert page.locator("#modal-body button", has_text="Back to").count() == 0
+        assert "from=" not in _hash(page)
+
+        _visit(page, handled, "#/reports/constructor?start_date=2026-01-01")
+        page.wait_for_function("() => location.hash === '#/reports'")
+        assert not page.evaluate(MODAL_SHOWN)
+        assert 'no report called "constructor"' in _toasts(page)
+    finally:
+        page.close()
+
+
+def test_a_date_in_the_address_that_is_not_one_is_said_so(browser, company, books):
+    page, handled = _open_at(
+        browser, company, "#/reports/profit-loss?start_date=garbage&end_date=2026-09-30"
+    )
+    try:
+        page.wait_for_selector("#report-content table")
+        assert "start_date in the address is not a date (garbage)" in _toasts(page)
+        assert "end_date" not in _toasts(page)
+        assert _hash(page) == (
+            f"#/reports/profit-loss?start_date={dt.date.today().year}-01-01&end_date=2026-09-30"
+        )
+    finally:
+        page.close()
+
+    page, handled = _open_at(
+        browser,
+        company,
+        "#/reports/profit-loss?period=fortnight&start_date=2026-09-01&end_date=2026-09-30",
+    )
+    try:
+        page.wait_for_selector("#report-content table")
+        assert "period in the address is not one of the choices (fortnight)" in _toasts(
+            page
+        )
+        assert page.evaluate(PERIOD) == {
+            "period": "custom",
+            "start": SEPT[0],
+            "end": SEPT[1],
+        }
+        assert _hash(page) == PL_URL
     finally:
         page.close()
 

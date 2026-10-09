@@ -47,15 +47,23 @@ def test_the_drill_down_offers_the_way_back_to_the_ledger():
         "async openDrillDown(accountId, accountName, startDate, endDate, "
         "classId = null, className = null, from = null)"
     )
-    assert "const back = ReportsPage._VIEWS[from] ? from : null;" in drill
-    assert "backBtn = ReportsPage._backButton(back, backParams);" in drill
+    # the view is looked up by its own name (never _VIEWS[from]: 'constructor'
+    # is not a report)
+    assert "const back = ReportsPage._view(from) ? from : null;" in drill
+    assert "ReportsPage._VIEWS[from]" not in drill
+    assert (
+        "backBtn = ReportsPage._backButton(back, backParams, "
+        "backToClass ? (className || T('Class')) : '');" in drill
+    )
     assert "{ start_date: startDate, end_date: endDate }" in drill
     assert "'general-ledger':       { label: 'General Ledger'" in JS
-    button = JS[JS.index("\n    _backButton(name, params) {") :]
-    button = button[: button.index("\n    },")]
+    # _backButton and _backText, the label resolver it uses
+    button = JS[JS.index("\n    _backButton(name, params, detail = '') {") :]
+    button = button[: button.index("\n    // The '/reports/:view' route")]
     assert "ReportsPage.backTo(" in button
     assert "typeof view.label === 'function' ? view.label() : view.label" in button
-    assert "Back to ${escapeHtml(label)}" in button
+    assert "${escapeHtml(ReportsPage._backText(name, detail))}" in button
+    assert "`Back to ${label}${detail ? ` — ${detail}` : ''}`" in button
     # the older helper still answers by name, through the same button
     back = JS[JS.index("ReportsPage._backToGeneralLedger = function") :]
     back = back[: back.index("\n};")]

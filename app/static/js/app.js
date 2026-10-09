@@ -127,6 +127,13 @@ const App = {
 
     async navigate(hash) {
         if (App._pageCleanup) { App._pageCleanup(); App._pageCleanup = null; }
+        // A dialog open over the page left (a report, a document) does not
+        // stay over the page gone to: browser Back from an open report
+        // re-rendered the Report Center under the report still showing
+        // (R7 review). Every route that opens one ('/reports/:view', the
+        // document routes) opens it afresh after rendering.
+        const overlay = $('#modal-overlay');
+        if (overlay && !overlay.classList.contains('hidden')) closeModal();
         const { path, query } = App.parseHash(hash);
         const full = String(hash || '').replace(/^#/, '') || '/';
         // Keep the address in step with the page shown. The toolbar's Home,
@@ -136,8 +143,12 @@ const App = {
         // clicking it changed no hash (2.18.0 gate, macbase1 NEW-9).
         // pushState gives Back an entry, as a link does, and fires no
         // hashchange to navigate a second time. The query rides along: the
-        // address is the whole of it.
-        if ((location.hash || '#/') !== `#${full}`) history.pushState(null, '', `#${full}`);
+        // address is the whole of it. The entry remembers the address it
+        // was pushed from (history.state.from, as ReportsPage.setAddress
+        // records it): a view's "Back to …" reads it to go back through
+        // history, and Back/Forward restore it with the entry.
+        const here = location.hash || '#/';
+        if (here !== `#${full}`) history.pushState({ from: here }, '', `#${full}`);
         let route = App.routes[path];
         let param = null;
         if (!route) {

@@ -55,41 +55,58 @@ const ReportsPage = {
         return `#/reports/${name}${q ? `?${q}` : ''}`;
     },
 
+    // The registered view of that name, or null. Own names only: a name
+    // the registry never had but Object.prototype does ('constructor',
+    // '__proto__') opened a drill-down with a "Back to " button going
+    // nowhere (R7 review).
+    _view(name) {
+        return Object.hasOwn(ReportsPage._VIEWS, String(name ?? '')) ? ReportsPage._VIEWS[name] : null;
+    },
+
     // Put the view on the address bar. The same view with other params
     // (the period changed, a filter set) replaces the entry, so Back never
     // walks through every period a user tried; a different view (the
     // Report Center to a report, a report to its drill-down) pushes, so
-    // Back returns to it. The address a push left is remembered for
-    // backTo, which can then go back through history rather than forward
-    // onto a copy.
-    _cameFrom: null,
+    // Back returns to it. The pushed entry carries the address it was
+    // pushed from in its history.state ({from}), as App.navigate's push
+    // does: the entry itself knows where it came from, so Back, Forward,
+    // Close and a reload cannot leave a stale note in memory (R7 review),
+    // and a replace keeps the state the entry has.
     setAddress(name, params) {
         const url = ReportsPage.viewUrl(name, params);
         const here = location.hash || '#/';
         if (here === url) return;
-        if (App.parseHash(here).path === `/reports/${name}`) history.replaceState(null, '', url);
-        else { ReportsPage._cameFrom = here; history.pushState(null, '', url); }
+        if (App.parseHash(here).path === `/reports/${name}`) history.replaceState(history.state, '', url);
+        else history.pushState({ from: here }, '', url);
     },
 
     // Back to a view, as its "Back to …" button does: through the browser's
-    // history when the previous entry is that view (so Back and the button
-    // agree), otherwise by opening the address.
+    // history when this entry was pushed from that view (so Back and the
+    // button agree, however deep the chain), otherwise by opening the
+    // address. A view reached by its address alone (typed, pasted, a hash
+    // set by hand) was pushed from no view, and goes forward.
     backTo(name, params) {
-        const from = ReportsPage._cameFrom;
+        const from = history.state && history.state.from;
         if (from && App.parseHash(from).path === `/reports/${name}`) {
-            ReportsPage._cameFrom = null;
             history.back();
             return;
         }
         App.navigate(ReportsPage.viewUrl(name, params));
     },
 
-    _backButton(name, params) {
-        const view = ReportsPage._VIEWS[name];
+    // `detail` names which one, after the view's label, where the view is
+    // a filtered one ("Back to Profit & Loss — Side Gig").
+    _backButton(name, params, detail = '') {
+        const view = ReportsPage._view(name);
         if (!view) return '';
         const call = escapeHtml(`ReportsPage.backTo(${JSON.stringify(name)}, ${JSON.stringify(params || {})})`);
+        return `<button type="button" class="btn btn-secondary" data-back-to="${escapeHtml(name)}" onclick="${call}">${escapeHtml(ReportsPage._backText(name, detail))}</button>`;
+    },
+
+    _backText(name, detail) {
+        const view = ReportsPage._view(name);
         const label = typeof view.label === 'function' ? view.label() : view.label;
-        return `<button type="button" class="btn btn-secondary" onclick="${call}">Back to ${escapeHtml(label)}</button>`;
+        return `Back to ${label}${detail ? ` — ${detail}` : ''}`;
     },
 
     // The '/reports/:view' route: the view named in the address, opened
@@ -97,7 +114,7 @@ const ReportsPage = {
     // view that cannot open, leaves the Report Center showing and says so;
     // the address falls back to the Report Center's.
     async openView(name, params) {
-        const view = ReportsPage._VIEWS[name];
+        const view = ReportsPage._view(name);
         if (!view) {
             history.replaceState(null, '', '#/reports');
             toast(`There is no report called "${name}"`, 'error');
@@ -257,7 +274,7 @@ const ReportsPage = {
             // Through the view's address, as a bookmark would open it: the
             // report is then on the address bar and a step back in history.
             const name = String(saved.report_type).replace(/_/g, '-');
-            if (!ReportsPage._VIEWS[name]) {
+            if (!ReportsPage._view(name)) {
                 toast(`No opener registered for "${saved.report_type}"`, 'error');
                 return;
             }
@@ -307,7 +324,7 @@ const ReportsPage = {
         if (!accountId) { toast('No account_id on this row', 'error'); return; }
         classId = classId ? parseInt(classId, 10) || null : null;
         if (classId && !from) from = 'profit-loss-by-class';
-        const back = ReportsPage._VIEWS[from] ? from : null;
+        const back = ReportsPage._view(from) ? from : null;
         const params = new URLSearchParams();
         params.set('account_id', accountId);
         if (startDate) params.set('start_date', startDate);
@@ -319,13 +336,16 @@ const ReportsPage = {
         });
 
         // The way back carries the dates the view was on (one as-of date
-        // for a balance sheet) and whatever the view says it keeps.
+        // for a balance sheet) and whatever the view says it keeps. Back to
+        // a class's own P&L says which class ("Back to Profit & Loss —
+        // Side Gig"): the same words as the company P&L would mislead.
         let backBtn = '';
+        const backToClass = back === 'profit-loss-class' && !!classId;
         if (back) {
-            const v = ReportsPage._VIEWS[back];
+            const v = ReportsPage._view(back);
             const backParams = v.asOf ? { as_of_date: endDate } : { start_date: startDate, end_date: endDate };
             if ((v.keep || []).includes('class_id') && classId) backParams.class_id = classId;
-            backBtn = ReportsPage._backButton(back, backParams);
+            backBtn = ReportsPage._backButton(back, backParams, backToClass ? (className || T('Class')) : '');
         }
 
         const title = (name, cls) => `Drill-down — ${name || `account ${accountId}`}${cls ? ` · ${cls}` : ''}`;
@@ -341,6 +361,11 @@ const ReportsPage = {
             const data = await API.get(`/reports/account-transactions?${params.toString()}`);
             if (!accountName || (classId && !className)) {
                 $('#modal-title').textContent = title(accountName || data.account.name, className || data.class_name);
+            }
+            // Rebuilt from the address, the class's name arrives now
+            if (backToClass && !className && data.class_name) {
+                const btn = $('#modal-body [data-back-to="profit-loss-class"]');
+                if (btn) btn.textContent = ReportsPage._backText(back, data.class_name);
             }
             const rows = (data.entries || []).map(e => {
                 const src = e.source_link
@@ -535,6 +560,17 @@ const ReportsPage = {
         const startInput = $("#report-custom-start");
         const endInput = $("#report-custom-end");
         const content = $("#report-content");
+
+        // A pasted address with a date that is not one: the date input
+        // refuses it and the default stands. Said, rather than other dates
+        // quietly shown (R7 review); the address is then rewritten to the
+        // dates in use.
+        const asOfKey = prefill.end_date ? 'end_date' : 'as_of_date';
+        const dates = useAsOfOnly ? [[asOfKey, endInput]] : [['start_date', startInput], ['end_date', endInput]];
+        for (const [key, input] of dates) {
+            if (prefill[key] && input.value !== prefill[key]) toast(`${key} in the address is not a date (${prefill[key]}) — ignored`, 'error');
+        }
+        if (prefill.period && !known) toast(`period in the address is not one of the choices (${prefill.period}) — ignored`, 'error');
 
         // Track current params so the Save button captures fresh values.
         let currentParams = {};
