@@ -40,15 +40,25 @@ def test_the_general_ledger_heading_links_into_the_account_register():
 
 
 def test_the_drill_down_offers_the_way_back_to_the_ledger():
+    # `from` names the view that opened the drill-down (R7): 'general-ledger'
+    # is a registered view, so the button is "Back to General Ledger" and
+    # it goes back to the ledger on the drill-down's dates
     drill = _method(
         "async openDrillDown(accountId, accountName, startDate, endDate, "
         "classId = null, className = null, from = null)"
     )
-    assert (
-        "from === 'general-ledger' ? ReportsPage._backToGeneralLedger(startDate, endDate)"
-        in drill
-    )
+    assert "const back = ReportsPage._VIEWS[from] ? from : null;" in drill
+    assert "backBtn = ReportsPage._backButton(back, backParams);" in drill
+    assert "{ start_date: startDate, end_date: endDate }" in drill
+    assert "'general-ledger':       { label: 'General Ledger'" in JS
+    button = JS[JS.index("\n    _backButton(name, params) {") :]
+    button = button[: button.index("\n    },")]
+    assert "ReportsPage.backTo(" in button
+    assert "Back to ${escapeHtml(T(view.label))}" in button
+    # the older helper still answers by name, through the same button
     back = JS[JS.index("ReportsPage._backToGeneralLedger = function") :]
     back = back[: back.index("\n};")]
-    assert "ReportsPage.generalLedger({period: 'custom', start_date:" in back
-    assert "Back to General Ledger" in back
+    assert (
+        "ReportsPage._backButton('general-ledger', { start_date: startDate, end_date: endDate })"
+        in back
+    )
