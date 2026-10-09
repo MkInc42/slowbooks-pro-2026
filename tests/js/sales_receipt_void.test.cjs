@@ -13,7 +13,7 @@ function page({ voidedWithPayment }) {
     const receipt = () => ({ id: 9, customer_id: 3, status: receiptStatus });
     const context = {
         confirm: () => true, closeModal() {}, location: { hash: '#/sales-receipts' }, window: {},
-        App: { navigate() {} },
+        App: { navigate() {}, refresh() {} },
         toast: (message, kind) => toasts.push([message, kind || 'ok']),
         API: {
             get: async url => {

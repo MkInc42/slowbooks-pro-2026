@@ -41,7 +41,7 @@ const ctx = {
   toast() {},
   openModal: (_title, html) => { modalHtml = html; },
   closeModal() {},
-  App: { navigate() {} },
+  App: { navigate() {}, refresh() {} },
   API: {
     get: async (path) => {
       asked.push(path);

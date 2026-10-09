@@ -177,7 +177,7 @@ def test_the_show_choice_is_remembered_per_list():
         "const store = {};\n"
         "const localStorage = { getItem: k => (k in store ? store[k] : null),"
         " setItem: (k, v) => { store[k] = String(v); } };\n"
-        "const T = s => s; const App = { navigate() {} };\n"
+        "const T = s => s; const App = { navigate() {}, refresh() {} };\n"
         + helper
         + "\nconst out = {};\n"
         "out.default = [ActiveLists.show('vendors'), ActiveLists.query('vendors')];\n"
@@ -207,7 +207,7 @@ def test_storage_that_throws_falls_back_to_active():
     script = (
         "const localStorage = { getItem() { throw new Error('blocked'); },"
         " setItem() { throw new Error('blocked'); } };\n"
-        "const T = s => s; const App = { navigate() {} };\n"
+        "const T = s => s; const App = { navigate() {}, refresh() {} };\n"
         + helper
         + "\nActiveLists.choose('customers', 'all');\n"
         "process.stdout.write(JSON.stringify(ActiveLists.show('customers')));"

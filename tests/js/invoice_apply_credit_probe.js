@@ -42,7 +42,7 @@ const ctx = {
   console,
   window: {},
   location: { hash: '#/invoices' },
-  App: { settings: { home_currency: 'USD' }, navigate: () => {} },
+  App: { settings: { home_currency: 'USD' }, navigate: () => {}, refresh: () => {} },
   T: (s) => s,
   Terms: { text: (s) => s },
   escapeHtml: (s) => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;'),

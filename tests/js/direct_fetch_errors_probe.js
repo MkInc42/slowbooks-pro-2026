@@ -62,7 +62,7 @@ function page(files, extras) {
     toastAction: (msg) => toasts.push(String(msg)),
     escapeHtml: (s) => String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;'),
     openModal() {}, closeModal() {},
-    App: { setStatus() {}, navigate() {} },
+    App: { setStatus() {}, navigate() {}, refresh() {} },
     T: (s) => s,
     Terms: { text: (s) => s, isNonprofit: () => false },
     formatCurrency: (n) => '$' + Number(n || 0).toFixed(2),

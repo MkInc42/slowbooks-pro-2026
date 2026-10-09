@@ -384,9 +384,7 @@ const BankingPage = {
 
     _regUrl(id) {
         const f = BankingPage._regFilter;
-        const qs = new URLSearchParams();
-        for (const k of ['start_date', 'end_date', 'class_id']) if (f[k]) qs.set(k, f[k]);
-        const q = qs.toString();
+        const q = ['start_date', 'end_date', 'class_id'].filter(k => f[k]).map(k => `${k}=${encodeURIComponent(f[k])}`).join('&');
         return `#/banking/${id}${q ? `?${q}` : ''}`;
     },
 
