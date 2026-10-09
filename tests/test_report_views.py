@@ -181,22 +181,29 @@ def test_every_report_the_report_center_offers_has_a_view_name():
 
 def test_every_period_report_puts_its_view_on_the_address():
     # openPeriodModal writes the address on each render when told the
-    # view; every call tells it
+    # view; every call tells it. The call's closer is the first line at
+    # the call's own indentation that ends it: "}, "Dates", false, {…});"
     for name in ("reports.js", "budgets.js"):
         src = (JS / name).read_text(encoding="utf-8")
-        calls = [m.start() for m in re.finditer(r"ReportsPage\.openPeriodModal\(", src)]
+        lines = src.splitlines()
+        calls = [
+            i for i, line in enumerate(lines) if "ReportsPage.openPeriodModal(" in line
+        ]
         assert calls, name
-        for at in calls:
-            tail = src[at:]
-            closer = re.search(
-                r"\n\s*\}, \"[^\"]+\", (?:true|false), \{([^\n]*)\}\);", tail
+        for i in calls:
+            indent = re.match(r"\s*", lines[i]).group(0)
+            closer = next(
+                (
+                    line
+                    for line in lines[i + 1 :]
+                    if re.match(rf"{indent}\}}.*\);$", line)
+                ),
+                None,
             )
-            assert (
-                closer
-            ), f"{name}:{src[:at].count(chr(10)) + 1} openPeriodModal has no opts"
+            assert closer, f"{name}:{i + 1} openPeriodModal has no closer"
             assert re.search(
-                r"\bview: '[a-z0-9-]+'", closer.group(1)
-            ), f"{name}:{src[:at].count(chr(10)) + 1} openPeriodModal names no view"
+                r"\bview: '[a-z0-9-]+'", closer
+            ), f"{name}:{i + 1} openPeriodModal names no view: {closer.strip()}"
 
 
 def test_saved_report_types_are_view_names_with_underscores():
