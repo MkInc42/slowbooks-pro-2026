@@ -200,8 +200,20 @@ def test_the_customer_pages_invoice_and_payment_rows_carry_links():
         "rowLink(`#/payments/${p.id}`, `payment:${p.id}`, p.date || `#${p.id}`)" in src
     )
     assert 'onclick="event.preventDefault()">${escapeHtml(text)}</a>' in src
-    # the row's click still opens the document
-    assert """onclick="closeModal();App.navigate('#/invoices/${i.id}')">""" in src
+    # the row's click still opens the document, through the router (a
+    # history entry, Back returns), noting the link left for the focus
+    assert (
+        "const hop = (href) => `ReportsPage._leaveFrom();closeModal();App.navigate('${href}')`;"
+        in src
+    )
+    assert 'onclick="${hop(`#/invoices/${i.id}`)}"' in src
+    assert 'onclick="${hop(`#/payments/${p.id}`)}"' in src
+    assert "PaymentsPage.view(${p.id})" not in src
+    # and the page's render puts the focus back on it
+    assert (
+        ".then(() => setTimeout(() => ReportsPage._refocusRow($('#modal-body')), 0))"
+        in _src("app.js")
+    )
 
 
 # ── NEW-37 ────────────────────────────────────────────────────────────────

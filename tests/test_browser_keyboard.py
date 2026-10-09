@@ -638,6 +638,11 @@ def test_the_customer_pages_invoice_rows_open_from_the_keyboard(
         page.wait_for_function(MODAL_SHOWN)
         settle(page, handled)
         assert page.locator(f'#modal a[href="{href}"]').count() == 1
+        # and the link left has the focus back (review: as a report's row)
+        assert (
+            page.evaluate("() => document.activeElement.dataset.rowKey")
+            == f"invoice:{inv['id']}"
+        )
         # the row's own click still opens it
         page.click(
             f'#modal a[href="{href}"] >> xpath=ancestor::tr',
@@ -648,11 +653,23 @@ def test_the_customer_pages_invoice_rows_open_from_the_keyboard(
         page.wait_for_function(MODAL_SHOWN)
         settle(page, handled)
         # a payment row the same: its date is the link, and opens the payment
+        # at its own address; Back returns to the page, focus on the link
         pay = page.locator('#modal a[href^="#/payments/"]').first
         assert pay.count() == 1 and pay.text_content().strip()
+        pay_href = pay.get_attribute("href")
         pay.focus()
         page.keyboard.press("Enter")
+        page.wait_for_function(AT, arg=pay_href)
         page.wait_for_function(f"() => {TITLE.split('=> ')[1]} === 'Payment Details'")
+        settle(page, handled)
+        page.go_back()
+        page.wait_for_function(AT, arg=f"#/customers/{books['customer']}")
+        page.wait_for_function(MODAL_SHOWN)
+        settle(page, handled)
+        assert (
+            page.evaluate("() => document.activeElement.getAttribute('href')")
+            == pay_href
+        )
     finally:
         page.close()
 

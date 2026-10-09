@@ -123,6 +123,10 @@ const App = {
         const html = await list();
         setTimeout(() => {
             Promise.resolve().then(open)
+                // Back to a page left by one of its row links (a customer's
+                // page, an invoice): the link takes focus back, as a report's
+                // row does, once the dialog's own first focus has gone by
+                .then(() => setTimeout(() => ReportsPage._refocusRow($('#modal-body')), 0))
                 .catch(err => toast(err.message || 'Could not open this document', 'error'));
         }, 0);
         return html;

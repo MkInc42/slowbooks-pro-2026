@@ -105,23 +105,26 @@ const CustomersPage = {
 
         // -- Invoices + payments — last 10 each, click-through to detail --
         // An invoice row opens the invoice at its own address (#/invoices/12,
-        // over the list), not the Invoices list (#238). The row was a click
-        // alone, so neither the keyboard nor a screen reader could open one
-        // (macOS gate NEW-38): the number is a real link to the address now,
-        // named by the number, and a payment's date the same. The row's
-        // click does the opening, for the link too (its own navigation is
-        // left to it, so the hop is the one history entry App.navigate
-        // pushes and Back returns here).
+        // over the list), not the Invoices list (#238), and a payment row the
+        // payment at its (#/payments/31). The rows were a click alone, so
+        // neither the keyboard nor a screen reader could open one (macOS gate
+        // NEW-38): the number, and a payment's date, is a real link to the
+        // address now, named by its words. The row's click does the opening,
+        // for the link too (its own navigation is left to it, so the hop is
+        // the one history entry App.navigate pushes); the link left is noted
+        // on this page's entry (ReportsPage._leaveFrom), so Back returns here
+        // with the focus on it (App.withDocument).
         const rowLink = (href, key, text) => `<a href="${href}" data-row-key="${key}" style="color:var(--text-link); text-decoration:none;" onclick="event.preventDefault()">${escapeHtml(text)}</a>`;
+        const hop = (href) => `ReportsPage._leaveFrom();closeModal();App.navigate('${href}')`;
         const invRows = invoices.slice(0, 10).map(i =>
-            `<tr style="cursor:pointer" onclick="closeModal();App.navigate('#/invoices/${i.id}')">
+            `<tr style="cursor:pointer" onclick="${hop(`#/invoices/${i.id}`)}">
                 <td>${rowLink(`#/invoices/${i.id}`, `invoice:${i.id}`, i.invoice_number || `#${i.id}`)}</td>
                 <td>${escapeHtml(i.date || '')}</td>
                 <td class="amount">${formatCurrency(i.total)}</td>
                 <td>${escapeHtml(i.status || '')}</td>
             </tr>`).join('');
         const payRows = payments.slice(0, 10).map(p =>
-            `<tr style="cursor:pointer" onclick="PaymentsPage.view(${p.id})">
+            `<tr style="cursor:pointer" onclick="${hop(`#/payments/${p.id}`)}">
                 <td>${rowLink(`#/payments/${p.id}`, `payment:${p.id}`, p.date || `#${p.id}`)}</td>
                 <td>${escapeHtml(p.method || '')}${p.is_voided ? ' <span style="color:var(--text-danger)">(void)</span>' : ''}</td>
                 <td>${escapeHtml(p.reference || p.check_number || '')}</td>
