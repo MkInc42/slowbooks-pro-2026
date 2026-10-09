@@ -79,7 +79,15 @@ const ReportsPage = {
         const here = location.hash || '#/';
         if (here === url) return;
         if (App.parseHash(here).path === `/reports/${name}`) history.replaceState(history.state, '', url);
-        else { ReportsPage._leaveFrom(); history.pushState({ from: here }, '', url); }
+        else {
+            ReportsPage._leaveFrom();
+            history.pushState({ from: here }, '', url);
+            // the view is a dialog over the page it was pushed from (the
+            // Report Center, the Budgets page) — or over whatever the view
+            // it hopped from was over: closing it puts that page on the
+            // bar (App.dialogClosed, NEW-23)
+            App._dialogUnder = App._dialogUnder || here;
+        }
     },
 
     // The row a hop leaves from, noted on the view's own history entry
@@ -148,14 +156,14 @@ const ReportsPage = {
     // address of its own (#/customers/12, #/vendors/3: App.routes): one
     // history entry, so browser Back returns to the report, and the row
     // it left from.
+    // (App.navigate closes the report itself, keeping its address on the
+    // entry left behind, so Back returns to it.)
     openCustomer(id) {
         ReportsPage._leaveFrom();
-        closeModal();
         App.navigate(`#/customers/${id}`);
     },
     openVendor(id) {
         ReportsPage._leaveFrom();
-        closeModal();
         App.navigate(`#/vendors/${id}`);
     },
 
@@ -167,7 +175,7 @@ const ReportsPage = {
     backTo(name, params) {
         const from = history.state && history.state.from;
         if (from && App.parseHash(from).path === `/reports/${name}`) {
-            closeModal();
+            closeModal({ keepAddress: true });
             history.back();
             return;
         }
@@ -217,6 +225,7 @@ const ReportsPage = {
     async openView(name, params) {
         const view = ReportsPage._view(name);
         if (!view) {
+            App._dialogUnder = null;
             history.replaceState(null, '', '#/reports');
             toast(`There is no report called "${name}"`, 'error');
             return;
@@ -224,13 +233,17 @@ const ReportsPage = {
         try {
             await view.open(params || {});
         } catch (err) {
+            App._dialogUnder = null;
             history.replaceState(null, '', '#/reports');
             throw err;
         }
         // Opened nothing (a drill-down with no account, say, which says so
         // in a notice): the address is the Report Center's.
         const overlay = $('#modal-overlay');
-        if (overlay && overlay.classList.contains('hidden')) history.replaceState(null, '', '#/reports');
+        if (overlay && overlay.classList.contains('hidden')) {
+            App._dialogUnder = null;
+            history.replaceState(null, '', '#/reports');
+        }
     },
 
     async render() {
@@ -2001,7 +2014,7 @@ ReportsPage.jobProfitability = async function (prefill) {
         // the accounts behind the untagged activity (#245).
         const dates = { period: _period, start_date: data.start_date, end_date: data.end_date };
         const jobCall = (j) => j.job_id
-            ? `ReportsPage._leaveFrom();closeModal();App.navigate(${JSON.stringify(`#/jobs/${j.job_id}?start_date=${data.start_date}&end_date=${data.end_date}&from=job-profitability`)})`
+            ? `ReportsPage._leaveFrom();App.navigate(${JSON.stringify(`#/jobs/${j.job_id}?start_date=${data.start_date}&end_date=${data.end_date}&from=job-profitability`)})`
             : `ReportsPage._leaveFrom();App.navigate(${JSON.stringify(ReportsPage.viewUrl('profit-loss-by-job', { ...dates, job_ids: '0' }))})`;
         const customerCell = (j) => j.customer_id
             ? ReportsPage._rowLink(`event.stopPropagation(); ReportsPage.openCustomer(${j.customer_id})`, j.customer_name || '', `customer:${j.customer_id}`)
@@ -2044,7 +2057,7 @@ ReportsPage.jobBudgetVsActual = async function (prefill) {
         const t = { revised: 0, committed: 0, actual: 0, projected: 0, variance: 0, act_revenue: 0 };
         const rows = data.map(j => {
             for (const k of Object.keys(t)) t[k] += j[k] || 0;
-            return `<tr style="cursor:pointer" onclick="closeModal();App.navigate('#/jobs/${j.job_id}')">
+            return `<tr style="cursor:pointer" onclick="App.navigate('#/jobs/${j.job_id}')">
             <td>${escapeHtml(j.customer_name || '')}</td>
             <td>${escapeHtml(j.job_name)}</td>
             <td class="amount">${formatCurrency(j.revised)}</td>

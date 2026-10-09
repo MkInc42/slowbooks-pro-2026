@@ -13,7 +13,7 @@ query to the route's render as its second argument (a plain object of strings �
 3. **A hop pushes** (`history.pushState`): Report Center → report, report → drill-down, drill-down → class P&L, and a source link
    to a document. Browser Back returns to the view left — only that: `App.navigate` closes any open dialog before it renders. The
    view's "Back to …" button goes back through history when the current entry's `history.state.from` (written by every push) is
-   that view, else it opens the address; a three-deep chain goes back twice through history, each view as it was left.
+   that view, else it opens the address; a three-deep chain goes back twice through history, each view as it was left. **Closing a view** (Close, ×, Escape) replaces its entry with the page under it (`App._dialogUnder`: `#/reports`, `#/budgets`, a document's list) through `closeModal` → `App.dialogClosed` (NEW-23), so a refresh, a reload or Back never reopens it; the app's own moves (navigate, popstate, `backTo`) pass `closeModal({ keepAddress: true })`.
 
 `ReportsPage.setAddress(view, params)` applies rules 2 and 3 by itself: same view → replace (keeping the entry's state), other view → push (recording `from`;
 a note in memory would go stale on Back, Forward, Close or a reload). Look a view up with `ReportsPage._view(name)`, never `_VIEWS[name]` (`constructor` is not a report). A date or period in the address that is not one is ignored, and a toast says so.

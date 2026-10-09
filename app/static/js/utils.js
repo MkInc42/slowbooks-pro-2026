@@ -140,12 +140,21 @@ function openModal(title, html, opts) {
     setTimeout(() => { try { first.focus(); } catch (e) { /* nothing focusable */ } }, 0);
 }
 
-function closeModal() {
-    $('#modal-overlay').classList.add('hidden');
+// opts.keepAddress: the app is moving on by itself (App.navigate, Back or
+// Forward, a view's "Back to …"), and the address is the move's to set.
+// Without it the dialog was dismissed — Close, ×, Escape — and one that
+// had an address of its own (a report view, a customer's page) leaves
+// it: the page under it goes on the bar (App.dialogClosed), so the next
+// refresh, reload or Back does not reopen what was closed (NEW-23).
+function closeModal(opts) {
+    const overlay = $('#modal-overlay');
+    const wasOpen = !overlay.classList.contains('hidden');
+    overlay.classList.add('hidden');
     $('#modal').classList.remove('modal--wide');
     const opener = _modalOpener;
     _modalOpener = null;
     if (opener && document.contains(opener)) { try { opener.focus(); } catch (e) { /* gone */ } }
+    if (wasOpen && !(opts && opts.keepAddress) && window.App && typeof App.dialogClosed === 'function') App.dialogClosed();
 }
 
 document.addEventListener('keydown', (e) => {

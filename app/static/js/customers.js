@@ -107,7 +107,7 @@ const CustomersPage = {
         // An invoice row opens the invoice at its own address (#/invoices/12,
         // over the list), not the Invoices list (#238).
         const invRows = invoices.slice(0, 10).map(i =>
-            `<tr style="cursor:pointer" onclick="closeModal();App.navigate('#/invoices/${i.id}')">
+            `<tr style="cursor:pointer" onclick="App.navigate('#/invoices/${i.id}')">
                 <td>${escapeHtml(i.invoice_number || '')}</td>
                 <td>${escapeHtml(i.date || '')}</td>
                 <td class="amount">${formatCurrency(i.total)}</td>
@@ -211,7 +211,7 @@ const CustomersPage = {
                 ${jobs.length === 0 ? '<p style="color:var(--text-muted);font-size:13px;margin:0">No jobs. A job is a project for this customer — invoices, bills, expenses and time can be tagged to it.</p>' :
                     `<table class="data-table" style="font-size:12px">
                         <thead><tr><th scope="col">${T('Job')}</th><th scope="col">Status</th><th scope="col" class="amount">Contract</th><th scope="col"></th></tr></thead>
-                        <tbody>${jobs.map(j => `<tr style="cursor:pointer" onclick="closeModal();JobsPage.showDetails(${j.id})">
+                        <tbody>${jobs.map(j => `<tr style="cursor:pointer" onclick="JobsPage.showDetails(${j.id})">
                             <td>${escapeHtml(j.name)}${j.job_number ? ` <span style="color:var(--text-muted)">#${escapeHtml(j.job_number)}</span>` : ''}</td>
                             <td>${escapeHtml((window.JobsPage && JobsPage.STATUS_LABELS[j.status]) || j.status)}${j.is_active ? '' : ' <span style="color:var(--text-muted)">(inactive)</span>'}</td>
                             <td class="amount">${j.contract_amount ? formatCurrency(j.contract_amount) : ''}</td>

@@ -590,3 +590,108 @@ def test_a_saved_report_opens_through_its_address_and_an_unknown_view_does_not_c
         assert not page.evaluate(MODAL_SHOWN)
     finally:
         page.close()
+
+
+def test_closing_a_view_leaves_its_address_for_the_page_under_it(
+    browser, company, books
+):
+    """A closed report kept its address, so the app's refreshes
+    (App.navigate(location.hash) after a save or a delete), a reload and
+    Back reopened it (NEW-23). Close, × and Escape now replace the view's
+    entry with the page it opened over; the app's own moves keep the
+    address, so a hop's Back still returns to the view."""
+    page, handled = _open_at(browser, company, "#/reports")
+    try:
+        length = _history(page)
+        # the card pushes the view; Escape replaces that entry with the
+        # Report Center's — no new entry, nothing to come Back to
+        page.locator("#page-content .card", has_text="Profit & Loss").first.click()
+        page.wait_for_selector("#report-content table")
+        assert _hash(page).startswith("#/reports/profit-loss?")
+        assert _history(page) == length + 1
+        page.keyboard.press("Escape")
+        page.wait_for_function(f"!({MODAL_SHOWN})()")
+        assert _hash(page) == "#/reports"
+        assert _history(page) == length + 1
+        # the app's refresh after an action does not bring it back
+        _visit(page, handled, "#/reports")
+        assert not page.evaluate(MODAL_SHOWN)
+        assert _hash(page) == "#/reports"
+        # nor a reload
+        page.reload()
+        page.wait_for_function("window.App && document.readyState === 'complete'")
+        page.evaluate(
+            "() => { const s = document.getElementById('splash'); if (s) s.classList.add('hidden'); }"
+        )
+        settle(page, handled)
+        assert not page.evaluate(MODAL_SHOWN)
+        assert _hash(page) == "#/reports"
+        # nor Back from the page gone to next
+        _visit(page, handled, "#/")
+        page.go_back()
+        page.wait_for_function("() => location.hash === '#/reports'")
+        settle(page, handled)
+        assert not page.evaluate(MODAL_SHOWN)
+
+        # the × and the Close button do the same, from a view reached by
+        # its address (over the Report Center)
+        _visit(page, handled, PL_URL)
+        page.wait_for_selector("#report-content table")
+        page.locator("#modal-close-btn").click()
+        page.wait_for_function(f"!({MODAL_SHOWN})()")
+        assert _hash(page) == "#/reports"
+        _visit(page, handled, PL_URL)
+        page.wait_for_selector("#report-content table")
+        page.get_by_role("button", name="Close", exact=True).click()
+        page.wait_for_function(f"!({MODAL_SHOWN})()")
+        assert _hash(page) == "#/reports"
+
+        # a drill-down over the P&L is still over the Report Center
+        _visit(page, handled, PL_URL)
+        page.wait_for_selector("#report-content table")
+        page.locator("#report-content tbody a").first.click()
+        page.wait_for_selector("#drilldown-body table")
+        assert _hash(page).startswith("#/reports/account-transactions?")
+        page.keyboard.press("Escape")
+        page.wait_for_function(f"!({MODAL_SHOWN})()")
+        assert _hash(page) == "#/reports"
+
+        # a view opened over another page closes to that page
+        _visit(page, handled, "#/budgets")
+        page.get_by_role("button", name="View Variance").click()
+        page.wait_for_function(
+            "() => location.hash.startsWith('#/reports/budget-vs-actual')"
+        )
+        page.keyboard.press("Escape")
+        page.wait_for_function(f"!({MODAL_SHOWN})()")
+        assert _hash(page) == "#/budgets"
+
+        # a document over its list: the customer's page closes to the list
+        _visit(page, handled, f"#/customers/{books['customer']}")
+        page.locator("#modal-body h4", has_text="Recent invoices").wait_for()
+        page.keyboard.press("Escape")
+        page.wait_for_function(f"!({MODAL_SHOWN})()")
+        assert _hash(page) == "#/customers"
+        _visit(page, handled, "#/customers")
+        assert not page.evaluate(MODAL_SHOWN)
+        # … and so does one opened from its row
+        page.locator("#page-content tr.customer-row").first.click()
+        page.locator("#modal-body h4", has_text="Recent invoices").wait_for()
+        assert re.fullmatch(r"#/customers/\d+", _hash(page))
+        page.locator("#modal-close-btn").click()
+        page.wait_for_function(f"!({MODAL_SHOWN})()")
+        assert _hash(page) == "#/customers"
+
+        # the app's own move keeps the address: a hop from a report pushes
+        # from the report's entry, and Back returns to the report
+        _visit(page, handled, "#/reports/ar-aging?period=this_year_to_date")
+        page.wait_for_selector("#report-content table")
+        aging = _hash(page)
+        page.locator("#report-content tbody a[data-row-key^='customer:']").first.click()
+        page.locator("#modal-body h4", has_text="Recent invoices").wait_for()
+        page.go_back()
+        page.wait_for_selector("#report-content table")
+        assert _hash(page) == aging
+        assert page.evaluate(MODAL_SHOWN)
+    finally:
+        page.close()

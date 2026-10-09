@@ -121,6 +121,9 @@ const App = {
     async withDocument(list, open) {
         const html = await list();
         setTimeout(() => {
+            // the dialog about to open is the address's own, over the list
+            // (App.dialogClosed)
+            App._dialogUnder = App.pageUnder(location.hash);
             Promise.resolve().then(open)
                 .catch(err => toast(err.message || 'Could not open this document', 'error'));
         }, 0);
@@ -135,7 +138,61 @@ const App = {
     // there (the page opened through its route).
     documentAddress(hash) {
         const here = location.hash || '#/';
-        if (here !== hash) history.pushState({ from: here }, '', hash);
+        if (here !== hash) {
+            history.pushState({ from: here }, '', hash);
+            App._dialogUnder = App._dialogUnder || here;
+        }
+    },
+
+    // The page under the open dialog, when the dialog has an address of
+    // its own: a report view (#/reports/profit-loss?…) or a document over
+    // its list (#/customers/12). Set by what opens one — withDocument (the
+    // list route under the document), documentAddress and
+    // ReportsPage.setAddress (the page the dialog was pushed from, kept
+    // through a report's own hops: a drill-down over the P&L is still
+    // over the Report Center) — and cleared by navigate; null while the
+    // open dialog is a plain form, or none is open.
+    _dialogUnder: null,
+
+    // The dialog dismissed (Close, ×, Escape: not the app moving on) had an
+    // address of its own, so the page under it goes on the bar —
+    // #/reports, #/customers, #/budgets — replaced, not pushed: the entry
+    // the view was pushed onto becomes the page it opened over, and a
+    // refresh (App.navigate(location.hash) after a save), a reload or
+    // Back cannot bring the closed view back (NEW-23).
+    dialogClosed() {
+        const under = App._dialogUnder;
+        App._dialogUnder = null;
+        if (!under || (location.hash || '#/') === under) return;
+        history.replaceState(null, '', under);
+    },
+
+    // The page a document's or a view's address opens over: the list route
+    // of the same page ('#/customers' for '#/customers/12', '#/reports'
+    // for '#/reports/profit-loss?…'); a page's own address as it is.
+    pageUnder(hash) {
+        const here = hash || '#/';
+        const { route, param } = App.matchRoute(App.parseHash(here).path);
+        if (!route || param === null) return here;
+        const base = Object.keys(App.routes).find(k => !k.includes('/:') && App.routes[k].page === route.page);
+        return base ? `#${base}` : here;
+    },
+
+    // The route for a path and its one-segment parameter: '/jobs/:id'
+    // matches '/jobs/12' (param '12'); a path with a second segment after
+    // the parameter matches nothing.
+    matchRoute(path) {
+        let route = App.routes[path] || null;
+        let param = null;
+        if (!route) {
+            for (const [key, r] of Object.entries(App.routes)) {
+                const i = key.indexOf('/:');
+                if (i > 0 && path.startsWith(key.slice(0, i + 1)) && !path.slice(i + 1).includes('/')) {
+                    route = r; param = decodeURIComponent(path.slice(i + 1)); break;
+                }
+            }
+        }
+        return { route, param };
     },
 
     // An address, taken apart: '#/reports/profit-loss?start_date=2026-07-01'
@@ -164,7 +221,8 @@ const App = {
         // (R7 review). Every route that opens one ('/reports/:view', the
         // document routes) opens it afresh after rendering.
         const overlay = $('#modal-overlay');
-        if (overlay && !overlay.classList.contains('hidden')) closeModal();
+        if (overlay && !overlay.classList.contains('hidden')) closeModal({ keepAddress: true });
+        App._dialogUnder = null;
         const { path, query } = App.parseHash(hash);
         const full = String(hash || '').replace(/^#/, '') || '/';
         // Keep the address in step with the page shown. The toolbar's Home,
@@ -180,17 +238,7 @@ const App = {
         // history, and Back/Forward restore it with the entry.
         const here = location.hash || '#/';
         if (here !== `#${full}`) history.pushState({ from: here }, '', `#${full}`);
-        let route = App.routes[path];
-        let param = null;
-        if (!route) {
-            // One-segment parameter routes: '/jobs/:id' matches '/jobs/12'
-            for (const [key, r] of Object.entries(App.routes)) {
-                const i = key.indexOf('/:');
-                if (i > 0 && path.startsWith(key.slice(0, i + 1)) && !path.slice(i + 1).includes('/')) {
-                    route = r; param = decodeURIComponent(path.slice(i + 1)); break;
-                }
-            }
-        }
+        const { route, param } = App.matchRoute(path);
         if (!route) { $('#page-content').innerHTML = '<p>Page not found</p>'; return; }
 
         // Update active nav
@@ -1185,7 +1233,7 @@ const App = {
         // still showing while the next one loads).
         window.addEventListener('popstate', () => {
             const overlay = $('#modal-overlay');
-            if (overlay && !overlay.classList.contains('hidden')) closeModal();
+            if (overlay && !overlay.classList.contains('hidden')) closeModal({ keepAddress: true });
         });
 
         // Load saved theme
