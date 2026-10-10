@@ -53,7 +53,11 @@ or Alt+D.*
   inside, Escape closes them, and focus returns to the control that opened
   them. Tab reaches every control, buttons and links included, on every
   browser and whatever the Mac's "keyboard navigation" setting: the dialog
-  moves focus itself, in the order the browser would (v2.22.0). Escape in
+  moves focus itself, in the order the browser would (v2.22.0). On a page,
+  outside a dialog, the Mac's setting applies: with Keyboard navigation off,
+  as macOS ships, plain Tab moves between text fields and lists only, and
+  Option+Tab — or Keyboard navigation turned on in System Settings →
+  Keyboard — reaches links and buttons too. Escape in
   a date field leaves the field (after closing its calendar); the next
   Escape closes the dialog, so an unsaved form is not lost to one key
   (v2.22.0). No dialog opens with focus on Void or Delete: one whose first

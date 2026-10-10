@@ -1016,3 +1016,22 @@ def test_banking_and_the_dashboards_bank_cards_are_links():
         assert 'class="card" style="cursor:pointer" onclick=' not in f.read_text(
             encoding="utf-8"
         ), f.name
+
+
+def test_the_docs_say_what_tab_reaches_on_a_mac_page():
+    """docs/accessibility.md says plainly that on a Mac with Keyboard
+    navigation off, as macOS ships, plain Tab on a page moves between text
+    fields and lists only, Option+Tab (or the setting turned on) reaching
+    links and buttons, while in a dialog Tab reaches every control."""
+    docs = (ROOT / "docs/accessibility.md").read_text(encoding="utf-8")
+    dialogs = docs[docs.index("- **Dialogs are real dialogs:**") :]
+    dialogs = " ".join(dialogs[: dialogs.index("\n- **")].split())
+    for words in (
+        'whatever the Mac\'s "keyboard navigation" setting: the dialog moves focus itself',
+        "On a page, outside a dialog, the Mac's setting applies",
+        "with Keyboard navigation off, as macOS ships, plain Tab moves between"
+        " text fields and lists only",
+        "Option+Tab — or Keyboard navigation turned on in System Settings → Keyboard"
+        " — reaches links and buttons too",
+    ):
+        assert words in dialogs, words
