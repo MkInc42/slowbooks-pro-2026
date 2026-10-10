@@ -4042,3 +4042,65 @@ def test_a_scrolling_tables_last_row_and_column_draw_their_whole_halo(
     finally:
         page.set_viewport_size({"width": 1500, "height": 980})
         page.close()
+
+
+# A heading the grid's right edge cuts with 36px or more of it shown (so
+# that Chromium's own focus leaves it where it is): a point on its shown
+# part
+CUT_HEADING = """() => { const g = document.getElementById('grid-scroll'), gr = g.getBoundingClientRect(),
+        edge = gr.left + g.clientLeft + g.clientWidth;
+    const a = [...g.querySelectorAll('thead a')].find(a => { const r = a.getBoundingClientRect();
+        return edge - r.left >= 36 && r.right > edge + 2; });
+    if (!a) return null;
+    const r = a.getBoundingClientRect();
+    return { text: a.textContent.trim(), x: (r.left + Math.min(r.right, edge - 3)) / 2, y: r.top + r.height / 2 }; }"""
+HEADING_ROOM = """() => { const a = document.activeElement, g = document.getElementById('grid-scroll'),
+        r = a.getBoundingClientRect(), gr = g.getBoundingClientRect();
+    return { text: (a.textContent || '').trim(), input: App._input,
+             right: gr.left + g.clientLeft + g.clientWidth - (r.right + 8) }; }"""
+
+
+def test_a_key_after_a_click_is_the_keyboards(browser, company, books, divisions):
+    """What moved focus last was the keyboard only after Tab or an arrow
+    key, so after a click a Back chord that is neither — the Mac's ⌘[ —
+    left the heading it put focus back on 79px past the grid's edge
+    (final review). Any key but a modifier held alone is the keyboard's
+    now, and a click is still the pointer's: with the platform a Mac's, a
+    click on a heading the grid's edge cuts (36px or more of it shown, so
+    that Chromium's own focus would leave it) opens its class's P&L, and
+    ⌘[ comes back with focus on that heading, brought in whole with its
+    ring and halo."""
+    page, handled = _open_at(browser, company, BY_CLASS_URL)
+    try:
+        page.wait_for_selector("#report-content .pivot-grid")
+        # a window width at which the grid's edge cuts a heading so
+        cut = None
+        for width in range(1000, 1400, 8):
+            page.set_viewport_size({"width": width, "height": 768})
+            page.wait_for_timeout(50)
+            cut = page.evaluate(CUT_HEADING)
+            if cut:
+                break
+        assert cut, "no heading cut at the grid's edge"
+        settle(page, handled)
+        page.evaluate("""() => Object.defineProperty(Navigator.prototype, 'platform',
+                { get: () => 'MacIntel', configurable: true })""")
+        page.mouse.click(cut["x"], cut["y"])
+        page.wait_for_function(
+            "() => location.hash.startsWith('#/reports/profit-loss-class')"
+        )
+        settle(page, handled)
+        assert page.evaluate("() => App._input") == "pointer"
+        page.keyboard.press("Meta+BracketLeft")
+        page.wait_for_function(
+            "() => location.hash.startsWith('#/reports/profit-loss-by-class')"
+        )
+        page.wait_for_function(
+            "(t) => (document.activeElement.textContent || '').trim() === t",
+            arg=cut["text"],
+        )
+        settle(page, handled)
+        room = page.evaluate(HEADING_ROOM)
+        assert room["input"] == "keyboard" and room["right"] >= -0.5, (cut, room)
+    finally:
+        page.close()

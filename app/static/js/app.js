@@ -230,13 +230,15 @@ const App = {
         if (typeof n === 'number' && n < App._nShown) history.forward(); else history.back();
     },
     isMac() { return typeof navigator !== 'undefined' && /Mac|iP(hone|ad|od)/.test(navigator.platform || ''); },
-    // What moved focus last: the keyboard (Tab, an arrow) or a pointer
-    // (App.init keeps it). A text box matches :focus-visible on a click as
-    // well as on Tab, so what keeps the keyboard's place in sight — scrolls
-    // a control out from under Settings' save bar, a grid's frozen parts,
-    // a table's edge — asks this and leaves a pointer's focus where the
-    // pointer put it.
+    // What moved focus last: the keyboard (any key but a modifier held on
+    // its own: a click then the Mac's ⌘[ Back is the keyboard's) or a
+    // pointer (App.init keeps it). A text box matches :focus-visible on a
+    // click as well as on Tab, so what keeps the keyboard's place in sight
+    // — scrolls a control out from under Settings' save bar, a grid's
+    // frozen parts, a table's edge — asks this and leaves a pointer's focus
+    // where the pointer put it.
     _input: null,
+    _MODIFIER_KEYS: ['Shift', 'Control', 'Alt', 'AltGraph', 'Meta', 'OS', 'Super', 'Hyper', 'Fn', 'FnLock', 'CapsLock'],
     keyboardFocus() { return App._input !== 'pointer'; },
     // A table wider than its container scrolls sideways in it, and
     // Chromium's focus leaves a stop partly in view where it is (32px of
@@ -1404,7 +1406,7 @@ const App = {
         // the row's height measured again when the window changes); on
         // Settings, scrolled clear of the save bar (SettingsPage._clearSaveBar)
         document.addEventListener('keydown', (e) => {
-            if (e.key === 'Tab' || String(e.key).startsWith('Arrow')) App._input = 'keyboard';
+            if (!App._MODIFIER_KEYS.includes(e.key)) App._input = 'keyboard';
         }, true);
         document.addEventListener('pointerdown', () => { App._input = 'pointer'; }, true);
         document.addEventListener('focusin', (e) => {

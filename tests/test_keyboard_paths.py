@@ -1065,16 +1065,21 @@ def test_a_dark_themes_fields_say_they_are_dark():
 def test_what_keeps_the_keyboards_place_in_sight_asks_what_moved_focus():
     """A text box matches :focus-visible on a click as well as on Tab, so
     what scrolls a control into sight for the keyboard (Settings' save
-    bar, the grid) asks what moved focus last: Tab or an arrow, or a
-    pointer (App.init keeps it, ahead of anyone else's handlers)."""
+    bar, the grid) asks what moved focus last: a key (any but a modifier
+    alone), or a pointer (App.init keeps it, ahead of anyone else's
+    handlers)."""
     app = _src("app.js")
     assert "keyboardFocus() { return App._input !== 'pointer'; }," in app
     init = app[app.index("    init() {") :]
     init = init[: init.index("\n    },")]
-    assert (
-        "if (e.key === 'Tab' || String(e.key).startsWith('Arrow')) App._input = 'keyboard';"
-        in init
-    )
+    # any key but a modifier held alone is the keyboard's (a click, then the
+    # Mac's ⌘[ Back, is), a pointer's press the pointer's
+    assert "if (!App._MODIFIER_KEYS.includes(e.key)) App._input = 'keyboard';" in init
+    keys = app[app.index("    _MODIFIER_KEYS: [") :]
+    keys = keys[: keys.index("\n")]
+    for key in ("'Shift'", "'Control'", "'Alt'", "'Meta'", "'AltGraph'", "'CapsLock'"):
+        assert key in keys, key
+    assert "'[" not in keys and "'Tab'" not in keys
     assert (
         "document.addEventListener('pointerdown', () => { App._input = 'pointer'; }, true);"
         in init
