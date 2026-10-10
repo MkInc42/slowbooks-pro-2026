@@ -525,11 +525,17 @@ def test_the_ring_has_a_halo_of_the_themes_own_ground():
     assert "--focus-ring: var(--qb-gold);" in _rule(
         dark, '[data-theme="dark"] #topbar {'
     )
-    # a table clips what overflows it, the halo below its last row too: not
-    # while focus is in it (a scrolling one keeps its scroll)
-    rel = _rule(css, ".table-container:not(.table-container--scroll):focus-within {")
-    assert "overflow: visible;" in rel
+    # a table clips what overflows it, as it did: the halo below its last
+    # row has the room inside (letting the overflow out while focused
+    # spilled a wide table past its side)
     assert "overflow: hidden;" in _rule(css, ".table-container {")
+    assert ":focus-within {\n    overflow" not in css
+    last = _rule(
+        css,
+        ".table-container:not(.table-container--scroll) > table > :is(tbody, tfoot):last-child"
+        " > tr:last-child > :is(td, th) {",
+    )
+    assert "padding-bottom: 8px;" in last
     # the dialog's title bar has room for it above the × (it scrolls), and
     # Tab scrolls a control into view with room for it
     assert "margin: 2px 0;" in _rule(css, ".modal-close {")

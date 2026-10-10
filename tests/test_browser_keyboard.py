@@ -2103,26 +2103,93 @@ CONTAINER_OVERFLOW = """() => getComputedStyle(document.querySelector(
 def test_a_tables_last_row_draws_its_whole_halo(browser, company, books):
     """.table-container clips what overflows it, which cut the keyboard's
     halo below the last row's buttons: the gate's ground there was the
-    container's edge and the page, 2.2:1 (review). While focus is in the
-    table nothing is clipped, and the last row's Void draws its ring and
-    halo whole, 3:1 as painted on all four sides, in both themes; at rest
-    the container clips as before."""
+    container's edge and the page, 2.2:1 (review). The last row has room
+    for it inside, and the container clips as it always did: the last
+    row's Void draws its ring and halo whole, 3:1 as painted on all four
+    sides, in both themes — at 1280, 1024, 900 and 390px wide, where at
+    390 the container is scrolled to it, focused in the part it clips."""
     page, handled = _open(browser, company)
     try:
         _no_splash(page)
-        _visit(page, handled, "#/journal")
-        assert page.evaluate(CONTAINER_OVERFLOW) == "hidden"
-        page.evaluate(f"() => ({LAST_ROW_BUTTON})().focus()")
-        page.keyboard.press("Shift+Tab")
-        page.keyboard.press("Tab")
-        last = page.evaluate("""() => [document.activeElement.textContent.trim(),
-                document.activeElement === (""" + LAST_ROW_BUTTON + """)()]""")
-        assert last[1], last
-        assert page.evaluate(CONTAINER_OVERFLOW) == "visible"
-        _both_themes(page, ("the last row's " + last[0]), GOLD)
-        page.evaluate("() => document.activeElement.blur()")
-        assert page.evaluate(CONTAINER_OVERFLOW) == "hidden"
+        for width in (1280, 1024, 900, 390):
+            page.set_viewport_size({"width": width, "height": 800})
+            _visit(page, handled, "#/journal")
+            page.evaluate(f"() => ({LAST_ROW_BUTTON})().focus()")
+            page.keyboard.press("Shift+Tab")
+            page.keyboard.press("Tab")
+            last = page.evaluate("""() => [document.activeElement.textContent.trim(),
+                    document.activeElement === (""" + LAST_ROW_BUTTON + """)()]""")
+            assert last[1], (width, last)
+            assert page.evaluate(CONTAINER_OVERFLOW) == "hidden"
+            inside = page.evaluate(
+                """() => { const a = document.activeElement.getBoundingClientRect(),
+                    c = document.activeElement.closest('.table-container').getBoundingClientRect();
+                    return a.left >= c.left && a.right <= c.right && a.bottom <= c.bottom; }"""
+            )
+            assert inside, width  # shown, not clipped, even at 390
+            if width == 1280:
+                _both_themes(page, ("the last row's " + last[0], width), GOLD)
+            else:
+                _theme(page, "light")
+                page.evaluate(SETTLED)
+                _ring_clears(page, ("the last row's " + last[0], width), GOLD["light"])
     finally:
+        page.close()
+
+
+# Where the content and the first plain table container stand
+SPILL = """() => { const c = [...document.querySelectorAll('#page-content .table-container')]
+        .find(c => c.offsetParent && !c.classList.contains('table-container--scroll')),
+        content = document.getElementById('content'), r = c.getBoundingClientRect();
+    return { content: [content.scrollWidth, content.clientWidth], box: [Math.round(r.left), Math.round(r.right)],
+             overflow: getComputedStyle(c).overflow }; }"""
+FIRST_IN_TABLE = """() => [...document.querySelectorAll('#page-content .table-container')]
+    .find(c => c.offsetParent && !c.classList.contains('table-container--scroll'))
+    .querySelector('tbody button, tbody a[href]')"""
+
+
+def test_focus_in_a_wide_table_spills_nothing(browser, company, books):
+    """Letting a table's overflow out while focus was inside it spilled a
+    wide table past its container (Jobs, Settings, Fixed Assets at 1024; at
+    900, the desktop window's least; at 390), by a mouse's focus too. The
+    container clips as it did: at 1280, 1024, 900 and 390px wide, a control
+    in the table focused by the mouse or by the keyboard leaves the page's
+    width and the container's box as they were."""
+    page, handled = _open(browser, company)
+    try:
+        _no_splash(page)
+        for width in (1280, 1024, 900, 390):
+            page.set_viewport_size({"width": width, "height": 800})
+            for route in ("#/jobs", "#/settings", "#/fixed-assets"):
+                _visit(page, handled, route)
+                rest = page.evaluate(SPILL)
+                assert rest["overflow"] == "hidden", (width, route, rest)
+                # a mouse's focus: the button pressed, not released
+                box = page.evaluate(
+                    f"""() => {{ const r = ({FIRST_IN_TABLE})().getBoundingClientRect();
+                        return {{ x: r.left + Math.min(r.width / 2, 4), y: r.top + r.height / 2 }}; }}"""
+                )
+                page.mouse.move(box["x"], box["y"])
+                page.mouse.down()
+                pressed = page.evaluate(SPILL)
+                page.mouse.up()
+                page.keyboard.press("Escape")
+                # the keyboard's focus
+                page.evaluate(f"() => ({FIRST_IN_TABLE})().focus()")
+                keyed = page.evaluate(SPILL)
+                for what, now in (("mouse", pressed), ("keyboard", keyed)):
+                    assert now["content"] == rest["content"], (
+                        width,
+                        route,
+                        what,
+                        rest,
+                        now,
+                    )
+                    assert now["box"] == rest["box"], (width, route, what, rest, now)
+                    assert now["overflow"] == "hidden", (width, route, what, now)
+                page.evaluate("() => document.activeElement.blur()")
+    finally:
+        page.set_viewport_size({"width": 1500, "height": 980})
         page.close()
 
 

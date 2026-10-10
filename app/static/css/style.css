@@ -744,14 +744,17 @@ body {
     border-radius: 0;
     overflow: hidden;
 }
-/* It clips what overflows it (there since the first release; its corners
-   are square, so nothing pokes out when it stops), which cut the
-   keyboard's halo below a last row's buttons and links: Adjust, History,
-   View, Void met the page beyond at 2.2:1. While focus is inside, nothing
-   is clipped; at rest nothing changes, and a scrolling table keeps its
-   scroll. */
-.table-container:not(.table-container--scroll):focus-within {
-    overflow: visible;
+/* It clips what overflows it (there since the first release), which cut
+   the keyboard's halo below a last row's buttons and links: Adjust,
+   History, View, Void met the page beyond at 2.2:1. The last row has the
+   room inside: 8px below, the halo's reach. Letting the overflow out
+   while focus was inside spilled a wide table past its side (Jobs,
+   Settings, Fixed Assets at 1024 and 900), and clipping only its side
+   (overflow-x: clip) left a focused control in the clipped part hidden,
+   where hidden scrolls the container to it (the journal's Void at 390px):
+   the clip stays as it was. */
+.table-container:not(.table-container--scroll) > table > :is(tbody, tfoot):last-child > tr:last-child > :is(td, th) {
+    padding-bottom: 8px;
 }
 
 table {
