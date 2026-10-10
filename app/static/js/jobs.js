@@ -171,10 +171,13 @@ const JobsPage = {
         const q = query || {};
         // a date that is not one, or From after To, is said so and ignored
         const dates = datesFromQuery(q);
-        if (dates.start_date || dates.end_date) {
-            JobsPage._period = { start: dates.start_date, end: dates.end_date };
-        }
-        JobsPage._from = (typeof ReportsPage !== 'undefined' && ReportsPage._view(q.from)) ? q.from : null;
+        // The period is the address's, every time; none is Job to date.
+        // (Set only when the address carried one, the last job's period
+        // stayed on the next job opened from the list — its boxes and its
+        // figures, with an address that said nothing of it — and a refused
+        // range named that period as "kept": round-3 review.)
+        JobsPage._period = { start: dates.start_date, end: dates.end_date };
+        JobsPage._from =(typeof ReportsPage !== 'undefined' && ReportsPage._view(q.from)) ? q.from : null;
         try {
             JobsPage._job = await API.get(`/jobs/${id}`);
         } catch (err) {

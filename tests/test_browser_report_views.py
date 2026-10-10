@@ -1021,6 +1021,84 @@ def test_the_job_page_refuses_from_after_to_typed_and_keeps_its_period(
         page.close()
 
 
+def test_a_job_opened_from_the_list_starts_on_job_to_date_whatever_the_last_jobs_period(
+    browser, company, books
+):
+    """The job page set its period only when the address carried one, so
+    the September a P&L by Job hop put on job 1 stayed on job 2 opened
+    from the Jobs list — its boxes and its figures, under an address that
+    said nothing of it — and a refused range named that September as
+    "kept" (round-3 review). The period is the address's every time: none
+    is Job to date, and a reload agrees."""
+    second = company.post(
+        "/api/jobs", json={"customer_id": books["customer"], "name": "Second Job"}
+    ).json()
+    # a figure outside September, so job to date and September differ
+    r = company.post(
+        "/api/invoices",
+        json={
+            "customer_id": books["customer"],
+            "job_id": second["id"],
+            "date": "2026-08-15",
+            "tax_rate": 0,
+            "lines": [{"description": "August survey", "quantity": 1, "rate": 480}],
+        },
+    )
+    assert r.status_code in (200, 201), r.text
+    jtd = company.get(f"/api/jobs/{second['id']}/cost-tree").json()["totals"]
+    sept = company.get(
+        f"/api/jobs/{second['id']}/cost-tree",
+        params={"start_date": SEPT[0], "end_date": SEPT[1]},
+    ).json()["totals"]
+    assert jtd["act_revenue"] == 480 and sept["act_revenue"] == 0
+
+    page, handled = _open_at(
+        browser,
+        company,
+        f"#/jobs/{books['job']}?start_date={SEPT[0]}&end_date={SEPT[1]}&from=profit-loss-by-job",
+    )
+    try:
+        page.wait_for_selector("#job-tab-body")
+        assert page.input_value("#job-period-start") == SEPT[0]
+        assert page.get_by_role("button", name="Back to P&L by Job").count() == 1
+
+        _visit(page, handled, "#/jobs")
+        del handled[:]
+        page.locator("#page-content tr.clickable", has_text="Second Job").first.click()
+        page.wait_for_function(
+            "(h) => location.hash === h", arg=f"#/jobs/{second['id']}"
+        )
+        page.wait_for_selector("#job-tab-body")
+        settle(page, handled)
+        assert page.input_value("#job-period-start") == ""
+        assert page.input_value("#job-period-end") == ""
+        assert page.evaluate("() => JobsPage._period") == {"start": "", "end": ""}
+        assert page.get_by_role("button", name="Back to P&L by Job").count() == 0
+        assert [h for h in handled if "/cost-tree" in h] == [
+            f"/api/jobs/{second['id']}/cost-tree"
+        ], "the figures are job to date: no dates asked for"
+        body = page.inner_text("#job-tab-body")
+        assert "$480.00" in body
+
+        # a reload agrees
+        del handled[:]
+        page.reload()
+        page.wait_for_function("window.App && document.readyState === 'complete'")
+        page.evaluate(
+            "() => { const s = document.getElementById('splash'); if (s) s.classList.add('hidden'); }"
+        )
+        page.wait_for_selector("#job-tab-body")
+        settle(page, handled)
+        assert page.input_value("#job-period-start") == ""
+        assert page.input_value("#job-period-end") == ""
+        assert [h for h in handled if "/cost-tree" in h] == [
+            f"/api/jobs/{second['id']}/cost-tree"
+        ]
+        assert page.inner_text("#job-tab-body") == body
+    finally:
+        page.close()
+
+
 def test_saved_reports_are_listed_by_their_views_title_and_what_they_were_saved_on(
     browser, company, books
 ):
