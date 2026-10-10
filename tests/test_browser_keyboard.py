@@ -3730,3 +3730,44 @@ def test_a_dark_fields_own_parts_are_drawn_for_a_dark_field(browser, company, bo
     for (sel, theme), (ratio, scheme) in seen.items():
         assert scheme == ("dark" if theme == "dark" else "normal"), (sel, theme, scheme)
         assert ratio >= 3.0, (sel, theme, ratio, seen)
+
+
+# Each plain table container on the page with rows: its padding below the
+# table, its last row's cells' padding, top and bottom, and how far the
+# words of that row's first cell sit from the middle of their row
+LAST_ROWS = """() => [...document.querySelectorAll('#page-content .table-container')]
+    .filter(c => c.offsetParent && !c.classList.contains('table-container--scroll')
+                 && c.querySelector(':scope > table > tbody > tr'))
+    .map(c => { const rows = c.querySelectorAll(':scope > table > tbody > tr'),
+            last = rows[rows.length - 1], cell = last.querySelector('td, th'),
+            cs = getComputedStyle(cell), range = document.createRange();
+        range.selectNodeContents(cell);
+        const words = range.getBoundingClientRect(), box = last.getBoundingClientRect();
+        return { rows: rows.length, below: getComputedStyle(c).paddingBottom,
+                 pad: [cs.paddingTop, cs.paddingBottom],
+                 off: words.height ? (words.top + words.bottom) / 2 - (box.top + box.bottom) / 2 : 0,
+                 text: cell.textContent.trim().slice(0, 30) }; })"""
+
+
+def test_a_one_row_tables_words_sit_in_the_middle_of_their_row(browser, company, books):
+    """The room for the last row's halo was 8px of padding on the last
+    row's cells, which set a one-row table's words high in their row (Time
+    Off's: final review). It is the container's, below its table: on Time
+    Off, the Journal and Items, every plain table container has 8px below
+    its table, its last row's cells as much padding above as below, and
+    that row's words in the middle of the row (within a pixel); the last
+    row's Void still draws its ring and halo whole (the test above)."""
+    page, handled = _open(browser, company)
+    try:
+        _no_splash(page)
+        seen = []
+        for route in ("#/hr/pto", "#/journal", "#/items"):
+            _visit(page, handled, route)
+            for t in page.evaluate(LAST_ROWS):
+                seen.append((route, t))
+                assert t["below"] == "8px", (route, t)
+                assert t["pad"][0] == t["pad"][1], (route, t)
+                assert abs(t["off"]) <= 1, (route, t)
+        assert any(t["rows"] == 1 for _, t in seen), seen
+    finally:
+        page.close()

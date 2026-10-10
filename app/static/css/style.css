@@ -741,14 +741,15 @@ body {
 }
 /* It clips what overflows it (there since the first release), which cut
    the keyboard's halo below a last row's buttons and links: Adjust,
-   History, View, Void met the page beyond at 2.2:1. The last row has the
-   room inside: 8px below, the halo's reach. Letting the overflow out
-   while focus was inside spilled a wide table past its side (Jobs,
-   Settings, Fixed Assets at 1024 and 900), and clipping only its side
-   (overflow-x: clip) left a focused control in the clipped part hidden,
-   where hidden scrolls the container to it (the journal's Void at 390px):
-   the clip stays as it was. */
-.table-container:not(.table-container--scroll) > table > :is(tbody, tfoot):last-child > tr:last-child > :is(td, th) {
+   History, View, Void met the page beyond at 2.2:1. The container has the
+   room inside, below its table: 8px, the halo's reach (given to the last
+   row's cells, it set a one-row table's words high in their row). Letting
+   the overflow out while focus was inside spilled a wide table past its
+   side (Jobs, Settings, Fixed Assets at 1024 and 900), and clipping only
+   its side (overflow-x: clip) left a focused control in the clipped part
+   hidden, where hidden scrolls the container to it (the journal's Void at
+   390px): the clip stays as it was. */
+.table-container:not(.table-container--scroll) {
     padding-bottom: 8px;
 }
 
@@ -1121,6 +1122,7 @@ a:hover { text-decoration: underline; }
        and its own scroll-margin (above) keeps its ring and halo, 8px,
        clear of them and of the grid's edges */
     scroll-padding: var(--grid-head, 0px) 0 0 var(--grid-frozen, 0px);
+    padding-bottom: 8px;
 }
 /* the grid's own ring, not the keyboard's gold ring and halo; on its edge,
    not inside it, where the frozen header row and Account column painted
@@ -1135,10 +1137,9 @@ a:hover { text-decoration: underline; }
 .pivot-grid thead th { position: sticky; top: 0; z-index: 2; }
 /* The keyboard's ring and halo reach 8px out from a link, and no scroll
    gives them room where the grid ends: above a heading, held to the
-   grid's top, and below the last row (a plain table's last row has the
-   same, .table-container above) */
+   grid's top, and below the last row (the grid's own padding, as a plain
+   table's container has, above) */
 .pivot-grid thead th { padding-top: 8px; }
-.pivot-grid > tbody:last-child > tr:last-child > :is(td, th) { padding-bottom: 8px; }
 .pivot-grid tbody th {
     font-weight: inherit;
     text-align: left;

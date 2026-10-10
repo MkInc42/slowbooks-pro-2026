@@ -521,16 +521,15 @@ def test_the_ring_has_a_halo_of_the_themes_own_ground():
         dark, '[data-theme="dark"] #topbar {'
     )
     # a table clips what overflows it, as it did: the halo below its last
-    # row has the room inside (letting the overflow out while focused
-    # spilled a wide table past its side)
+    # row has the room inside, the container's below its table (on the
+    # last row's cells it set a one-row table's words high in their row;
+    # letting the overflow out while focused spilled a wide table past
+    # its side)
     assert "overflow: hidden;" in _rule(css, ".table-container {")
     assert ":focus-within {\n    overflow" not in css
-    last = _rule(
-        css,
-        ".table-container:not(.table-container--scroll) > table > :is(tbody, tfoot):last-child"
-        " > tr:last-child > :is(td, th) {",
-    )
-    assert "padding-bottom: 8px;" in last
+    below = _rule(css, ".table-container:not(.table-container--scroll) {")
+    assert "padding-bottom: 8px;" in below
+    assert "tr:last-child > :is(td, th) {" not in css
     # the dialog's title bar has room for it above the × (it scrolls), and
     # Tab scrolls a control into view with room for it
     assert "margin: 2px 0;" in _rule(css, ".modal-close {")
@@ -800,9 +799,7 @@ def test_tab_brings_a_grid_stop_out_from_under_the_frozen_parts():
         in _rule(css, ".grid-scroll {")
     )
     assert "padding-top: 8px;" in _rule(css, ".pivot-grid thead th {", last=True)
-    assert "padding-bottom: 8px;" in _rule(
-        css, ".pivot-grid > tbody:last-child > tr:last-child > :is(td, th) {"
-    )
+    assert "padding-bottom: 8px;" in _rule(css, ".grid-scroll {")
     src = _src("reports.js")
     fit = src[src.index("ReportsPage._gridFit = function () {") :]
     fit = fit[: fit.index("\n};")]
