@@ -102,7 +102,7 @@ The register is the ledger account (v2.10, issue #114). Full guide: [docs/bankin
 - **A page's Notes box saves only a change** (v2.22.0) — leaving the customer's or vendor's Notes as it was loaded, or with only a space added, writes nothing to the company file or the audit log; a change saves once when the box is left, as typed
 - **Wide tables scroll sideways** (v2.22.0) — a table wider than its box scrolls inside it rather than being cut off, down to the desktop app's 900px minimum
 - **Tab reaches every control in a dialog** (v2.22.0) — buttons and links included, on every browser and whatever the Mac's keyboard setting; Escape in a date field leaves the field first; no dialog opens with focus on Void or Delete
-- **Shortcuts go by the key** (v2.22.0) — Option-D/N/P/Q/H on a Mac work though they type "∂", "˜", "œ", "˙", and never while typing in a field, on any computer, nor over a form being filled in; ⌘K finds like Ctrl+K
+- **Shortcuts go by the key** (v2.22.0) — Option-D/N/P/Q/H on a Mac work though they type "∂", "˜", "œ", "˙", and never while typing in a field, on any computer, nor over a form being filled in; ⌘K finds like Ctrl+K (not over an open dialog, which is modal)
 - **A closed report stays closed** (v2.22.0) — closing a report or a customer's page puts the page under it back on the bar; the app's own moves (a save, a void, Mark Sent) keep the address and bring the page or document back
 
 ## Classes

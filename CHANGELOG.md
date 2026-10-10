@@ -265,6 +265,20 @@ dates and shortcuts ones are in the lines above):
   focused control's ring; a wide table with no controls in it (Benefits'
   rates) is a Tab stop the arrow keys scroll.
 
+**From the gate's third round** (macOS NEW-43 again, NEW-45):
+
+- **The ring shows on a Mac after a click too** (NEW-43). WebKit counts
+  focus moved in script as the keyboard's — and draws the ring — only when
+  the focus before it was the keyboard's, and a dialog's Tab is moved in
+  script; so in a dialog opened with a click, Tab moved with no ring to
+  see. Focus the app moves because of the keyboard now asks for the ring
+  outright: Tab inside a dialog, Back's return to the row left, a disabled
+  Previous/Next handing over.
+- **⌘K waits for the dialog** (NEW-45). Over an open dialog, ⌘K (Ctrl+K)
+  moved focus to the search box under its overlay, and the hits opened
+  behind the dialog where they could be neither read nor clicked. Over a
+  dialog it does nothing now; close it, then search.
+
 No schema migration. 555 operations.
 
 ### v2.21.0 — Three things you'd reach for
