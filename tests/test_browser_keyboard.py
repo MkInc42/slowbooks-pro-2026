@@ -2516,7 +2516,10 @@ def test_tab_through_settings_never_lands_under_its_save_bar(browser, company, b
     notes box too, which the browser brings only its caret line into view
     for) and every stop is what the browser finds at its middle; Tab still
     reaches the bar's Save; and a mouse's press on a control the bar half
-    covers scrolls nothing."""
+    covers scrolls nothing — a button, and at 1440 x 900 a click into the
+    invoice notes box (a text box takes :focus-visible on a click too, and
+    the page moved under the click: final review), which Tab then still
+    brings clear."""
     page, handled = _open(browser, company)
     try:
         _no_splash(page)
@@ -2564,6 +2567,33 @@ def test_tab_through_settings_never_lands_under_its_save_bar(browser, company, b
         page.mouse.move(half["x"], half["y"] - 300)
         page.mouse.up()
         assert pressed == [True, False, half["top"]], (half, pressed)
+        # a click into a text box the bar half covers: a text box takes
+        # :focus-visible on a click too, and the page moved under it
+        # (review); now nothing moves, and Tab to it still brings it clear
+        page.set_viewport_size({"width": 1440, "height": 900})
+        _visit(page, handled, "#/settings")
+        page.wait_for_selector("#settings-savebar")
+        settle(page, handled)
+        box = page.evaluate(
+            """() => { const bar = document.getElementById('settings-savebar'),
+                    content = document.getElementById('content'),
+                    t = document.querySelector('#settings-form [name="invoice_notes"]');
+                content.scrollTop += t.getBoundingClientRect().top - (bar.getBoundingClientRect().top - 12);
+                const r = t.getBoundingClientRect();
+                return { x: r.left + 20, y: r.top + 5, top: content.scrollTop,
+                         covered: r.bottom > bar.getBoundingClientRect().top }; }"""
+        )
+        assert box["covered"], box
+        page.mouse.click(box["x"], box["y"])
+        clicked = page.evaluate(
+            """() => [document.activeElement.name, document.getElementById('content').scrollTop]"""
+        )
+        assert clicked == ["invoice_notes", box["top"]], (box, clicked)
+        page.keyboard.press("Shift+Tab")
+        page.keyboard.press("Tab")
+        keyed = page.evaluate(SAVEBAR_STOP)
+        assert page.evaluate("() => document.activeElement.name") == "invoice_notes"
+        assert keyed["over"] <= 0.5 and keyed["found"], keyed
     finally:
         page.set_viewport_size({"width": 1500, "height": 980})
         page.close()

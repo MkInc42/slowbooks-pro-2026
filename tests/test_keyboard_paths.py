@@ -816,7 +816,7 @@ def test_tab_brings_a_grid_stop_out_from_under_the_frozen_parts():
     reveal = reveal[: reveal.index("\n};")]
     assert "a.closest('#grid-scroll')" in reveal
     assert (
-        "if (g && a !== g && a.matches(':focus-visible')) "
+        "if (g && a !== g && App.keyboardFocus()) "
         "a.scrollIntoView({ block: 'nearest', inline: 'nearest' });" in reveal
     )
     # wired once, when the app starts (not as the script loads, which the
@@ -955,7 +955,7 @@ def test_a_control_the_keyboard_puts_under_settings_save_bar_is_scrolled_clear()
     for line in (
         "const a = e.target, bar = document.getElementById('settings-savebar');",
         "if (!bar || !a || !a.closest || bar.contains(a) || !a.closest('#settings-form')) return;",
-        "if (!a.matches(':focus-visible')) return;",
+        "if (!App.keyboardFocus()) return;",
         "if (!b.height || !content) return;",
         "const over = a.getBoundingClientRect().bottom + 8 - b.top;",
         "if (over > 0) content.scrollTop += Math.ceil(over);",
@@ -1052,3 +1052,27 @@ def test_a_dark_themes_fields_say_they_are_dark():
     )
     assert "color-scheme: dark;" in _rule(dark, head)
     assert dark.count("color-scheme") == 1
+
+
+def test_what_keeps_the_keyboards_place_in_sight_asks_what_moved_focus():
+    """A text box matches :focus-visible on a click as well as on Tab, so
+    what scrolls a control into sight for the keyboard (Settings' save
+    bar, the grid) asks what moved focus last: Tab or an arrow, or a
+    pointer (App.init keeps it, ahead of anyone else's handlers)."""
+    app = _src("app.js")
+    assert "keyboardFocus() { return App._input !== 'pointer'; }," in app
+    init = app[app.index("    init() {") :]
+    init = init[: init.index("\n    },")]
+    assert (
+        "if (e.key === 'Tab' || String(e.key).startsWith('Arrow')) App._input = 'keyboard';"
+        in init
+    )
+    assert (
+        "document.addEventListener('pointerdown', () => { App._input = 'pointer'; }, true);"
+        in init
+    )
+    for name, fn in (("settings.js", "_clearSaveBar"), ("reports.js", "_gridReveal")):
+        src = _src(name)
+        body = src[src.index(f".{fn} = function (e) {{") :]
+        body = body[: body.index("\n};")]
+        assert "App.keyboardFocus()" in body and ":focus-visible" not in body, name

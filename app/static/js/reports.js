@@ -1658,7 +1658,7 @@ ReportsPage._gridFit = function () {
 // hands every focusin here, and every resize to _gridFit.)
 ReportsPage._gridReveal = function (e) {
     const a = e.target, g = a && a.closest && a.closest('#grid-scroll');
-    if (g && a !== g && a.matches(':focus-visible')) a.scrollIntoView({ block: 'nearest', inline: 'nearest' });
+    if (g && a !== g && App.keyboardFocus()) a.scrollIntoView({ block: 'nearest', inline: 'nearest' });
 };
 
 // Column i of the open grid: scrolled into view (the frozen Account
