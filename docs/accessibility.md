@@ -94,9 +94,13 @@ Tab.*
 On a Mac the Alt key is Option; the letter shortcuts go by the key, not
 the character Option types, so Option-D toggles the theme even though it
 types "∂" (v2.22.0). While you are typing in a field — a box, a notes
-area, a list — no Alt letter is a shortcut, on any computer, so Alt+N
-over a half-typed bill opens nothing and the bill stays (v2.22.0). Ctrl+K
-(⌘K) finds from anywhere, the search box included.
+area, a list — no Alt letter is a shortcut, on any computer; and over a
+form you are filling in, Alt+N, P, Q and H do nothing from any of its
+controls (Save, the ×, a button, a link), so a half-typed bill stays
+until you save or close it — Alt+D, the theme, still works there
+(v2.22.0). Over a report or a customer's page, and from any page, the
+four work as the table says. Ctrl+K (⌘K) finds from anywhere, the search
+box included.
 
 ## What we know is still open
 

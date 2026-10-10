@@ -17,8 +17,9 @@ bakery's books of tests/test_theme_contrast.py (2.22.0 gate, round 2):
   dialog; the next Escape closes it.
 - NEW-41: the Alt shortcuts go by the key's position (e.code), so a Mac's
   Option-D ("∂") still toggles the theme; inside a field no Alt letter
-  fires, on any platform (W-6); ⌘K finds like Ctrl+K; Ctrl+Alt (AltGr) is
-  left alone.
+  fires, on any platform (W-6), and over a form being filled in Alt+N, P,
+  Q and H do nothing from any of its controls, as Back does; ⌘K finds
+  like Ctrl+K; Ctrl+Alt (AltGr) is left alone.
 - NEW-30: the toolbar's Back, enabled only while an app page is behind,
   with Alt+← (⌘[ on a Mac); a reload keeps it.
 - NEW-32: no dialog opens with focus on Void or Delete; a dialog whose
@@ -901,6 +902,76 @@ def test_inside_a_field_no_alt_letter_is_a_shortcut_on_any_platform(
         page.evaluate(KEY, ["[", "BracketLeft", {"metaKey": True}])
         page.wait_for_function(AT, arg=here)  # the page before Customers
         page.evaluate(MAC, False)
+    finally:
+        page.close()
+
+
+LEAVING = ("Alt+KeyN", "Alt+KeyP", "Alt+KeyQ", "Alt+KeyH")
+FORM_CONTROLS = (
+    "#modal-body button[type=submit]",
+    "#modal-close-btn",
+    "#modal-body button:has-text('Add Line')",
+)
+
+
+def test_over_a_form_alt_n_p_q_h_do_nothing_from_any_of_its_controls(
+    browser, company, books
+):
+    """Inside a field no Alt letter fires, but one Tab away — on the form's
+    Save button, its ×, Add Line — Alt+N, P, Q or H opened another form
+    in its place and the typed one was gone: the loss W-6 describes
+    (round-3 review). Over a form being filled in (App.editingDialog, as
+    Back is) the four that leave it do nothing from any of its controls;
+    Alt+D, the theme, still fires there; over an addressed dialog (a
+    report) and from the page they fire as before."""
+    page, handled = _open(browser, company)
+    try:
+        _no_splash(page)
+        _visit(page, handled, "#/invoices")
+        _open_dialog(page, handled, "InvoicesPage.showForm()", "#inv-lines tr")
+        page.fill("#modal textarea", "a note being typed")
+        page.fill("#inv-lines .line-desc", "half a line")
+        assert page.evaluate("() => App.editingDialog()")
+        was = page.evaluate(THEME)
+        for sel in FORM_CONTROLS:
+            page.focus(sel)
+            assert page.evaluate("() => document.activeElement.tagName") == "BUTTON"
+            for keys in LEAVING:
+                page.keyboard.press(keys)
+            page.wait_for_timeout(150)
+            settle(page, handled)
+            assert page.evaluate(MODAL_SHOWN), sel
+            assert page.evaluate(TITLE).startswith("New Invoice"), sel
+            assert page.input_value("#modal textarea") == "a note being typed", sel
+            assert page.input_value("#inv-lines .line-desc") == "half a line", sel
+            assert page.evaluate("location.hash") == "#/invoices", sel
+            assert page.evaluate(THEME) == was, sel
+        # the theme still switches from the Save button, and the form stays
+        page.focus("#modal-body button[type=submit]")
+        page.keyboard.press("Alt+KeyD")
+        assert page.evaluate(THEME) != was
+        page.keyboard.press("Alt+KeyD")
+        assert page.evaluate(THEME) == was
+        assert page.input_value("#modal textarea") == "a note being typed"
+        assert page.evaluate(TITLE).startswith("New Invoice")
+        page.evaluate("() => closeModal()")
+        # over a report view, an addressed dialog, Alt+N opens New Invoice
+        _visit(
+            page,
+            handled,
+            f"#/reports/profit-loss?start_date={SEPT[0]}&end_date={SEPT[1]}",
+        )
+        page.wait_for_selector("#report-content table")
+        page.focus("#modal-close-btn")
+        assert not page.evaluate("() => App.editingDialog()")
+        page.keyboard.press("Alt+KeyN")
+        page.wait_for_function(f"() => ({TITLE})().startsWith('New Invoice')")
+        page.evaluate("() => closeModal()")
+        # and from the page, Alt+H goes home
+        page.wait_for_function(f"!({MODAL_SHOWN})()")
+        page.evaluate("() => document.body.focus()")
+        page.keyboard.press("Alt+KeyH")
+        page.wait_for_function(AT, arg="#/")
     finally:
         page.close()
 

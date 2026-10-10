@@ -98,9 +98,15 @@ def test_the_alt_shortcuts_compare_the_keys_position_and_cmd_k_finds():
     )
     assert "const letter = (code) => alt && !editing && e.code === code;" in keys
     assert "e.key).toLowerCase()" not in keys, "the character typed is not consulted"
-    for code in ("KeyN", "KeyP", "KeyQ", "KeyH", "KeyD"):
-        assert f"if (letter('{code}'))" in keys, code
-    assert "const entry = letter('KeyN') || letter('KeyP') || letter('KeyQ');" in keys
+    # the four that leave what is open do nothing over a form being filled
+    # in (App.editingDialog, as Back is), from any of its controls — on
+    # Save or the × they opened another form in its place (W-6 review);
+    # the theme fires anywhere but a field
+    assert "const leaves = (code) => letter(code) && !App.editingDialog();" in keys
+    for code in ("KeyN", "KeyP", "KeyQ", "KeyH"):
+        assert f"if (leaves('{code}'))" in keys, code
+    assert "if (letter('KeyD'))" in keys
+    assert "const entry = leaves('KeyN') || leaves('KeyP') || leaves('KeyQ');" in keys
     assert "if (entry && App.isReadOnly())" in keys
     # ⌘⌥[ is not Back
     assert (
