@@ -215,6 +215,53 @@ name; every amount in the plain and per-class P&L CSVs has two decimals.
 - Tests: the bakery's books fixture lives in `conftest.py`, so the six
   report-link tests run on Windows and macOS CI (W-2).
 
+**From the gate's second round** (macOS NEW-42–NEW-44, Windows W-3–W-7; the
+dates and shortcuts ones are in the lines above):
+
+- **Back looks like a button** (NEW-42). The toolbar's ← was a bare grey
+  glyph that got its border on hover alone, and dimmed it looked the same, so
+  with a card open it read as unusable. It is a bordered gold button reading
+  "← Back" in both themes while there is somewhere to go, muted and
+  borderless when there is not; its edge clears 3:1 against the bar.
+- **The keyboard's place is visible** (NEW-43). Links and buttons had no
+  focus style of their own, and WebKit draws none on a link with the Mac's
+  keyboard navigation off. Every link, button, checkbox, radio and file
+  picker draws a 2px gold ring on keyboard focus, in both themes, the gold on
+  a halo of the theme's own ground so it clears 3:1 against whatever it meets
+  — the toolbar (where the gold is deeper and clears the bar by itself), a
+  dialog's title bar, a table's header row, a line of running text — read off
+  the screen as the macOS gate reads it; a mouse click draws none. A sidebar
+  link draws it inside its edge; a table's last row draws it whole; the
+  grid's and the search results' own rings win; the P&L by Class grid brings a
+  cell out from under its frozen header and Account column; Settings scrolls
+  a control clear of its save bar; the skip link moves focus to the page's
+  content instead of showing "Page not found". A dialog's title bar is 4px
+  taller, to give the × room (WCAG 2.4.7, 1.4.11).
+- **Every field keeps a field's own focus style.** A list's search box and
+  filters, a line item, a type-ahead box, Budgets' cells, Settings' lists, a
+  page's Notes and a report's pickers and dates look and focus like a form's
+  fields, in both themes: none is white in the dark theme, none draws the
+  browser's ring, a dark date field's calendar icon is light, and with the
+  system's high-contrast colours a focused field draws the system highlight.
+- **Cards open from the keyboard.** The Report Center's cards, Banking's
+  account cards and the dashboard's bank cards were a click alone; each is
+  a link now: Tab reaches it, Enter or Space opens it, and Back returns to it.
+- **A page's Notes box saves only a change** (NEW-44). The customer's and
+  the vendor's Notes saved on every blur, so a Tab through the page wrote the
+  company file and an audit entry each time and turned a note never written
+  into "". Only a change is saved, once — leaving the box again before the
+  save is back sends nothing more; a space added alone is no change, and a
+  note of spaces is none.
+- **Back puts focus back on the row left** (W-7). Chart of Accounts → a
+  register or a drill-down, a drill-down's line → its document, every report
+  or page row that opens something, and a customer's or vendor's report links
+  come back with the keyboard on the row or link left — after a mouse click
+  too, which on a Mac does not focus a link; a ⌘/Ctrl-click that opens a new
+  tab notes nothing.
+- **Wide tables scroll sideways** in their box instead of being cut off (at
+  the desktop app's 900px minimum a list's last column could hide its
+  buttons); every table has 8px of room below it inside its border.
+
 No schema migration. 555 operations.
 
 ### v2.21.0 — Three things you'd reach for
