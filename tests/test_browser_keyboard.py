@@ -2009,3 +2009,39 @@ def test_a_checkbox_draws_the_ring_by_keyboard_and_none_by_mouse(
         assert clicked["shadow"] != f"{HALO['light']} 0px 0px 0px 8px", clicked
     finally:
         page.close()
+
+
+def test_the_skip_link_draws_the_ring_and_enter_goes_to_the_content_in_place(
+    browser, company, books
+):
+    """The skip link, Tab's first stop, kept the brand's pale gold (1.95:1
+    on the toolbar) at the window's very corner, where its top and left
+    lines fell off; and Enter on it set the address to #page-content, which
+    the router showed as "Page not found". It draws the ring and halo on
+    all four sides, and Enter puts focus on the page's content, which takes
+    it as a place (no ring), with the address and history as they were;
+    the next Tab is the content's first control."""
+    page, handled = _open_at(browser, company, "#/customers")
+    try:
+        page.keyboard.press("Tab")
+        skip = page.evaluate(OWN_RING)
+        assert "skip-link" in skip["cls"] and skip["keyboard"], skip
+        _both_themes(page, "skip link", GOLD)
+        here, length = page.evaluate("location.hash"), page.evaluate("history.length")
+        words = page.inner_text("#page-content")
+        page.keyboard.press("Enter")
+        page.wait_for_function("() => document.activeElement.id === 'page-content'")
+        settle(page, handled)
+        assert page.evaluate("location.hash") == here == "#/customers"
+        assert page.evaluate("history.length") == length
+        assert "Page not found" not in page.inner_text("#page-content")
+        assert page.inner_text("#page-content") == words
+        place = page.evaluate(OWN_RING)
+        assert "none" in place["outline"] and place["shadow"] == "none", place
+        page.keyboard.press("Tab")
+        assert page.evaluate(
+            "() => document.activeElement !== document.getElementById('page-content')"
+            " && !!document.activeElement.closest('#page-content')"
+        )
+    finally:
+        page.close()

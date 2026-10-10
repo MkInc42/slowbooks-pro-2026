@@ -16,10 +16,16 @@
     text-decoration: none;
     font-weight: 600;
 }
+/* Shown, it draws the keyboard's ring and halo (below), 8px in from the
+   corner: at the corner itself the ring's top and left lines fell off the
+   window, and it kept the brand's paler gold, 1.95:1 against the toolbar
+   it lands on (review of NEW-43, 2.22.0). */
 .skip-link:focus {
-    top: 0;
-    outline: 2px solid var(--qb-gold, #f7c948);
+    top: 8px;
+    left: 8px;
+    outline: 2px solid var(--focus-ring);
     outline-offset: 2px;
+    box-shadow: 0 0 0 8px var(--focus-halo);
 }
 
 /* Focus is visible on every control (WCAG 2.4.7). Links and buttons had

@@ -68,7 +68,9 @@ or Alt+D.*
   measured as the browser paints it (`tests/test_browser_keyboard.py`).
   A mouse click on a button or a link draws none.
   A field keeps its own focus style (the blue border and pale ground), and
-  a dialog that takes focus itself is not outlined.
+  a dialog that takes focus itself is not outlined. The skip link, Tab's
+  first stop, moves focus to the page's content and leaves the page where
+  it is.
 - **Back, within the app** (v2.22.0): the toolbar's bordered gold
   **← Back** button goes back through the app's history, and is lit only
   while an app page is behind (muted and borderless otherwise, so the two

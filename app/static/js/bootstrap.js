@@ -115,6 +115,18 @@
     const closeBtn = document.getElementById('modal-close-btn');
     if (closeBtn) closeBtn.addEventListener('click', () => typeof closeModal === 'function' && closeModal());
 
+    // Skip to main content: focus goes to the page's content itself, and
+    // the address stays. Followed as a link, "#page-content" became the
+    // address, which the router read as a page: "Page not found" (review
+    // of NEW-43, 2.22.0). The content takes focus as a place (tabindex
+    // -1): no ring, and the next Tab is its first control.
+    const skip = document.querySelector('.skip-link');
+    const main = document.getElementById('page-content');
+    if (skip && main) skip.addEventListener('click', (e) => {
+        e.preventDefault();
+        main.focus();
+    });
+
     // Sign out — POSTs to /api/auth/logout, then goes back to where you
     // choose: in the native desktop window, the company picker (the
     // launcher stops this company's server and reloads the picker page);

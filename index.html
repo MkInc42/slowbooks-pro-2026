@@ -45,7 +45,9 @@
 
     <div id="app">
         <!-- Skip link for keyboard users — first tab stop, lets them jump
-             past the topbar + sidebar straight into page content. -->
+             past the topbar + sidebar straight into page content. It moves
+             focus there without changing the address (bootstrap.js): the
+             router took "#page-content" for a page, "Page not found". -->
         <a href="#page-content" class="skip-link">Skip to main content</a>
         <!-- Toolbar -->
         <div id="topbar">
@@ -220,7 +222,10 @@
             </nav>
 
             <main id="content">
-                <div id="page-content"></div>
+                <!-- tabindex -1: the skip link's target takes focus by
+                     script; a place, not a control, so Tab skips it and
+                     it draws no ring -->
+                <div id="page-content" tabindex="-1"></div>
             </main>
         </div>
 

@@ -548,6 +548,34 @@ def test_a_checkbox_or_a_radio_takes_the_ring_and_a_field_does_not():
     assert "#grid-empty { margin-right: 5px; }" in css
 
 
+def test_the_skip_link_draws_the_ring_and_goes_to_the_content_in_place():
+    """The skip link kept the brand's pale gold, 1.95:1 on the toolbar, at
+    the window's corner, where its top and left lines fell outside; and
+    Enter on it set the address to #page-content, which the router showed
+    as "Page not found". It draws the ring and halo 6px in from the corner,
+    and it moves focus to the content, which takes it as a place, with the
+    address unchanged."""
+    css = (ROOT / "app/static/css/style.css").read_text(encoding="utf-8")
+    skip = _rule(css, ".skip-link:focus {")
+    for line in (
+        "top: 8px;",
+        "left: 8px;",
+        "outline: 2px solid var(--focus-ring);",
+        "outline-offset: 2px;",
+        "box-shadow: 0 0 0 8px var(--focus-halo);",
+    ):
+        assert line in skip, line
+    assert "--qb-gold" not in skip
+    html = (ROOT / "index.html").read_text(encoding="utf-8")
+    assert '<a href="#page-content" class="skip-link">Skip to main content</a>' in html
+    assert '<div id="page-content" tabindex="-1"></div>' in html
+    boot = _src("bootstrap.js")
+    wire = boot[boot.index("const skip = document.querySelector('.skip-link');") :]
+    wire = wire[: wire.index("});") + 3]
+    assert "e.preventDefault();" in wire and "main.focus();" in wire
+    assert "const main = document.getElementById('page-content');" in wire
+
+
 # ── Round 3, NEW-44: a page's Notes box saves only a change ──────────────
 
 
