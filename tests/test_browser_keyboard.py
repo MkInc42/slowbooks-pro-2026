@@ -2383,6 +2383,98 @@ def test_a_link_in_running_text_has_the_halo_where_the_gate_reads_its_ground(
         page.close()
 
 
+# A field's own focus style, each theme's (style.css / dark.css .form-group
+# and .field): the blue border, the pale ground, no outline
+FIELD_FOCUS = {
+    "light": {"border": "rgb(51, 102, 204)", "ground": "rgb(255, 255, 248)"},
+    "dark": {"border": "rgb(91, 155, 213)", "ground": "rgb(26, 30, 40)"},
+}
+FIELD_LOOK = """() => { const a = document.activeElement, cs = getComputedStyle(a), r = a.getBoundingClientRect();
+    return { id: a.id, outline: cs.outlineStyle, border: cs.borderTopColor, ground: cs.backgroundColor,
+             x: r.left, y: r.top, w: r.width, h: r.height }; }"""
+
+
+def _field_focus_painted(page, what, theme):
+    """The focused field in its own focus style, as computed and as
+    painted: its border the theme's focus blue on every side, at the middle
+    of the side, and nothing drawn just outside it (the 1st to 3rd pixel
+    out are the ground 6px out: no ring of the browser's or the keyboard's)."""
+    import io
+    import math
+
+    from PIL import Image
+
+    look = page.evaluate(FIELD_LOOK)
+    want = FIELD_FOCUS[theme]
+    assert look["outline"] == "none", (what, theme, look)
+    assert look["border"] == want["border"], (what, theme, look)
+    assert look["ground"] == want["ground"], (what, theme, look)
+    x0, y0 = math.floor(look["x"]) - 8, math.floor(look["y"]) - 8
+    x1 = math.ceil(look["x"] + look["w"]) + 8
+    y1 = math.ceil(look["y"] + look["h"]) + 8
+    shot = page.screenshot(clip={"x": x0, "y": y0, "width": x1 - x0, "height": y1 - y0})
+    img = Image.open(io.BytesIO(shot)).convert("RGB")
+    left, top = round(look["x"]) - x0, round(look["y"]) - y0
+    right = round(look["x"] + look["w"]) - x0 - 1
+    bottom = round(look["y"] + look["h"]) - y0 - 1
+    mx, my = (left + right) // 2, (top + bottom) // 2
+    blue = [int(v) for v in re.findall(r"\d+", want["border"])]
+    for side, at in (
+        ("top", lambda d: (mx, top - d)),
+        ("bottom", lambda d: (mx, bottom + d)),
+        ("left", lambda d: (left - d, my)),
+        ("right", lambda d: (right + d, my)),
+    ):
+        edge = img.getpixel(at(0))
+        assert _far(edge, blue) <= 40, (what, theme, side, edge)
+        ground = img.getpixel(at(6))
+        out = [img.getpixel(at(d)) for d in (1, 2, 3)]
+        assert all(_far(o, ground) <= 12 for o in out), (what, theme, side, out, ground)
+
+
+def test_a_field_outside_a_form_group_keeps_a_fields_own_focus_style(
+    browser, company, books
+):
+    """A customer's and a vendor's Notes box and a report's From and To are
+    not in a form group, and drew the browser's own ring on focus, where
+    every other field shows its own style (review). They take a field's
+    look and its focus style (.field): by the keyboard and by a click, in
+    each theme, the blue border on every side, the pale ground and no ring
+    around them, as computed and as painted."""
+    pl = f"#/reports/profit-loss?start_date={SEPT[0]}&end_date={SEPT[1]}"
+    for where, fields in (
+        (f"#/customers/{books['customer']}", [f"#cust-notes-{books['customer']}"]),
+        (f"#/vendors/{books['vendor']}", [f"#vend-notes-{books['vendor']}"]),
+        (pl, ["#report-custom-start", "#report-custom-end"]),
+    ):
+        page, handled = _open_at(browser, company, where)
+        try:
+            page.wait_for_function(MODAL_SHOWN)
+            for sel in fields:
+                page.wait_for_selector(sel)
+            settle(page, handled)
+            for sel in fields:
+                for theme in ("light", "dark"):
+                    _theme(page, theme)
+                    # by the keyboard: from the control before it
+                    page.focus(sel)
+                    page.keyboard.press("Shift+Tab")
+                    page.keyboard.press("Tab")
+                    assert page.evaluate("() => '#' + document.activeElement.id") == sel
+                    page.evaluate(SETTLED)
+                    _field_focus_painted(page, (sel, "keyboard"), theme)
+                    page.evaluate("() => document.activeElement.blur()")
+                    # by a click
+                    page.click(sel, position={"x": 4, "y": 4})
+                    assert page.evaluate("() => '#' + document.activeElement.id") == sel
+                    page.evaluate(SETTLED)
+                    _field_focus_painted(page, (sel, "click"), theme)
+                    page.evaluate("() => document.activeElement.blur()")
+                _theme(page, "light")
+        finally:
+            page.close()
+
+
 def test_the_skip_link_draws_the_ring_and_enter_goes_to_the_content_in_place(
     browser, company, books
 ):

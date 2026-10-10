@@ -447,7 +447,7 @@ def test_focus_is_visible_on_every_control_by_keyboard_only():
     # exception above) and what takes focus by script alone — the dialog
     # itself and the skip link's target, a place rather than a control
     assert css.count("outline: none") == 3
-    assert ".form-group textarea:focus {\n    outline: none;" in css
+    assert ".form-group textarea:focus,\n.field:focus {\n    outline: none;" in css
     assert ".tb-search:focus {\n    outline: none;" in css
     assert '[tabindex="-1"]:focus {\n    outline: none;\n}' in css
     dark = (ROOT / "app/static/css/dark.css").read_text(encoding="utf-8")
@@ -550,7 +550,8 @@ def test_a_checkbox_or_a_radio_takes_the_ring_and_a_field_does_not():
     assert (
         '.form-group input:not([type="checkbox"]):not([type="radio"]):focus,\n'
         ".form-group select:focus,\n"
-        ".form-group textarea:focus {\n"
+        ".form-group textarea:focus,\n"
+        ".field:focus {\n"
         "    outline: none;" in css
     )
     assert ".form-group input:focus" not in css
@@ -841,3 +842,40 @@ def test_a_click_that_opens_elsewhere_notes_nothing():
     assert "ev.target.closest('a[href]')" in away
     assert "!/^\\s*javascript:/i.test(a.getAttribute('href'))" in away
     assert "!ev.defaultPrevented" in away
+
+
+def test_a_field_outside_a_form_group_takes_a_fields_look_and_focus():
+    """A page's Notes box and a report's From and To are not in a form
+    group: with .field they take its look and its focus style (the blue
+    border and the pale ground, no outline) in both themes, not the
+    browser's ring."""
+    css = (ROOT / "app/static/css/style.css").read_text(encoding="utf-8")
+    dark = (ROOT / "app/static/css/dark.css").read_text(encoding="utf-8")
+    rest = _rule(
+        css, ".form-group input,\n.form-group select,\n.form-group textarea,\n.field {"
+    )
+    assert "border: 1px solid var(--input-border);" in rest
+    focus = _rule(
+        css, '.form-group input:not([type="checkbox"]):not([type="radio"]):focus,'
+    )
+    assert ".field:focus" in focus and "outline: none;" in focus
+    assert "border-color: var(--input-focus);" in focus
+    assert '[data-theme="dark"] .field {' in dark
+    assert "background: #14161c;" in _rule(
+        dark, '[data-theme="dark"] .form-group input,'
+    )
+    assert '[data-theme="dark"] .field:focus {' in dark
+    assert "background: #1a1e28;" in _rule(
+        dark, '[data-theme="dark"] .form-group input:focus,'
+    )
+    assert (
+        '<textarea id="cust-notes-${id}" class="field" rows="3" data-write aria-label="Notes"'
+        in _src("customers.js")
+    )
+    assert (
+        '<textarea id="vend-notes-${id}" class="field" rows="3" data-write aria-label="Notes"'
+        in _src("vendors.js")
+    )
+    src = _src("reports.js")
+    assert '<input id="report-custom-start" class="field" type="date"' in src
+    assert '<input id="report-custom-end" class="field" type="date"' in src

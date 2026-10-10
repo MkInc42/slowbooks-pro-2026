@@ -893,9 +893,12 @@ td.amount, th.amount {
     letter-spacing: 0.02em;
 }
 
+/* A field outside a form group (a page's Notes box, a report's From and To)
+   takes the same look with .field, and the same focus style below. */
 .form-group input,
 .form-group select,
-.form-group textarea {
+.form-group textarea,
+.field {
     padding: 4px 6px;
     border: 1px solid var(--input-border);
     border-radius: 0;
@@ -913,7 +916,8 @@ td.amount, th.amount {
    the keyboard's ring (top of the sheet). */
 .form-group input:not([type="checkbox"]):not([type="radio"]):focus,
 .form-group select:focus,
-.form-group textarea:focus {
+.form-group textarea:focus,
+.field:focus {
     outline: none;   /* a field's own focus style, not the keyboard's ring */
     border-color: var(--input-focus);
     background: #fffff8;

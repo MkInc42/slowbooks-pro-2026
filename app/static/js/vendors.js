@@ -166,7 +166,7 @@ const VendorsPage = {
                     <span>Notes</span>
                     <span id="vend-note-status-${id}" style="font-size:10px;color:var(--text-muted);text-transform:none;letter-spacing:0;font-weight:normal"></span>
                 </h4>
-                <textarea id="vend-notes-${id}" rows="3" data-write aria-label="Notes" style="width:100%;font-size:13px;font-family:inherit"
+                <textarea id="vend-notes-${id}" class="field" rows="3" data-write aria-label="Notes" style="width:100%;font-size:13px;font-family:inherit"
                     placeholder="Internal notes about this vendor — visible to everyone with admin access."
                     onblur="VendorsPage._saveNotes(${id}, this.value)">${escapeHtml(vendor.notes || '')}</textarea>
             </div>

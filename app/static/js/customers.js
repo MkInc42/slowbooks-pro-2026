@@ -204,7 +204,7 @@ const CustomersPage = {
                     <span>Notes</span>
                     <span id="cust-note-status-${id}" style="font-size:10px;color:var(--text-muted);text-transform:none;letter-spacing:0;font-weight:normal"></span>
                 </h4>
-                <textarea id="cust-notes-${id}" rows="3" data-write style="width:100%;font-size:13px;font-family:inherit"
+                <textarea id="cust-notes-${id}" class="field" rows="3" data-write aria-label="Notes" style="width:100%;font-size:13px;font-family:inherit"
                     placeholder="Internal notes about this customer — visible to everyone with admin access."
                     onblur="CustomersPage._saveNotes(${id}, this.value)">${escapeHtml(customer.notes || '')}</textarea>
             </div>
