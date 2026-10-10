@@ -371,3 +371,37 @@ def test_a_declined_leave_goes_back_to_the_entry_it_left():
     assert app.count("App.entryState(") == 3
     assert "history.pushState(App.entryState(here), '', url);" in _src("reports.js")
     assert "if (location.hash !== '#/settings') App.stayPut();" in _src("settings.js")
+
+
+# ── Round 3, NEW-42: Back is a bordered gold button that reads "← Back" ──
+
+
+def test_back_is_a_bordered_gold_button_in_both_themes():
+    html = (ROOT / "index.html").read_text(encoding="utf-8")
+    assert re.search(r'<button[^>]*id="back-btn"[^>]*>&larr; Back</button>', html)
+    css = (ROOT / "app/static/css/style.css").read_text(encoding="utf-8")
+    lit = css[css.index(".tb-back {") : css.index(".tb-back.tb-back--under {")]
+    assert "border: 2px solid var(--qb-gold);" in lit
+    assert "color: var(--qb-navy);" in lit and "background: #fdf3dc;" in lit
+    assert "font-size: 15px" not in lit  # words, not a glyph
+    # the pointer over it keeps a gold border: the grey hover border of the
+    # other buttons (.tb-btn:hover) does not win
+    assert ".tb-back:not(:disabled):hover {" in lit
+    assert "border-color: #b8862b;" in lit
+    # nowhere to go: muted, borderless, in its place
+    off = css[css.index(".tb-back:disabled {") :]
+    off = off[: off.index("}")]
+    for line in (
+        "color: var(--text-muted);",
+        "background: transparent;",
+        "border-color: transparent;",
+    ):
+        assert line in off, line
+    dark = (ROOT / "app/static/css/dark.css").read_text(encoding="utf-8")
+    on = dark[dark.index('[data-theme="dark"] .tb-back {') :]
+    on = on[: on.index("}")]
+    assert "color: var(--qb-gold);" in on and "border-color: var(--qb-gold);" in on
+    assert '[data-theme="dark"] .tb-back:not(:disabled):hover {' in dark
+    off = dark[dark.index('[data-theme="dark"] .tb-back:disabled {') :]
+    off = off[: off.index("}")]
+    assert "border-color: transparent;" in off and "color: var(--text-muted);" in off

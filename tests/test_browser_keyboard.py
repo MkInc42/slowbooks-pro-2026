@@ -55,9 +55,11 @@ from tests.test_dialog_contrast import (  # noqa: E402,F401  (the dialogs)
 )
 from tests.test_theme_contrast import (  # noqa: E402,F401  (the fixtures)
     _open,
+    _theme,
     _visit,
     browser_fixture,
     company_fixture,
+    contrast,
     settle,
 )
 
@@ -1202,5 +1204,75 @@ def test_a_declined_leave_from_settings_stays_on_its_entry_and_back_goes_behind(
         settle(page, handled)
         assert len(confirms) == 3
         assert page.locator("#page-content .card-grid .card").count() > 5
+    finally:
+        page.close()
+
+
+# ── Round 3, NEW-42: Back is a bordered gold button that reads "← Back" ──
+
+# The button as drawn: its words, and the computed colour, ground, border
+# and opacity the sweep would read.
+LOOKS = """() => { const b = document.getElementById('back-btn'), cs = getComputedStyle(b);
+    return { text: b.textContent.trim(), disabled: b.disabled, color: cs.color,
+             background: cs.backgroundColor, opacity: cs.opacity,
+             border: [cs.borderTopWidth, cs.borderTopStyle, cs.borderTopColor].join(' ') }; }"""
+# the brand's gold, each theme's own (--qb-gold)
+GOLD = {"light": "rgb(204, 153, 51)", "dark": "rgb(224, 168, 64)"}
+NONE = "rgba(0, 0, 0, 0)"  # a transparent border or ground, as computed
+
+
+def test_back_is_a_bordered_gold_button_that_is_never_grey_while_it_works(
+    browser, company, books
+):
+    """The ← was a bare grey glyph that got its border on hover alone, and
+    disabled it was the same glyph dimmed; with a card open the owner read
+    it as unusable, an arrow pointing at the brand (macOS gate, round 2).
+    Lit, it is a bordered gold button reading "← Back" in both themes, its
+    words AA against its own ground and the border gold under the pointer
+    too; with nowhere to go it is muted and borderless, and still named."""
+    page, handled = _open(browser, company)
+    try:
+        _no_splash(page)
+        rest = page.evaluate(LOOKS)
+        assert rest["text"] == "← Back" and rest["disabled"]
+        assert rest["border"].endswith(NONE) and rest["background"] == NONE
+        assert float(rest["opacity"]) < 1
+        assert page.evaluate(BACK)["name"] == "Back"
+        _sidebar(page, handled, "#/customers")
+        for theme in ("light", "dark"):
+            _theme(page, theme)
+            lit = page.evaluate(LOOKS)
+            assert lit["text"] == "← Back" and not lit["disabled"]
+            assert lit["border"] == f"2px solid {GOLD[theme]}", (theme, lit)
+            assert lit["opacity"] == "1" and lit["background"] != NONE
+            assert contrast(lit["color"], lit["background"]) >= 4.5, (theme, lit)
+            # not the bar's grey: the navy on a pale gold tint, or the gold
+            assert (
+                lit["color"]
+                == {"light": "rgb(0, 51, 102)", "dark": GOLD["dark"]}[theme]
+            ), (theme, lit)
+            page.hover("#back-btn")
+            hovered = page.evaluate(LOOKS)
+            assert hovered["border"] not in (
+                "1px solid rgb(176, 184, 200)",  # .tb-btn:hover, light
+                "2px solid rgb(176, 184, 200)",
+                "2px solid rgb(74, 78, 88)",  # .tb-btn:hover, dark
+            ), (theme, hovered)
+            assert hovered["border"].startswith("2px solid ")
+            assert contrast(hovered["color"], hovered["background"]) >= 4.5, hovered
+            page.mouse.move(0, 0)
+        _theme(page, "light")
+        # over a plain form it sits under the overlay, as before
+        _open_dialog(page, handled, "CustomersPage.showForm()", "#modal form")
+        assert not page.evaluate(AT_POINT)
+        page.evaluate("() => closeModal()")
+        assert page.evaluate(AT_POINT)
+        # Back: nowhere to go, and the muted, borderless look is back
+        page.keyboard.press("Alt+ArrowLeft")
+        page.wait_for_function(AT, arg="#/")
+        settle(page, handled)
+        rest = page.evaluate(LOOKS)
+        assert rest["disabled"] and rest["border"].endswith(NONE)
+        assert rest["background"] == NONE and float(rest["opacity"]) < 1
     finally:
         page.close()

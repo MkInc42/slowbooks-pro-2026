@@ -226,18 +226,36 @@ body {
     background: rgba(0,0,0,0.05);
 }
 
-/* Back (NEW-30): dimmed while there is nowhere to go, as a browser's is;
-   an inactive control is exempt from contrast (WCAG 1.4.3). It stands
-   above a dialog's overlay (200), under toasts (300): a report, a
-   customer's page and a drill-down are dialogs, and that is where Back
+/* Back (NEW-30, NEW-42): a bordered gold button reading "← Back" while
+   there is somewhere to go. It was a bare grey glyph that got its border on
+   hover alone, so with a card open it read as an arrow pointing at the
+   brand, unusable until the pointer passed over it (macOS gate, 2.22.0
+   round 2): never grey while it works, the brand's gold for the border, as
+   the skip link's ring has it, and the navy for its words (11.4:1 on the
+   pale gold tint). Dimmed, with no border, while there is nowhere to go, as
+   a browser's is; an inactive control is exempt from contrast (WCAG 1.4.3).
+   It stands above a dialog's overlay (200), under toasts (300): a report,
+   a customer's page and a drill-down are dialogs, and that is where Back
    is wanted; the rest of the bar stays under the overlay. The dialog
    itself starts below the bar (the overlay's 40px padding). */
 .tb-back {
     position: relative;
     z-index: 210;
-    font-size: 15px;
+    font-weight: 700;
     line-height: 1;
-    padding: 2px 9px;
+    padding: 3px 10px;
+    color: var(--qb-navy);
+    background: #fdf3dc;
+    border: 2px solid var(--qb-gold);
+}
+/* The pointer over it: a deeper gold, not the other buttons' grey border */
+.tb-back:not(:disabled):hover {
+    color: var(--qb-navy);
+    background: #fbe9bf;
+    border-color: #b8862b;
+}
+.tb-back:not(:disabled):active {
+    background: #f3dfa8;
 }
 /* Under a form's overlay, not above it: a Back that discarded a half-typed
    form would be worse than none (app.js App.editingDialog). */
@@ -251,6 +269,14 @@ body {
 .tb-btn:disabled:hover {
     background: transparent;
     border-color: transparent;
+}
+/* Nowhere to go: muted and borderless, plainly not the lit button; still
+   named, still in its place, so nothing shifts when it lights. */
+.tb-back:disabled {
+    color: var(--text-muted);
+    background: transparent;
+    border-color: transparent;
+    opacity: 0.6;
 }
 
 /* Theme toggle — moon (light mode) and sun (dark mode) get a colored glow

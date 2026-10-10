@@ -58,11 +58,12 @@ or Alt+D.*
   Escape closes the dialog, so an unsaved form is not lost to one key
   (v2.22.0). No dialog opens with focus on Void or Delete: one whose first
   control is destructive takes focus itself, and reads its title (v2.22.0).
-- **Back, within the app** (v2.22.0): the toolbar's ← button goes back
-  through the app's history, and is enabled only while an app page is
-  behind. The desktop app's window has no Back of its own, and some hops (a
-  report's row to a customer's page, a class's page to its P&L) have no
-  "Back to …" button; this covers them all.
+- **Back, within the app** (v2.22.0): the toolbar's bordered gold
+  **← Back** button goes back through the app's history, and is lit only
+  while an app page is behind (muted and borderless otherwise, so the two
+  states cannot be mistaken). The desktop app's window has no Back of its
+  own, and some hops (a report's row to a customer's page, a class's page
+  to its P&L) have no "Back to …" button; this covers them all.
 
 - **Notifications** ("Invoice saved") announce through a polite live region.
 - **Every data table declares its column headers** (`scope="col"`).

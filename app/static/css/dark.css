@@ -96,6 +96,12 @@
 [data-theme="dark"] .topbar-brand span { color: var(--qb-gold); }
 [data-theme="dark"] .tb-btn { color: var(--text-secondary); }
 [data-theme="dark"] .tb-btn:hover { background: rgba(255,255,255,0.08); border-color: #4a4e58; color: #e0e4ec; }
+/* Back (NEW-42): gold words and border on a dark gold-tinted ground
+   (6.7:1) while there is somewhere to go; muted and borderless otherwise */
+[data-theme="dark"] .tb-back { color: var(--qb-gold); background: #2f2a1c; border-color: var(--qb-gold); }
+[data-theme="dark"] .tb-back:not(:disabled):hover { color: #f0c060; background: #3d3523; border-color: #f0c060; }
+[data-theme="dark"] .tb-back:not(:disabled):active { background: #4a4030; }
+[data-theme="dark"] .tb-back:disabled { color: var(--text-muted); background: transparent; border-color: transparent; }
 [data-theme="dark"] .topbar-clock { color: var(--text-secondary); }
 
 /* Sun icon (shown in dark mode — click to return to light) gets warm amber */
