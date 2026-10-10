@@ -154,20 +154,28 @@ name; every amount in the plain and per-class P&L CSVs has two decimals.
   native picker swallows the first Escape, so a date field takes two). No
   dialog opens with focus on Void or Delete; one whose first control undoes
   something takes focus itself and reads its title.
-- **The Alt shortcuts work from a Mac keyboard** (NEW-41): Option-D, N,
-  P, Q and H go by the key, not the "∂", "˜", "œ", "˙" Option types — and
-  never while typing in a field, where the character goes through; ⌘K
-  finds, as Ctrl+K does.
+- **The Alt shortcuts work from a Mac keyboard** (NEW-41; W-6 from the
+  second round): Option-D, N, P, Q and H go by the key, not the "∂", "˜",
+  "œ", "˙" Option types — and no Alt letter fires while typing in a field,
+  on any computer (on Windows the plain letter was let through, and Alt+N in
+  a bill's Description opened New Invoice in its place), nor do N, P, Q and
+  H over a form being filled in, from any of its controls, so a half-typed
+  bill stays; ⌘K finds, as Ctrl+K does, from the search box too.
 - **A closed report gives its address back** (NEW-23). Closing a report
   (Close, ×, Escape) leaves the page under it on the bar, so the app's
   refreshes, a reload or Back no longer reopen it; the same for a
   customer's or vendor's page. The app's own moves keep the address: a
   customer's page comes back after an edit or a new invoice from it, and
   an invoice opened by its address comes back marked sent.
-- **Dates in an address** (NEW-24, NEW-35). A date that is not one shows
-  the date the report used in its box; From after To, typed or in an
-  address, is refused with a note and the dates before it are kept; a
-  register's and a job page's address drop a refused date.
+- **Dates in an address** (NEW-24, NEW-35; W-3, W-4, W-5 from the second
+  round). A date that is not one shows the date the report used in its box,
+  and a day the month does not have (2026-02-30) is not one; From after To,
+  typed or in an address, is refused with a note and the dates before it are
+  kept — typed into the Classes list, a class page, a register or the job
+  page as into a report ("From (…) is after To (…) — kept …", the boxes put
+  back, the address untouched); a register's and a job page's address drop a
+  refused date, and a job opened from the list starts on Job to date, not on
+  the last job's period.
 - **The grid's chooser** (NEW-26, NEW-28, W-1). A chosen class or job with
   no activity in the period is no longer drawn as a column of zeros unless
   "Show … with no activity" is on; when nothing chosen has activity the
