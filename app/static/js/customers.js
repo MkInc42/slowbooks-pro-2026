@@ -276,11 +276,19 @@ const CustomersPage = {
         </div>`;
     },
 
+    // The box saves when it is left — but only a change. It saved on every
+    // blur, so a Tab through the page wrote the company file and an audit
+    // entry each time, and turned a note never written (null) into ""
+    // (macOS gate NEW-44). The box's defaultValue is what it was loaded
+    // with (none and empty alike), and becomes what was saved.
     async _saveNotes(id, value) {
+        const box = document.getElementById(`cust-notes-${id}`);
+        if (box && value === box.defaultValue) return;
         const status = document.getElementById(`cust-note-status-${id}`);
         if (status) status.textContent = 'saving…';
         try {
             await API.put(`/customers/${id}`, { notes: value });
+            if (box) box.defaultValue = value;
             if (status) {
                 status.textContent = '✓ saved';
                 setTimeout(() => { if (status) status.textContent = ''; }, 1500);

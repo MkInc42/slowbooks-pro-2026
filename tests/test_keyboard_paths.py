@@ -429,3 +429,18 @@ def test_focus_is_visible_on_every_control_by_keyboard_only():
     assert "--focus-ring:     var(--qb-gold);" in dark
     docs = (ROOT / "docs/accessibility.md").read_text(encoding="utf-8")
     assert "**The keyboard's place is visible**" in docs
+
+
+# ── Round 3, NEW-44: a page's Notes box saves only a change ──────────────
+
+
+def test_a_pages_notes_box_saves_only_a_change():
+    for name, box in (("customers.js", "cust-notes"), ("vendors.js", "vend-notes")):
+        src = _src(name)
+        notes = src[src.index("async _saveNotes(id, value)") :]
+        notes = notes[: notes.index("\n    },")]
+        assert f"document.getElementById(`{box}-${{id}}`)" in notes, name
+        # what the box was loaded with, none and empty alike; then what was saved
+        assert "if (box && value === box.defaultValue) return;" in notes, name
+        assert "if (box) box.defaultValue = value;" in notes, name
+        assert notes.index("return;") < notes.index("'saving…'"), name

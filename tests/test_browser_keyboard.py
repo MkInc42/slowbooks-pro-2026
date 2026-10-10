@@ -1360,3 +1360,75 @@ def test_tab_shows_where_it_is_on_a_report_row_and_a_mouse_click_draws_no_ring(
         assert after["keyboard"] and after["outline"] == f"2px solid {GOLD['light']}"
     finally:
         page.close()
+
+
+# ── Round 3, NEW-44: leaving a page's Notes box as it was writes nothing ─
+
+
+@pytest.mark.parametrize(
+    ("kind", "box"), [("customers", "cust-notes"), ("vendors", "vend-notes")]
+)
+def test_a_tab_through_a_page_writes_no_note_and_a_change_saves_once(
+    browser, company, books, kind, box
+):
+    """The customer page's Notes box saved on every blur, changed or not,
+    and so did the vendor page's: now that Tab walks every control in a
+    dialog, a Tab through the page wrote the company file and an audit
+    entry each time, and turned a note never written (null) into ""
+    (macOS gate, round 2). Only a change is saved, empty and none alike."""
+    rid = books["customer" if kind == "customers" else "vendor"]
+    api = f"/api/{kind}/{rid}"
+    audit = f"/api/audit?table_name={kind}&record_id={rid}"
+    status = f"#{box.replace('notes', 'note-status')}-{rid}"
+    assert company.get(api).json()["notes"] is None  # never written
+    before = len(company.get(audit).json())
+    page, handled = _open_at(browser, company, f"#/{kind}/{rid}")
+    puts = []
+    page.on("request", lambda r: puts.append(r.url) if r.method == "PUT" else None)
+    try:
+        page.wait_for_function(MODAL_SHOWN)
+        page.wait_for_selector(f"#{box}-{rid}")
+        settle(page, handled)
+        # Tab through the whole page, the box included, and in and out of
+        # the box itself
+        stops = page.evaluate(
+            "() => _tabStops(document.getElementById('modal-body'), null).length"
+        )
+        page.evaluate(FIRST)
+        for _ in range(stops + 1):
+            page.keyboard.press("Tab")
+        page.focus(f"#{box}-{rid}")
+        for keys in ("Tab", "Shift+Tab", "Tab"):
+            page.keyboard.press(keys)
+        settle(page, handled)
+        assert puts == []
+        assert page.inner_text(status).strip() == ""
+        assert company.get(api).json()["notes"] is None  # not turned into ""
+        assert len(company.get(audit).json()) == before
+        # a change saves, once, and says so
+        page.fill(f"#{box}-{rid}", "Prefers email.")
+        page.keyboard.press("Tab")
+        page.wait_for_function(
+            "(s) => document.querySelector(s).textContent === '✓ saved'", arg=status
+        )
+        settle(page, handled)
+        assert len(puts) == 1 and puts[0].endswith(api), puts
+        assert company.get(api).json()["notes"] == "Prefers email."
+        assert len(company.get(audit).json()) == before + 1
+        # left as saved: nothing more
+        page.focus(f"#{box}-{rid}")
+        page.keyboard.press("Tab")
+        settle(page, handled)
+        assert len(puts) == 1
+        # cleared: a change again, saved as empty; then nothing more
+        page.fill(f"#{box}-{rid}", "")
+        page.keyboard.press("Tab")
+        settle(page, handled)
+        assert len(puts) == 2
+        assert (company.get(api).json()["notes"] or "") == ""
+        page.focus(f"#{box}-{rid}")
+        page.keyboard.press("Tab")
+        settle(page, handled)
+        assert len(puts) == 2
+    finally:
+        page.close()

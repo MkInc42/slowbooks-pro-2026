@@ -215,11 +215,16 @@ const VendorsPage = {
         </div>`;
     },
 
+    // Only a change is saved, as the customer page's notes are: leaving
+    // the box as it was loaded writes nothing (macOS gate NEW-44).
     async _saveNotes(id, value) {
+        const box = document.getElementById(`vend-notes-${id}`);
+        if (box && value === box.defaultValue) return;
         const status = document.getElementById(`vend-note-status-${id}`);
         if (status) status.textContent = 'saving…';
         try {
             await API.put(`/vendors/${id}`, { notes: value });
+            if (box) box.defaultValue = value;
             if (status) {
                 status.textContent = '✓ saved';
                 setTimeout(() => { if (status) status.textContent = ''; }, 1500);
