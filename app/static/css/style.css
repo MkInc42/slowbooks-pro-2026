@@ -1084,9 +1084,15 @@ a:hover { text-decoration: underline; }
 /* A line-item table with more columns than the dialog is wide scrolls
    sideways inside its container instead of losing its last columns behind
    overflow: hidden (#174: the job cost entry's Bill? column and the remove
-   button were cut off, with no way to reach them). */
+   button were cut off, with no way to reach them). It has the keyboard's
+   room inside too, 8px below its table and at its right end (a line's ✕
+   and the pay run's last Stub PDF sat 3-5px from its edges, their halo
+   cut, and the ring on the scrollbar once it scrolled); not at its left,
+   where the pay run's Employee column is held. */
 .table-container--scroll {
     overflow-x: auto;
+    padding-right: 8px;
+    padding-bottom: 8px;
 }
 /* Only the job cost entry's grid is wider than the dialog (its Bill? and
    remove columns); the estimate's fits, and a floor on every scrolling grid

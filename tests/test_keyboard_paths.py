@@ -1108,3 +1108,14 @@ def test_a_table_wider_than_its_container_scrolls_and_tab_brings_a_stop_in_whole
     init = app[app.index("    init() {") :]
     init = init[: init.index("\n    },")]
     assert "App.revealInTable(e);" in init
+
+
+def test_a_scrolling_table_container_has_the_keyboards_room_too():
+    """A line-item table's scrolling container has 8px below its table and
+    at its right end, as the keyboard's halo needs, and none at its left,
+    where the pay run's Employee column is held."""
+    css = (ROOT / "app/static/css/style.css").read_text(encoding="utf-8")
+    scroll = _rule(css, ".table-container--scroll {")
+    for line in ("overflow-x: auto;", "padding-right: 8px;", "padding-bottom: 8px;"):
+        assert line in scroll, line
+    assert "padding-left" not in scroll
