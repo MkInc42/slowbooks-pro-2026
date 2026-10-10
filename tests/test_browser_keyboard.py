@@ -1809,10 +1809,11 @@ def _ring_clears(page, what, ring):
 NAV_HALO = {"light": "rgb(0, 34, 68)", "dark": "rgb(8, 12, 20)"}
 
 
-def _both_themes(page, what, ring_for, halo=HALO):
+def _both_themes(page, what, ring_for, halo=HALO, bar=False):
     """The ring at the focused control, in light and then dark, and light
     again; and, unless `halo` is None, the halo painted against the gold
-    on its outer side, in each theme's colour."""
+    on its outer side, in each theme's colour; with `bar`, the gold against
+    the toolbar's own ground too (_bar_clears)."""
     seen = {}
     for theme in ("light", "dark"):
         _theme(page, theme)
@@ -1820,6 +1821,8 @@ def _both_themes(page, what, ring_for, halo=HALO):
         on = page.evaluate(RING)
         assert on["keyboard"], (what, theme, on)
         seen[theme] = _ring_clears(page, (what, theme), ring_for[theme])
+        if bar:
+            _bar_clears(page, (what, theme), ring_for[theme])
         if halo:
             outer = [v["outer"] for v in seen[theme].values() if "outer" in v]
             assert outer and all(contrast(c, halo[theme]) <= 1.1 for c, _ in outer), (
@@ -1832,6 +1835,44 @@ def _both_themes(page, what, ring_for, halo=HALO):
 
 
 TOOLBAR_GROUND = "() => !!document.activeElement.closest('#topbar') && document.activeElement.tagName === 'BUTTON'"
+# The toolbar's ring: the Back border's deeper gold in light, so the gold
+# clears the bar itself; the theme's own in dark
+TOOLBAR_GOLD = {"light": "rgb(143, 106, 30)", "dark": "rgb(224, 168, 64)"}
+# A column of the bar with no control on it, between the search box and
+# the right-hand group, and the rows the focused control's ring runs on
+BAR_COLUMN = """() => { const s = document.getElementById('global-search').getBoundingClientRect(),
+        r = document.querySelector('#topbar .topbar-right').getBoundingClientRect(),
+        bar = document.getElementById('topbar').getBoundingClientRect(),
+        a = document.activeElement.getBoundingClientRect();
+    return { x: Math.round((s.right + r.left) / 2), gap: r.left - s.right,
+             top: bar.top, bottom: bar.bottom, y0: a.top - 4, y1: a.bottom + 4 }; }"""
+
+
+def _bar_clears(page, what, ring):
+    """The gold against the bar's own ground as painted, behind its halo:
+    the bar's gradient runs top to bottom, so a column of it with no
+    control on it gives the ground on every row the ring runs on; the gold
+    is 3:1 against each (the stricter reading of a two-colour ring: the
+    gold clears the ground beyond the halo too, not only the halo)."""
+    import io
+    import math
+
+    from PIL import Image
+
+    c = page.evaluate(BAR_COLUMN)
+    assert c["gap"] > 20, c
+    y0 = max(math.floor(c["y0"]), math.ceil(c["top"]))
+    y1 = min(math.ceil(c["y1"]), math.floor(c["bottom"]) - 1)
+    shot = page.screenshot(clip={"x": c["x"], "y": y0, "width": 1, "height": y1 - y0})
+    img = Image.open(io.BytesIO(shot)).convert("RGB")
+    rows = [img.getpixel((0, i)) for i in range(img.height)]
+    ratios = [contrast(ring, _rgb(p)) for p in rows]
+    assert min(ratios) >= 3.0, (
+        what,
+        min(ratios),
+        _rgb(rows[ratios.index(min(ratios))]),
+    )
+    return min(ratios)
 
 
 def test_the_ring_clears_3_to_1_on_every_ground_it_meets_as_painted(
@@ -1846,7 +1887,9 @@ def test_the_ring_clears_3_to_1_on_every_ground_it_meets_as_painted(
     the ground, 1 to 5px beyond the ring: measured as painted at every
     toolbar button (the lit Back too), the × on a dialog, a report's row
     link and a dialog's button, the grid region (its own ring) and a
-    summary, in both themes."""
+    summary, in both themes. On the toolbar the light theme's gold is the
+    Back border's deeper one, and clears the bar itself as well as its
+    halo, on every row the ring runs on."""
     page, handled = _open(browser, company)
     try:
         _no_splash(page)
@@ -1861,7 +1904,7 @@ def test_the_ring_clears_3_to_1_on_every_ground_it_meets_as_painted(
             if page.evaluate(TOOLBAR_GROUND):
                 page.evaluate(SETTLED)
                 buttons.append(page.evaluate(RING)["at"])
-                _both_themes(page, ("toolbar", buttons[-1]), GOLD)
+                _both_themes(page, ("toolbar", buttons[-1]), TOOLBAR_GOLD, bar=True)
         # every button on the bar, the lit Back first among them
         on_bar = page.evaluate(
             "() => [...document.querySelectorAll('#topbar button.tb-btn')].filter(b => !b.disabled && b.offsetParent).length"

@@ -511,6 +511,13 @@ def test_the_ring_has_a_halo_of_the_themes_own_ground():
         assert f"{sel}:focus-visible" in wide, sel
     assert "box-shadow: 0 0 0 8px var(--focus-halo);" in wide
     assert css.index(":where(a:focus-visible,") < css.index(":where(button:focus")
+    # on the toolbar the light theme's gold is the Back border's deeper one,
+    # which clears the bar itself (3.2:1 against its darker stop); the dark
+    # theme's own there
+    assert "--focus-ring: #8f6a1e;" in _rule(css, "#topbar {")
+    assert "--focus-ring: var(--qb-gold);" in _rule(
+        dark, '[data-theme="dark"] #topbar {'
+    )
     # the dialog's title bar has room for it above the × (it scrolls), and
     # Tab scrolls a control into view with room for it
     assert "margin: 2px 0;" in _rule(css, ".modal-close {")

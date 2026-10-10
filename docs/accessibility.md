@@ -65,7 +65,9 @@ or Alt+D.*
   halo of the theme's own ground on both its sides (white in the light
   theme, the page's dark in the dark), so it stands 3:1 against what it
   meets wherever it is — the toolbar's grey, a dialog's blue title bar —
-  measured as the browser paints it (`tests/test_browser_keyboard.py`).
+  measured as the browser paints it (`tests/test_browser_keyboard.py`); on
+  the toolbar the light theme's gold is a deeper one, which clears the
+  bar's grey by itself too.
   A mouse click on a button or a link draws none.
   A field keeps its own focus style (the blue border and pale ground), and
   a dialog that takes focus itself is not outlined. The skip link, Tab's

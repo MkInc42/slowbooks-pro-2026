@@ -92,6 +92,7 @@
 [data-theme="dark"] #topbar {
     background: linear-gradient(180deg, #2a2e38 0%, #1e2028 100%);
     border-bottom-color: #3a3e48;
+    --focus-ring: var(--qb-gold);   /* the theme's own: 6.4:1 against the bar (style.css sets a light one) */
 }
 
 [data-theme="dark"] .topbar-brand { color: #e0e4ec; }

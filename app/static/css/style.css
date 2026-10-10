@@ -241,6 +241,12 @@ body {
     /* No z-index of its own: as a flex item that made the bar a stacking
        context, which kept its Back button under a dialog's overlay (200).
        The search dropdown carries its own z-index. */
+    /* The keyboard's ring on the bar is the Back border's deeper gold:
+       3.2:1 against the bar's darker stop, 4.2 against its lighter one and
+       4.9 against the white halo, so the gold clears the bar itself as well
+       as its halo (#a37a29 is 2.5 against the darker stop). Light only:
+       dark.css puts the dark theme's gold back. */
+    --focus-ring: #8f6a1e;
 }
 
 .topbar-company {
