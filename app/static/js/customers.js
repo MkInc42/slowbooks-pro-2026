@@ -276,18 +276,34 @@ const CustomersPage = {
         </div>`;
     },
 
-    // The box saves when it is left — but only a change. It saved on every
-    // blur, so a Tab through the page wrote the company file and an audit
-    // entry each time, and turned a note never written (null) into ""
-    // (macOS gate NEW-44). The box's defaultValue is what it was loaded
-    // with (none and empty alike), and becomes what was saved.
+    // The box saves when it is left — but only a change, and once. It saved
+    // on every blur, so a Tab through the page wrote the company file and an
+    // audit entry each time, and turned a note never written (null) into ""
+    // (macOS gate NEW-44). What is on file is the save on its way, if one is
+    // (_notesSaving: leaving the box again before it is back sends nothing
+    // more), else the box's defaultValue: what it was loaded with, none and
+    // empty alike, and then what was saved. Words are compared trimmed — a
+    // space added at the end is no change, and a note of spaces is no note,
+    // saved as empty — and a note is saved as typed. One save at a time: a
+    // change made while one is on its way goes after it.
+    _notesSaving: {},
+
     async _saveNotes(id, value) {
         const box = document.getElementById(`cust-notes-${id}`);
-        if (box && value === box.defaultValue) return;
+        const pending = CustomersPage._notesSaving[id];
+        const onFile = pending ? pending.value : box ? box.defaultValue : null;
+        if (onFile !== null && value.trim() === onFile.trim()) return;
+        if (!value.trim()) value = '';
         const status = document.getElementById(`cust-note-status-${id}`);
         if (status) status.textContent = 'saving…';
-        try {
+        const save = { value };
+        save.done = (async () => {
+            if (pending) await pending.done.catch(() => {});
             await API.put(`/customers/${id}`, { notes: value });
+        })();
+        CustomersPage._notesSaving[id] = save;
+        try {
+            await save.done;
             if (box) box.defaultValue = value;
             if (status) {
                 status.textContent = '✓ saved';
@@ -296,6 +312,8 @@ const CustomersPage = {
         } catch (err) {
             if (status) status.textContent = '⚠ save failed';
             toast(err.message, 'error');
+        } finally {
+            if (CustomersPage._notesSaving[id] === save) delete CustomersPage._notesSaving[id];
         }
     },
 

@@ -596,15 +596,36 @@ def test_a_sidebar_link_draws_the_ring_inside_its_edge():
 
 
 def test_a_pages_notes_box_saves_only_a_change():
-    for name, box in (("customers.js", "cust-notes"), ("vendors.js", "vend-notes")):
+    for name, page, box, api in (
+        ("customers.js", "CustomersPage", "cust-notes", "customers"),
+        ("vendors.js", "VendorsPage", "vend-notes", "vendors"),
+    ):
         src = _src(name)
         notes = src[src.index("async _saveNotes(id, value)") :]
         notes = notes[: notes.index("\n    },")]
         assert f"document.getElementById(`{box}-${{id}}`)" in notes, name
-        # what the box was loaded with, none and empty alike; then what was saved
-        assert "if (box && value === box.defaultValue) return;" in notes, name
-        assert "if (box) box.defaultValue = value;" in notes, name
+        assert "_notesSaving: {}," in src, name
+        # what is on file: the save on its way, else what the box was
+        # loaded with (none and empty alike) and then what was saved
+        assert f"const pending = {page}._notesSaving[id];" in notes, name
+        assert (
+            "const onFile = pending ? pending.value : box ? box.defaultValue : null;"
+            in notes
+        ), name
+        # compared trimmed; a note of spaces is no note
+        assert (
+            "if (onFile !== null && value.trim() === onFile.trim()) return;" in notes
+        ), name
+        assert "if (!value.trim()) value = '';" in notes, name
         assert notes.index("return;") < notes.index("'saving…'"), name
+        # one save at a time, after the one on its way; saved as typed
+        assert "if (pending) await pending.done.catch(() => {});" in notes, name
+        assert f"await API.put(`/{api}/${{id}}`, {{ notes: value }});" in notes, name
+        assert "if (box) box.defaultValue = value;" in notes, name
+        assert (
+            f"if ({page}._notesSaving[id] === save) delete {page}._notesSaving[id];"
+            in notes
+        ), name
 
 
 # ── Round 3, W-7: Back refocuses the chart's account and the drill-down's line ──

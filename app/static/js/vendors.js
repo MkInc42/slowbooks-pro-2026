@@ -215,15 +215,29 @@ const VendorsPage = {
         </div>`;
     },
 
-    // Only a change is saved, as the customer page's notes are: leaving
-    // the box as it was loaded writes nothing (macOS gate NEW-44).
+    // Only a change is saved, once, as the customer page's notes are
+    // (CustomersPage._saveNotes): leaving the box as it was loaded, or as a
+    // save still on its way is writing it, writes nothing (macOS gate
+    // NEW-44); words are compared trimmed and saved as typed, a note of
+    // spaces as empty; one save at a time.
+    _notesSaving: {},
+
     async _saveNotes(id, value) {
         const box = document.getElementById(`vend-notes-${id}`);
-        if (box && value === box.defaultValue) return;
+        const pending = VendorsPage._notesSaving[id];
+        const onFile = pending ? pending.value : box ? box.defaultValue : null;
+        if (onFile !== null && value.trim() === onFile.trim()) return;
+        if (!value.trim()) value = '';
         const status = document.getElementById(`vend-note-status-${id}`);
         if (status) status.textContent = 'saving…';
-        try {
+        const save = { value };
+        save.done = (async () => {
+            if (pending) await pending.done.catch(() => {});
             await API.put(`/vendors/${id}`, { notes: value });
+        })();
+        VendorsPage._notesSaving[id] = save;
+        try {
+            await save.done;
             if (box) box.defaultValue = value;
             if (status) {
                 status.textContent = '✓ saved';
@@ -232,6 +246,8 @@ const VendorsPage = {
         } catch (err) {
             if (status) status.textContent = '⚠ save failed';
             toast(err.message, 'error');
+        } finally {
+            if (VendorsPage._notesSaving[id] === save) delete VendorsPage._notesSaving[id];
         }
     },
 

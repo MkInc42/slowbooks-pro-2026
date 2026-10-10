@@ -2078,3 +2078,100 @@ def test_the_skip_link_draws_the_ring_and_enter_goes_to_the_content_in_place(
         )
     finally:
         page.close()
+
+
+# The saves of a page's Notes box, held until let go: what the page asks
+# for and when, without a race against the server.
+HOLD_PUTS = """() => { window.__puts = []; const put = API.put.bind(API);
+    API.put = (path, body) => new Promise((ok, no) => window.__puts.push(
+        { path, body, go: () => put(path, body).then(ok, no) })); }"""
+PUTS = "() => window.__puts.map(p => p.body.notes)"
+LET_GO = "() => { const p = window.__puts.find(x => !x.sent); p.sent = true; p.go(); }"
+
+
+@pytest.mark.parametrize(
+    ("kind", "box"), [("customers", "cust-notes"), ("vendors", "vend-notes")]
+)
+def test_the_notes_box_saves_a_change_once_trimmed_and_in_order(
+    browser, company, books, kind, box
+):
+    """Leaving the box again before its save came back sent a second one
+    (it compared with what the box was loaded with until the first was
+    back), and a space alone counted as a change (review of NEW-44). Now
+    what is on file is the save on its way, words are compared trimmed — a
+    space at the end is no change, a note of spaces is no note, and is
+    saved empty — and a note is saved as typed; a change made while a save
+    is on its way goes after it."""
+    rid = books["customer" if kind == "customers" else "vendor"]
+    api = f"/api/{kind}/{rid}"
+    sel = f"#{box}-{rid}"
+    status = f"#{box.replace('notes', 'note-status')}-{rid}"
+    assert company.get(api).json()["notes"] is None
+    page, handled = _open_at(browser, company, f"#/{kind}/{rid}")
+    sent = []
+    page.on(
+        "request",
+        lambda r: sent.append(r.post_data_json["notes"]) if r.method == "PUT" else None,
+    )
+
+    def leave(words=None):
+        page.focus(sel)
+        if words is not None:
+            page.fill(sel, words)
+        page.keyboard.press("Tab")
+        page.wait_for_timeout(30)
+
+    def saved(n):
+        page.evaluate(LET_GO)
+        page.wait_for_function(
+            "(n) => window.__puts.filter(p => p.sent).length === n", arg=n
+        )
+        page.wait_for_function(
+            "(s) => document.querySelector(s).textContent === '✓ saved'", arg=status
+        )
+        settle(page, handled)
+
+    try:
+        page.wait_for_function(MODAL_SHOWN)
+        page.wait_for_selector(sel)
+        settle(page, handled)
+        page.evaluate(HOLD_PUTS)
+        # spaces where there was no note: no note, nothing to save
+        leave("   ")
+        assert page.evaluate(PUTS) == [] and company.get(api).json()["notes"] is None
+        # a note; left again before its save is back: once
+        leave("Prefers email.")
+        leave()
+        leave()
+        assert page.evaluate(PUTS) == ["Prefers email."]
+        saved(1)
+        assert sent == ["Prefers email."]
+        assert company.get(api).json()["notes"] == "Prefers email."
+        # a space added at the end alone: no change
+        leave("Prefers email. ")
+        assert page.evaluate(PUTS) == ["Prefers email."]
+        # a real change with spaces at its end: saved as typed
+        leave("Prefers email; calls on Fridays.  ")
+        assert page.evaluate(PUTS)[-1] == "Prefers email; calls on Fridays.  "
+        saved(2)
+        assert company.get(api).json()["notes"] == "Prefers email; calls on Fridays.  "
+        # a change while one is on its way goes after it, not beside it
+        leave("First.")
+        leave("Second.")
+        assert page.evaluate(PUTS)[2:] == ["First."]  # the second waits
+        saved(3)
+        page.wait_for_function("() => window.__puts.length === 4")
+        assert page.evaluate(PUTS)[2:] == ["First.", "Second."]
+        saved(4)
+        assert sent[2:] == ["First.", "Second."]
+        assert company.get(api).json()["notes"] == "Second."
+        # a note of spaces in place of a note: cleared, saved empty, once
+        leave("    ")
+        assert page.evaluate(PUTS)[-1] == ""
+        saved(5)
+        assert (company.get(api).json()["notes"] or "") == ""
+        leave("  ")
+        leave()
+        assert len(page.evaluate(PUTS)) == 5 and len(sent) == 5
+    finally:
+        page.close()
