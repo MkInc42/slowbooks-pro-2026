@@ -1635,6 +1635,14 @@ PAINT_BOX = """() => { const el = document.activeElement, cs = getComputedStyle(
              off: parseFloat(cs.outlineOffset) || 0, wid: parseFloat(cs.outlineWidth) || 0,
              color: cs.outlineColor, shadow: cs.boxShadow, vw: innerWidth, vh: innerHeight }; }"""
 SIDES = ("top", "right", "bottom", "left")
+# the keyboard's halo, each theme's own ground (style.css --focus-halo)
+HALO = {"light": "rgb(255, 255, 255)", "dark": "rgb(20, 22, 28)"}
+
+
+def _rgb(c):
+    return "rgb(%d, %d, %d)" % tuple(int(round(v)) for v in c[:3])
+
+
 def _far(a, b):
     return max(abs(a[k] - b[k]) for k in range(3))
 
@@ -1763,8 +1771,146 @@ def _painted(page):
     return sides
 
 
-# The controls' own rings: a search result's blue, the grid's navy (light)
-# or blue (dark), both inside their edge
+def _ring_clears(page, what, ring):
+    """The ring painted on all four sides in its colour (`ring`, computed),
+    and 3:1 against what is painted right against it on each side of it —
+    the halo where there is one, the ground where not (WCAG 1.4.11): the
+    side of a control on a bad ground still has a 3:1 edge on both sides of
+    its line; and 3:1 against the ground the macOS gate reads, 1 to 5px
+    beyond the ring. Returns the painted figures, for a caller's message."""
+    page.evaluate(SETTLED)
+    sides = _painted(page)
+    report = {}
+    for side in SIDES:
+        got = sides[side]
+        assert got, (what, side, "no ring painted", sides)
+        assert contrast(_rgb(got["ring"]), ring) <= 1.1, (
+            what,
+            side,
+            _rgb(got["ring"]),
+            ring,
+        )
+        report[side] = {"ring": _rgb(got["ring"])}
+        for k in ("inner", "outer"):
+            if got[k] is None:
+                assert k == "outer" and got["edge"], (what, side, k, got)
+                continue
+            ratio = contrast(_rgb(got["ring"]), _rgb(got[k]))
+            report[side][k] = (_rgb(got[k]), ratio)
+            assert ratio >= 3.0, (what, side, k, report)
+        if got["ground"] is not None:
+            ratio = contrast(_rgb(got["ring"]), _rgb(got["ground"]))
+            report[side]["ground"] = (_rgb(got["ground"]), ratio)
+            assert ratio >= 3.0, (what, side, "the gate's ground", report)
+    return report
+
+
+def _both_themes(page, what, ring_for, halo=HALO):
+    """The ring at the focused control, in light and then dark, and light
+    again; and, unless `halo` is None, the halo painted against the gold
+    on its outer side, in each theme's colour."""
+    seen = {}
+    for theme in ("light", "dark"):
+        _theme(page, theme)
+        page.evaluate(SETTLED)
+        on = page.evaluate(RING)
+        assert on["keyboard"], (what, theme, on)
+        seen[theme] = _ring_clears(page, (what, theme), ring_for[theme])
+        if halo:
+            outer = [v["outer"] for v in seen[theme].values() if "outer" in v]
+            assert outer and all(contrast(c, halo[theme]) <= 1.1 for c, _ in outer), (
+                what,
+                theme,
+                seen[theme],
+            )
+    _theme(page, "light")
+    return seen
+
+
+TOOLBAR_GROUND = "() => !!document.activeElement.closest('#topbar') && document.activeElement.tagName === 'BUTTON'"
+
+
+def test_the_ring_clears_3_to_1_on_every_ground_it_meets_as_painted(
+    browser, company, books, divisions
+):
+    """The light theme's gold ring alone painted under 3:1 on the toolbar's
+    gradient (2.54:1 against its darker stop below every button) and on a
+    dialog's blue title bar (1.73 to 1.97 beside the ×), and under 3 against
+    a table's header row above a report's first row (review of NEW-43). The
+    gold now meets a halo of the theme's own ground on both its sides,
+    whatever lies beyond, and the halo is also what the macOS gate reads as
+    the ground, 1 to 5px beyond the ring: measured as painted at every
+    toolbar button (the lit Back too), the × on a dialog, a report's row
+    link and a dialog's button, the grid region (its own ring) and a
+    summary, in both themes."""
+    page, handled = _open(browser, company)
+    try:
+        _no_splash(page)
+        _sidebar(page, handled, "#/customers")  # an app page behind: Back is lit
+        assert not page.evaluate(BACK)["disabled"]
+        page.focus(".skip-link")  # the first stop: Tab from there
+        buttons = []
+        for _ in range(30):
+            page.keyboard.press("Tab")
+            if page.evaluate("() => !!document.activeElement.closest('#sidebar')"):
+                break
+            if page.evaluate(TOOLBAR_GROUND):
+                page.evaluate(SETTLED)
+                buttons.append(page.evaluate(RING)["at"])
+                _both_themes(page, ("toolbar", buttons[-1]), GOLD)
+        # every button on the bar, the lit Back first among them
+        on_bar = page.evaluate(
+            "() => [...document.querySelectorAll('#topbar button.tb-btn')].filter(b => !b.disabled && b.offsetParent).length"
+        )
+        assert buttons[0] == "back-btn" and len(buttons) == on_bar, buttons
+        # A/R Aging: a customer's row link, a button, the dialog's ×
+        _visit(page, handled, "#/reports/ar-aging?as_of_date=2026-09-30")
+        page.wait_for_function(MODAL_SHOWN)
+        page.wait_for_selector('#modal a[data-row-key^="customer:"]')
+        settle(page, handled)
+        page.evaluate(FIRST)
+        _tab_until(
+            page,
+            "() => (document.activeElement.dataset.rowKey || '').startsWith('customer:')",
+        )
+        _both_themes(page, "row link", GOLD)
+        _tab_until(
+            page,
+            "() => document.activeElement.tagName === 'BUTTON' && !!document.activeElement.closest('#modal-body')",
+            shift=True,
+        )
+        _both_themes(page, "dialog button", GOLD)
+        _tab_until(
+            page, "() => document.activeElement.id === 'modal-close-btn'", cap=60
+        )
+        _both_themes(page, "the dialog's ×", GOLD)
+        page.keyboard.press("Escape")
+        page.wait_for_function(f"!({MODAL_SHOWN})()")
+        # the grid region: its own ring, inside its edge, no halo
+        _visit(page, handled, BY_CLASS_URL)
+        page.wait_for_selector("#grid-scroll")
+        settle(page, handled)
+        page.evaluate(FIRST)
+        _tab_until(page, "() => document.activeElement.id === 'grid-scroll'", cap=60)
+        _both_themes(page, "grid", OWN["grid"], halo=None)
+        page.keyboard.press("Escape")
+        page.wait_for_function(f"!({MODAL_SHOWN})()")
+        # a summary: the invoice email's preview
+        _open_dialog(
+            page,
+            handled,
+            f"InvoicesPage.emailInvoice({books['sent']})",
+            "#modal summary",
+        )
+        page.evaluate(FIRST)
+        _tab_until(page, "() => document.activeElement.tagName === 'SUMMARY'")
+        _both_themes(page, "summary", GOLD)
+    finally:
+        page.close()
+
+
+# The controls' own rings: a search result's blue, inside its edge; the
+# grid's navy (light) or blue (dark), on its edge
 OWN = {
     "search": {"light": "rgb(51, 102, 153)", "dark": "rgb(74, 127, 181)"},
     "grid": {"light": "rgb(0, 51, 102)", "dark": "rgb(107, 179, 232)"},
@@ -1784,8 +1930,9 @@ def test_a_controls_own_ring_wins_over_the_keyboards(
     rings, (0,2,0): a result drew the gold at +2px, cut by the list to its
     top line, and the grid the gold in light and blue in dark. Inside
     :where() it counts for nothing, and each draws its own, as before the
-    gold came: the blue inset ring on a search result, the navy (light) or
-    blue (dark) inset ring on the grid."""
+    gold came: the blue ring inside a search result, the navy (light) or
+    blue (dark) ring on the grid's edge (inside it, the frozen header and
+    Account column painted over half of it), with no halo."""
     page, handled = _open(browser, company)
     try:
         _no_splash(page)
@@ -1817,6 +1964,6 @@ def test_a_controls_own_ring_wins_over_the_keyboards(
             grid = page.evaluate(OWN_RING)
             assert grid["id"] == "grid-scroll" and grid["keyboard"], grid
             assert grid["outline"] == f"2px solid {OWN['grid'][theme]}", (theme, grid)
-            assert grid["offset"] == "-2px" and grid["shadow"] == "none", (theme, grid)
+            assert grid["offset"] == "0px" and grid["shadow"] == "none", (theme, grid)
     finally:
         page.close()

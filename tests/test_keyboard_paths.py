@@ -477,6 +477,44 @@ def test_the_generic_ring_counts_for_nothing_against_a_controls_own():
     )
 
 
+def test_the_ring_has_a_halo_of_the_themes_own_ground():
+    """The gold alone fell under 3:1 on the toolbar's grey gradient (2.54:1)
+    and a dialog's blue title bar (1.73): it meets a halo of the theme's own
+    ground on both its sides, and the control is lifted so what follows it
+    cannot paint over the halo. A control's own ring has none."""
+    css = (ROOT / "app/static/css/style.css").read_text(encoding="utf-8")
+    dark = (ROOT / "app/static/css/dark.css").read_text(encoding="utf-8")
+    ring = _rule(css, ":where(a:focus-visible,")
+    # from the border box out to 6px, the ring drawn over it from 2 to 4:
+    # 2px of halo on each side of the gold
+    assert "box-shadow: 0 0 0 6px var(--focus-halo);" in ring
+    assert "position: relative;" in ring
+    assert "--focus-halo:     #ffffff;" in css
+    assert "--focus-halo:     #14161c;" in dark
+    # out to 8px, 4px outside the ring, where the gate reads the ground: on
+    # buttons, a summary, a scroll region, a table's link, a link-button
+    wide = _rule(css, ":where(button:focus-visible,")
+    for sel in (
+        "summary",
+        '[tabindex]:not([tabindex="-1"])',
+        "td a",
+        "th a",
+        "a.btn",
+    ):
+        assert f"{sel}:focus-visible" in wide, sel
+    assert "box-shadow: 0 0 0 8px var(--focus-halo);" in wide
+    assert css.index(":where(a:focus-visible,") < css.index(":where(button:focus")
+    # the dialog's title bar has room for it above the × (it scrolls), and
+    # Tab scrolls a control into view with room for it
+    assert "margin: 2px 0;" in _rule(css, ".modal-close {")
+    assert "scroll-margin: 8px;" in _rule(css, ":where(a, button, summary,")
+    # the controls' own rings take none; the grid's sits on its edge, where
+    # the frozen header and Account column do not paint over it
+    grid = _rule(css, ".grid-scroll:focus-visible {")
+    assert "outline-offset: 0; box-shadow: none;" in grid
+    assert "box-shadow: none;" in _rule(css, ".search-item:focus-visible {", last=True)
+
+
 # ── Round 3, NEW-44: a page's Notes box saves only a change ──────────────
 
 

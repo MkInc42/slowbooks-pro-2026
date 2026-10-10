@@ -34,6 +34,7 @@
     --qb-green-dark:  #3d9065;
     --qb-gold:        #e0a840;
     --focus-ring:     var(--qb-gold);   /* the keyboard's ring (NEW-43): 7.6:1 on the panel, 6.4:1 on the bar */
+    --focus-halo:     #14161c;          /* its halo, the page's own dark: 8.5:1 against it, white beside it or not */
     /* red text (overdue counts and days, negative figures, errors) was
        4.33:1 on the panel, 5.05 now; the void and overdue badges take the
        same red, 4.86 on their ground */

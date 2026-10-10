@@ -61,9 +61,14 @@ or Alt+D.*
 - **The keyboard's place is visible** (v2.22.0): every link and button,
   and whatever else the keyboard reaches, draws a gold ring when it takes
   focus from the keyboard, in both themes, so Tab can be followed through a
-  report's rows as well as its buttons. A mouse click on a button or a link
-  draws none. A field keeps its own focus style (the blue border and pale
-  ground), and a dialog that takes focus itself is not outlined.
+  report's rows as well as its buttons. The gold has a halo of the theme's
+  own ground on both its sides (white in the light theme, the page's dark
+  in the dark), so it stands 3:1 against what it meets wherever it is —
+  the toolbar's grey, a dialog's blue title bar — measured as the browser
+  paints it (`tests/test_browser_keyboard.py`).
+  A mouse click on a button or a link draws none.
+  A field keeps its own focus style (the blue border and pale ground), and
+  a dialog that takes focus itself is not outlined.
 - **Back, within the app** (v2.22.0): the toolbar's bordered gold
   **← Back** button goes back through the app's history, and is lit only
   while an app page is behind (muted and borderless otherwise, so the two
