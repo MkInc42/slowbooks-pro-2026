@@ -230,6 +230,62 @@ def test_the_dashboard_cards_link_to_the_dated_report():
     assert "ReportsPage.viewUrl(" in src
 
 
+def test_a_date_in_the_address_must_be_a_real_calendar_date():
+    # The shape alone let 2026-02-30 through: Chromium's Date rolls it to
+    # March 2, the date box then refused it, and the report opened on
+    # another day with no toast (W-5). The day the Date gives back must be
+    # the day asked for, and what is not a date is said so (one wording).
+    utils = (JS / "utils.js").read_text(encoding="utf-8")
+    reader = utils[utils.index("function datesFromQuery(q) {") :]
+    reader = reader[: reader.index("\nfunction todayISO()")]
+    assert "if (!/^\\d{4}-\\d{2}-\\d{2}$/.test(v || '')) return false;" in reader
+    assert "return !isNaN(d.getTime()) && d.toISOString().slice(0, 10) === v;" in reader
+    assert reader.count("in the address is not a date (${q[key]}) — ignored") == 1
+
+
+def test_from_after_to_typed_is_refused_in_one_wording_wherever_dates_are_typed():
+    # The Classes list took From after To typed into its boxes (W-3), and
+    # a register wrote them to the address and read them back as "in the
+    # address … both ignored" with both boxes emptied (W-4), while the
+    # reports said "From (…) is after To (…) — kept …" and put the boxes
+    # back. One helper says it for all of them, and the address is never
+    # touched with a reversed range.
+    utils = (JS / "utils.js").read_text(encoding="utf-8")
+    helper = utils[utils.index("function reversedRangeRefused(start, end, kept") :]
+    helper = helper[: helper.index("\n}\n")]
+    assert "if (!(start && end && start > end)) return false;" in helper
+    assert (
+        "toast(`From (${formatDate(start)}) is after To (${formatDate(end)}) — kept ${was}`, 'error');"
+        in helper
+    )
+    uses = {
+        "reports.js": "if (reversedRangeRefused(startInput.value, endInput.value, keep)) {",
+        "classes.js": "if (period === 'custom' && reversedRangeRefused(start, end, state)) {",
+        "banking.js": "if (reversedRangeRefused(next.start_date, next.end_date, { start: was.start_date, end: was.end_date })) {",
+        "jobs.js": "if (reversedRangeRefused(start, end, JobsPage._period)) {",
+    }
+    for name, call in uses.items():
+        src = (JS / name).read_text(encoding="utf-8")
+        assert call in src, name
+        assert "is after To" not in src, f"{name} words the refusal itself"
+    classes = (JS / "classes.js").read_text(encoding="utf-8")
+    # the list and the class page stop on a refused range: no reload, no
+    # address written
+    assert classes.count("if (p.kept) return;") == 2
+    # the register refuses before its address is written, and keeps the
+    # filter it was on
+    banking = (JS / "banking.js").read_text(encoding="utf-8")
+    changed = banking[banking.index("    regFilterChanged(id, filter = null) {") :]
+    changed = changed[: changed.index("\n    },")]
+    assert changed.index("reversedRangeRefused(") < changed.index(
+        "BankingPage._regFilter = next;"
+    )
+    assert changed.index("BankingPage._regFilter = next;") < changed.index(
+        "history.replaceState(history.state, '', url)"
+    )
+    assert "if (startEl) startEl.value = was.start_date;" in changed
+
+
 def test_the_dev_note_is_short_and_says_how_to_register_a_view():
     note = (ROOT / "docs" / "dev" / "report-views.md").read_text(encoding="utf-8")
     assert len(note.strip().splitlines()) <= 40

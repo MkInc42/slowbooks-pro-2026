@@ -81,7 +81,16 @@ function sourceWord(type) {
 // (docs/dev/report-views.md; NEW-35).
 function datesFromQuery(q) {
     q = q || {};
-    const isDate = v => /^\d{4}-\d{2}-\d{2}$/.test(v || '') && !isNaN(new Date(v).getTime());
+    // A real calendar date, not just the shape of one: Chromium's Date
+    // rolls an impossible day over (new Date('2026-02-30') is March 2),
+    // so 2026-02-30 passed as a date, the date box then refused it, and
+    // the report opened on another day without a word (W-5). The day the
+    // Date gives back must be the day asked for.
+    const isDate = (v) => {
+        if (!/^\d{4}-\d{2}-\d{2}$/.test(v || '')) return false;
+        const d = new Date(v);
+        return !isNaN(d.getTime()) && d.toISOString().slice(0, 10) === v;
+    };
     const out = {};
     for (const key of ['start_date', 'end_date']) {
         if (q[key] && !isDate(q[key])) toast(`${key} in the address is not a date (${q[key]}) — ignored`, 'error');
@@ -93,6 +102,23 @@ function datesFromQuery(q) {
         out.end_date = '';
     }
     return out;
+}
+
+// From after To typed into a page's boxes — a report's custom range, the
+// Classes list's or a class page's, a register's, the job page's — is
+// refused the one way (NEW-35; W-3, W-4): said, naming both dates and the
+// range kept, which the page stays on. The caller puts the boxes back and
+// leaves the address alone. `kept` is { start, end }; a register or the
+// job page may have one of them (or, off the boxes, neither). True when
+// refused.
+function reversedRangeRefused(start, end, kept) {
+    if (!(start && end && start > end)) return false;
+    const k = kept || {};
+    const was = k.start && k.end ? `${formatDate(k.start)} to ${formatDate(k.end)}`
+        : k.start ? `from ${formatDate(k.start)}`
+            : k.end ? `to ${formatDate(k.end)}` : 'every date';
+    toast(`From (${formatDate(start)}) is after To (${formatDate(end)}) — kept ${was}`, 'error');
+    return true;
 }
 
 function todayISO() {

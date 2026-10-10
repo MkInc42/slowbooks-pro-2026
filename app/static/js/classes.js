@@ -91,12 +91,26 @@ const ClassesPage = {
             </span>`;
     },
 
+    // The period bar as typed. From after To is refused the way every
+    // period report refuses it (W-3: the list took it, the address with
+    // it, and the note read "nets to $0.00"): said, the boxes put back to
+    // the range in use, and `kept` so the caller leaves the page, and its
+    // address, on that range.
     _readPeriod(idPrefix, state) {
         const sel = $(`#${idPrefix}-period`);
         const period = sel ? sel.value : state.period;
         const custom = $(`#${idPrefix}-custom`);
         if (custom) custom.style.display = period === 'custom' ? 'inline-flex' : 'none';
-        const range = ReportsPage.getDateRange(period, $(`#${idPrefix}-start`)?.value || state.start, $(`#${idPrefix}-end`)?.value || state.end);
+        const startEl = $(`#${idPrefix}-start`);
+        const endEl = $(`#${idPrefix}-end`);
+        const start = startEl?.value || state.start;
+        const end = endEl?.value || state.end;
+        if (period === 'custom' && reversedRangeRefused(start, end, state)) {
+            if (startEl) startEl.value = state.start;
+            if (endEl) endEl.value = state.end;
+            return { period: state.period, start: state.start, end: state.end, kept: true };
+        }
+        const range = ReportsPage.getDateRange(period, start, end);
         return { period, start: range.start, end: range.end };
     },
 
@@ -145,6 +159,7 @@ const ClassesPage = {
 
     async listChanged() {
         const p = ClassesPage._readPeriod('classes', ClassesPage._list);
+        if (p.kept) return;  // the list on the range before it is still showing
         const show = $('#classes-show')?.value || 'active';
         try { localStorage.setItem('slowbooks-show-classes', show); } catch (e) { /* this view only */ }
         ClassesPage._list = { ...p, show };
@@ -262,6 +277,7 @@ const ClassesPage = {
 
     async periodChanged() {
         const p = ClassesPage._readPeriod('class', ClassesPage._page);
+        if (p.kept) return;  // the tab on the range before it is still showing
         Object.assign(ClassesPage._page, p);
         ClassesPage._replaceAddress(ClassesPage._pageUrl());
         // the report links carry the page's dates

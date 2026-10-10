@@ -16,8 +16,10 @@ bakery's books of tests/test_theme_contrast.py (2.22.0 gate, round 2):
 - NEW-33: Escape in a date field leaves the field rather than closing the
   dialog; the next Escape closes it.
 - NEW-41: the Alt shortcuts go by the key's position (e.code), so a Mac's
-  Option-D ("∂") still toggles the theme; ⌘K finds like Ctrl+K; Ctrl+Alt
-  (AltGr) is left alone.
+  Option-D ("∂") still toggles the theme; inside a field no Alt letter
+  fires, on any platform (W-6), and over a form being filled in Alt+N, P,
+  Q and H do nothing from any of its controls, as Back does; ⌘K finds
+  like Ctrl+K; Ctrl+Alt (AltGr) is left alone.
 - NEW-30: the toolbar's Back, enabled only while an app page is behind,
   with Alt+← (⌘[ on a Mac); a reload keeps it.
 - NEW-32: no dialog opens with focus on Void or Delete; a dialog whose
@@ -805,13 +807,20 @@ MAC = """(on) => { Object.defineProperty(Navigator.prototype, 'platform',
     { get: () => on ? 'MacIntel' : 'Linux x86_64', configurable: true }); App.labelBack(); }"""
 
 
-def test_inside_a_field_an_alt_letter_is_the_plain_letter_alone(
+ALT_LETTERS = ("Alt+KeyN", "Alt+KeyP", "Alt+KeyQ", "Alt+KeyH", "Alt+KeyD")
+
+
+def test_inside_a_field_no_alt_letter_is_a_shortcut_on_any_platform(
     browser, company, books
 ):
     """A Mac's Option types a character in a field ("∂", or a dead key for
-    Option-N's tilde): it goes through, and no shortcut fires. The plain
-    letter with Alt (Windows, Linux) fires as before; outside a field the
-    key's position is enough; Shift makes it another shortcut."""
+    Option-N's tilde), so the plain letter alone was let through there as
+    the shortcut — and the plain letter is what Windows and Linux send for
+    Alt+N, so on Windows Alt+N in a bill's Description opened New Invoice
+    in its place and the bill was gone (W-6). Inside an input, a textarea,
+    a select or an editable region no Alt letter fires, on any platform;
+    outside a field the key's position is enough; Shift makes it another
+    shortcut; Ctrl+K (⌘K) finds from anywhere, the search box included."""
     page, handled = _open(browser, company)
     try:
         _no_splash(page)
@@ -831,15 +840,53 @@ def test_inside_a_field_an_alt_letter_is_the_plain_letter_alone(
         # Shift+Alt+D anywhere is not the shortcut either
         page.evaluate(KEY, ["D", "KeyD", {"altKey": True, "shiftKey": True}])
         assert page.evaluate(THEME) == was
-        # the plain letter with Alt, as Windows and Linux send it, fires
-        # from a field: the form is opened afresh (its default note back)
+        # the plain letter with Alt, as Windows and Linux send it, in the
+        # Notes: nothing opens, nothing moves, and the note stays (W-6) —
+        # as an event, and from the keyboard
         page.evaluate(KEY_AT, ["#modal textarea", "n", "KeyN", {"altKey": True}])
-        page.wait_for_function(
-            "() => document.querySelector('#modal textarea').value !== 'a note being typed'"
-        )
+        page.focus("#modal textarea")
+        for keys in ALT_LETTERS:
+            page.keyboard.press(keys)
+        page.wait_for_timeout(150)
         settle(page, handled)
+        assert page.input_value("#modal textarea") == "a note being typed"
         assert page.evaluate(TITLE).startswith("New Invoice")
+        assert page.evaluate("location.hash") == "#/invoices"
+        assert page.evaluate(THEME) == was
+        # in a line's Description, where the Windows gate lost its bill
+        page.fill("#inv-lines .line-desc", "half a line")
+        page.focus("#inv-lines .line-desc")
+        for keys in ALT_LETTERS:
+            page.keyboard.press(keys)
+        page.wait_for_timeout(150)
+        settle(page, handled)
+        assert page.input_value("#inv-lines .line-desc") == "half a line"
+        assert page.input_value("#modal textarea") == "a note being typed"
+        assert page.evaluate("location.hash") == "#/invoices"
+        assert page.evaluate(THEME) == was
+        # Ctrl+K from the field finds, and Escape in the field still leaves
+        # the form standing (the next Escape closes it)
+        page.keyboard.press("Control+KeyK")
+        assert page.evaluate("() => document.activeElement.id") == "global-search"
+        assert page.evaluate(MODAL_SHOWN)
         page.evaluate("() => closeModal()")
+        # the search box: Alt+N opens nothing, Ctrl+K keeps it
+        page.focus("#global-search")
+        page.keyboard.press("Alt+KeyN")
+        page.wait_for_timeout(100)
+        assert not page.evaluate(MODAL_SHOWN)
+        page.keyboard.press("Control+KeyK")
+        assert page.evaluate("() => document.activeElement.id") == "global-search"
+        # a select: no theme change, no going home
+        _visit(page, handled, "#/classes")
+        page.wait_for_selector("#classes-period")
+        here = page.evaluate("location.hash")
+        page.focus("#classes-period")
+        page.keyboard.press("Alt+KeyD")
+        page.keyboard.press("Alt+KeyH")
+        page.wait_for_timeout(100)
+        assert page.evaluate(THEME) == was
+        assert page.evaluate("location.hash") == here
         # outside a field the key's position is enough, dead key or not
         page.evaluate("() => document.body.focus()")
         page.evaluate(KEY, ["Dead", "KeyN", {"altKey": True}])
@@ -853,8 +900,78 @@ def test_inside_a_field_an_alt_letter_is_the_plain_letter_alone(
         page.wait_for_timeout(100)
         assert page.evaluate("location.hash") == "#/customers"
         page.evaluate(KEY, ["[", "BracketLeft", {"metaKey": True}])
-        page.wait_for_function(AT, arg="#/invoices")  # the page before Customers
+        page.wait_for_function(AT, arg=here)  # the page before Customers
         page.evaluate(MAC, False)
+    finally:
+        page.close()
+
+
+LEAVING = ("Alt+KeyN", "Alt+KeyP", "Alt+KeyQ", "Alt+KeyH")
+FORM_CONTROLS = (
+    "#modal-body button[type=submit]",
+    "#modal-close-btn",
+    "#modal-body button:has-text('Add Line')",
+)
+
+
+def test_over_a_form_alt_n_p_q_h_do_nothing_from_any_of_its_controls(
+    browser, company, books
+):
+    """Inside a field no Alt letter fires, but one Tab away — on the form's
+    Save button, its ×, Add Line — Alt+N, P, Q or H opened another form
+    in its place and the typed one was gone: the loss W-6 describes
+    (round-3 review). Over a form being filled in (App.editingDialog, as
+    Back is) the four that leave it do nothing from any of its controls;
+    Alt+D, the theme, still fires there; over an addressed dialog (a
+    report) and from the page they fire as before."""
+    page, handled = _open(browser, company)
+    try:
+        _no_splash(page)
+        _visit(page, handled, "#/invoices")
+        _open_dialog(page, handled, "InvoicesPage.showForm()", "#inv-lines tr")
+        page.fill("#modal textarea", "a note being typed")
+        page.fill("#inv-lines .line-desc", "half a line")
+        assert page.evaluate("() => App.editingDialog()")
+        was = page.evaluate(THEME)
+        for sel in FORM_CONTROLS:
+            page.focus(sel)
+            assert page.evaluate("() => document.activeElement.tagName") == "BUTTON"
+            for keys in LEAVING:
+                page.keyboard.press(keys)
+            page.wait_for_timeout(150)
+            settle(page, handled)
+            assert page.evaluate(MODAL_SHOWN), sel
+            assert page.evaluate(TITLE).startswith("New Invoice"), sel
+            assert page.input_value("#modal textarea") == "a note being typed", sel
+            assert page.input_value("#inv-lines .line-desc") == "half a line", sel
+            assert page.evaluate("location.hash") == "#/invoices", sel
+            assert page.evaluate(THEME) == was, sel
+        # the theme still switches from the Save button, and the form stays
+        page.focus("#modal-body button[type=submit]")
+        page.keyboard.press("Alt+KeyD")
+        assert page.evaluate(THEME) != was
+        page.keyboard.press("Alt+KeyD")
+        assert page.evaluate(THEME) == was
+        assert page.input_value("#modal textarea") == "a note being typed"
+        assert page.evaluate(TITLE).startswith("New Invoice")
+        page.evaluate("() => closeModal()")
+        # over a report view, an addressed dialog, Alt+N opens New Invoice
+        _visit(
+            page,
+            handled,
+            f"#/reports/profit-loss?start_date={SEPT[0]}&end_date={SEPT[1]}",
+        )
+        page.wait_for_selector("#report-content table")
+        page.focus("#modal-close-btn")
+        assert not page.evaluate("() => App.editingDialog()")
+        page.keyboard.press("Alt+KeyN")
+        page.wait_for_function(f"() => ({TITLE})().startsWith('New Invoice')")
+        page.evaluate("() => closeModal()")
+        # and from the page, Alt+H goes home
+        page.wait_for_function(f"!({MODAL_SHOWN})()")
+        page.evaluate("() => document.body.focus()")
+        page.keyboard.press("Alt+KeyH")
+        page.wait_for_function(AT, arg="#/")
     finally:
         page.close()
 

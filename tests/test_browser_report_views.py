@@ -561,6 +561,40 @@ def test_a_date_in_the_address_that_is_not_one_is_said_so(browser, company, book
     finally:
         page.close()
 
+    # an impossible day has the shape of a date, and Chromium's Date rolls
+    # it over (2026-02-30 is March 2), so it passed as one; the date box
+    # then refused it, and the report opened on January 1 with no toast
+    # (W-5). A real calendar date is asked for, and said so the same way.
+    page, handled = _open_at(
+        browser,
+        company,
+        "#/reports/profit-loss?start_date=2026-02-30&end_date=2026-08-31",
+    )
+    try:
+        page.wait_for_selector("#report-content table")
+        assert (
+            "start_date in the address is not a date (2026-02-30) — ignored"
+            in _toasts(page)
+        )
+        assert "end_date" not in _toasts(page)
+        assert _hash(page) == (
+            f"#/reports/profit-loss?start_date={dt.date.today().year}-01-01&end_date=2026-08-31"
+        )
+        assert page.evaluate(PERIOD) == {
+            "period": "custom",
+            "start": f"{dt.date.today().year}-01-01",
+            "end": "2026-08-31",
+        }
+        # the reader itself: a day a month does not have, a leap day in a
+        # year without one, a month nobody has — none is a date; a real
+        # leap day is
+        assert page.evaluate(
+            "() => ['2026-02-30', '2026-04-31', '2023-02-29', '2024-02-29', '2026-13-01', '2026-09-31']"
+            ".map(d => datesFromQuery({ start_date: d }).start_date)"
+        ) == ["", "", "", "2024-02-29", "", ""]
+    finally:
+        page.close()
+
 
 def test_a_saved_report_opens_through_its_address_and_an_unknown_view_does_not_crash(
     browser, company, books
@@ -802,6 +836,265 @@ def test_from_after_to_is_refused_and_the_dates_before_it_are_kept(
         q = _query(_hash(page))
         assert q["start_date"] == f"{dt.date.today().year}-01-01"
         assert q["end_date"] == dt.date.today().isoformat()
+    finally:
+        page.close()
+
+
+REFUSED = "() => [...document.querySelectorAll('#toast-container .toast')].some(t => t.textContent.includes('is after To'))"
+
+
+def test_the_classes_list_and_a_class_page_refuse_from_after_to_typed(
+    browser, company, books
+):
+    """The Classes list took From after To typed into its boxes: no toast,
+    the address became the reversed range, and the note read "nets to
+    $0.00" (W-3). Typed dates go through the refusal every period report
+    has: said, naming both dates and the range kept; the boxes put back;
+    the list, and its address, still on that range. The class page reads
+    its boxes the same way."""
+    url = f"#/classes?start_date={SEPT[0]}&end_date={SEPT[1]}"
+    page, handled = _open_at(browser, company, url)
+    try:
+        page.wait_for_selector("#classes-total-note")
+        assert _hash(page) == url
+        note = page.inner_text("#classes-total-note")
+        length = _history(page)
+        page.fill("#classes-start", "2026-12-26")
+        page.dispatch_event("#classes-start", "change")
+        page.wait_for_function(REFUSED)
+        settle(page, handled)
+        assert (
+            "From (Dec 26, 2026) is after To (Sep 30, 2026) — kept Sep 1, 2026 to Sep 30, 2026"
+            in _toasts(page)
+        )
+        assert "in the address" not in _toasts(page)
+        assert page.input_value("#classes-period") == "custom"
+        assert page.input_value("#classes-start") == SEPT[0]
+        assert page.input_value("#classes-end") == SEPT[1]
+        assert _hash(page) == url
+        assert _history(page) == length
+        assert page.inner_text("#classes-total-note") == note
+        assert "$0.00, the Profit & Loss" not in note
+
+        # the class page: To moved before From
+        uncat = next(
+            c for c in company.get("/api/classes").json() if c["is_system_default"]
+        )
+        url = f"#/classes/{uncat['id']}?start_date={SEPT[0]}&end_date={SEPT[1]}"
+        _visit(page, handled, url)
+        page.wait_for_selector("#class-stats")
+        assert _hash(page) == url
+        stats = page.inner_text("#class-stats")
+        page.fill("#class-end", "2026-08-01")
+        page.dispatch_event("#class-end", "change")
+        page.wait_for_function(
+            "() => [...document.querySelectorAll('#toast-container .toast')].some(t => t.textContent.includes('is after To (Aug 1, 2026)'))"
+        )
+        settle(page, handled)
+        assert (
+            "From (Sep 1, 2026) is after To (Aug 1, 2026) — kept Sep 1, 2026 to Sep 30, 2026"
+            in _toasts(page)
+        )
+        assert page.input_value("#class-start") == SEPT[0]
+        assert page.input_value("#class-end") == SEPT[1]
+        assert _hash(page) == url
+        assert page.inner_text("#class-stats") == stats
+    finally:
+        page.close()
+
+
+def test_a_register_refuses_from_after_to_typed_before_touching_its_address(
+    browser, company, books
+):
+    """A register wrote the typed dates to its address and read them back
+    through datesFromQuery, so From after To typed emptied both boxes and
+    the toast blamed the address (W-4). It refuses them first, as the
+    reports do: said, naming the dates and the filter kept; the boxes put
+    back; the address, the history and the rows unchanged. With only a To
+    in use, what is kept is "to <that date>"."""
+    bank = next(
+        a for a in company.get("/api/accounts").json() if a["account_number"] == "1000"
+    )
+    url = f"#/banking/{bank['id']}?start_date={SEPT[0]}&end_date={SEPT[1]}"
+    page, handled = _open_at(browser, company, url)
+    try:
+        page.wait_for_selector("#reg-filter-note")
+        assert _hash(page) == url
+        note = page.inner_text("#reg-filter-note")
+        rows = page.locator("#page-content tbody tr").count()
+        length = _history(page)
+        page.fill("#reg-start", "2026-12-26")
+        page.dispatch_event("#reg-start", "change")
+        page.wait_for_function(REFUSED)
+        settle(page, handled)
+        assert (
+            "From (Dec 26, 2026) is after To (Sep 30, 2026) — kept Sep 1, 2026 to Sep 30, 2026"
+            in _toasts(page)
+        )
+        assert "in the address" not in _toasts(page)
+        assert page.input_value("#reg-start") == SEPT[0]
+        assert page.input_value("#reg-end") == SEPT[1]
+        assert _hash(page) == url
+        assert _history(page) == length
+        assert page.inner_text("#reg-filter-note") == note
+        assert page.locator("#page-content tbody tr").count() == rows
+
+        # only a To in use: From typed past it is refused, and "to" is kept
+        page.get_by_role("button", name="Clear").click()
+        page.wait_for_function(
+            "() => document.getElementById('reg-start').value === ''"
+        )
+        settle(page, handled)
+        page.fill("#reg-end", "2026-08-31")
+        page.dispatch_event("#reg-end", "change")
+        page.wait_for_function("() => location.hash.includes('end_date=2026-08-31')")
+        settle(page, handled)
+        page.fill("#reg-start", "2026-09-01")
+        page.dispatch_event("#reg-start", "change")
+        page.wait_for_function(
+            "() => [...document.querySelectorAll('#toast-container .toast')].some(t => t.textContent.includes('is after To (Aug 31, 2026)'))"
+        )
+        settle(page, handled)
+        assert (
+            "From (Sep 1, 2026) is after To (Aug 31, 2026) — kept to Aug 31, 2026"
+            in _toasts(page)
+        )
+        assert page.input_value("#reg-start") == ""
+        assert page.input_value("#reg-end") == "2026-08-31"
+        assert _query(_hash(page)) == {"end_date": "2026-08-31"}
+    finally:
+        page.close()
+
+
+def test_the_job_page_refuses_from_after_to_typed_and_keeps_its_period(
+    browser, company, books
+):
+    """The job page's period boxes had the gap the Classes list and the
+    register had (W-3, W-4): setPeriod took From after To, put it on the
+    address and reloaded the tab on it. It is refused the same way: said,
+    the boxes put back, the page and its address on the period in use.
+    Off the boxes (Job to date) with only a From typed, To typed before it
+    is refused and "from" is what is kept."""
+    url = f"#/jobs/{books['job']}?start_date={SEPT[0]}&end_date={SEPT[1]}"
+    page, handled = _open_at(browser, company, url)
+    try:
+        page.wait_for_selector("#job-tab-body")
+        assert _hash(page) == url
+        length = _history(page)
+        page.fill("#job-period-start", "2026-12-26")
+        page.dispatch_event("#job-period-start", "change")
+        page.wait_for_function(REFUSED)
+        settle(page, handled)
+        assert (
+            "From (Dec 26, 2026) is after To (Sep 30, 2026) — kept Sep 1, 2026 to Sep 30, 2026"
+            in _toasts(page)
+        )
+        assert "in the address" not in _toasts(page)
+        assert page.input_value("#job-period-start") == SEPT[0]
+        assert page.input_value("#job-period-end") == SEPT[1]
+        assert _hash(page) == url
+        assert _history(page) == length
+
+        page.get_by_role("button", name="JTD").click()
+        page.wait_for_function(
+            "(h) => location.hash === h", arg=f"#/jobs/{books['job']}"
+        )
+        settle(page, handled)
+        page.fill("#job-period-start", "2026-09-01")
+        page.dispatch_event("#job-period-start", "change")
+        page.wait_for_function("() => location.hash.includes('start_date=2026-09-01')")
+        settle(page, handled)
+        page.fill("#job-period-end", "2026-08-31")
+        page.dispatch_event("#job-period-end", "change")
+        page.wait_for_function(
+            "() => [...document.querySelectorAll('#toast-container .toast')].some(t => t.textContent.includes('is after To (Aug 31, 2026)'))"
+        )
+        settle(page, handled)
+        assert (
+            "From (Sep 1, 2026) is after To (Aug 31, 2026) — kept from Sep 1, 2026"
+            in _toasts(page)
+        )
+        assert page.input_value("#job-period-start") == "2026-09-01"
+        assert page.input_value("#job-period-end") == ""
+        assert _query(_hash(page)) == {"start_date": "2026-09-01"}
+    finally:
+        page.close()
+
+
+def test_a_job_opened_from_the_list_starts_on_job_to_date_whatever_the_last_jobs_period(
+    browser, company, books
+):
+    """The job page set its period only when the address carried one, so
+    the September a P&L by Job hop put on job 1 stayed on job 2 opened
+    from the Jobs list — its boxes and its figures, under an address that
+    said nothing of it — and a refused range named that September as
+    "kept" (round-3 review). The period is the address's every time: none
+    is Job to date, and a reload agrees."""
+    second = company.post(
+        "/api/jobs", json={"customer_id": books["customer"], "name": "Second Job"}
+    ).json()
+    # a figure outside September, so job to date and September differ
+    r = company.post(
+        "/api/invoices",
+        json={
+            "customer_id": books["customer"],
+            "job_id": second["id"],
+            "date": "2026-08-15",
+            "tax_rate": 0,
+            "lines": [{"description": "August survey", "quantity": 1, "rate": 480}],
+        },
+    )
+    assert r.status_code in (200, 201), r.text
+    jtd = company.get(f"/api/jobs/{second['id']}/cost-tree").json()["totals"]
+    sept = company.get(
+        f"/api/jobs/{second['id']}/cost-tree",
+        params={"start_date": SEPT[0], "end_date": SEPT[1]},
+    ).json()["totals"]
+    assert jtd["act_revenue"] == 480 and sept["act_revenue"] == 0
+
+    page, handled = _open_at(
+        browser,
+        company,
+        f"#/jobs/{books['job']}?start_date={SEPT[0]}&end_date={SEPT[1]}&from=profit-loss-by-job",
+    )
+    try:
+        page.wait_for_selector("#job-tab-body")
+        assert page.input_value("#job-period-start") == SEPT[0]
+        assert page.get_by_role("button", name="Back to P&L by Job").count() == 1
+
+        _visit(page, handled, "#/jobs")
+        del handled[:]
+        page.locator("#page-content tr.clickable", has_text="Second Job").first.click()
+        page.wait_for_function(
+            "(h) => location.hash === h", arg=f"#/jobs/{second['id']}"
+        )
+        page.wait_for_selector("#job-tab-body")
+        settle(page, handled)
+        assert page.input_value("#job-period-start") == ""
+        assert page.input_value("#job-period-end") == ""
+        assert page.evaluate("() => JobsPage._period") == {"start": "", "end": ""}
+        assert page.get_by_role("button", name="Back to P&L by Job").count() == 0
+        assert [h for h in handled if "/cost-tree" in h] == [
+            f"/api/jobs/{second['id']}/cost-tree"
+        ], "the figures are job to date: no dates asked for"
+        body = page.inner_text("#job-tab-body")
+        assert "$480.00" in body
+
+        # a reload agrees
+        del handled[:]
+        page.reload()
+        page.wait_for_function("window.App && document.readyState === 'complete'")
+        page.evaluate(
+            "() => { const s = document.getElementById('splash'); if (s) s.classList.add('hidden'); }"
+        )
+        page.wait_for_selector("#job-tab-body")
+        settle(page, handled)
+        assert page.input_value("#job-period-start") == ""
+        assert page.input_value("#job-period-end") == ""
+        assert [h for h in handled if "/cost-tree" in h] == [
+            f"/api/jobs/{second['id']}/cost-tree"
+        ]
+        assert page.inner_text("#job-tab-body") == body
     finally:
         page.close()
 

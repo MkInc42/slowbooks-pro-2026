@@ -941,12 +941,13 @@ const ReportsPage = {
         const render = async () => {
             ReportsPage.toggleCustomRange();
             const custom = select.value === 'custom';
-            if (!useAsOfOnly && custom && startInput.value && endInput.value && startInput.value > endInput.value) {
+            if (!useAsOfOnly && custom) {
                 const keep = lastRange || ReportsPage.getDateRange(initialPeriod);
-                toast(`From (${formatDate(startInput.value)}) is after To (${formatDate(endInput.value)}) — kept ${formatDate(keep.start)} to ${formatDate(keep.end)}`, 'error');
-                startInput.value = keep.start;
-                endInput.value = keep.end;
-                if (lastRange) return;  // the report on it is already showing
+                if (reversedRangeRefused(startInput.value, endInput.value, keep)) {
+                    startInput.value = keep.start;
+                    endInput.value = keep.end;
+                    if (lastRange) return;  // the report on it is already showing
+                }
             }
             content.innerHTML = `<div style="font-size:11px; color:var(--gray-500);">Loading report...</div>`;
             try {

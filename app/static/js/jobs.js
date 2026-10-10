@@ -171,10 +171,13 @@ const JobsPage = {
         const q = query || {};
         // a date that is not one, or From after To, is said so and ignored
         const dates = datesFromQuery(q);
-        if (dates.start_date || dates.end_date) {
-            JobsPage._period = { start: dates.start_date, end: dates.end_date };
-        }
-        JobsPage._from = (typeof ReportsPage !== 'undefined' && ReportsPage._view(q.from)) ? q.from : null;
+        // The period is the address's, every time; none is Job to date.
+        // (Set only when the address carried one, the last job's period
+        // stayed on the next job opened from the list — its boxes and its
+        // figures, with an address that said nothing of it — and a refused
+        // range named that period as "kept": round-3 review.)
+        JobsPage._period = { start: dates.start_date, end: dates.end_date };
+        JobsPage._from =(typeof ReportsPage !== 'undefined' && ReportsPage._view(q.from)) ? q.from : null;
         try {
             JobsPage._job = await API.get(`/jobs/${id}`);
         } catch (err) {
@@ -220,8 +223,21 @@ const JobsPage = {
         const body = $('#job-tab-body');
         if (body) { body.innerHTML = '<p style="color:var(--gray-500);">Loading…</p>'; body.innerHTML = await JobsPage.tabHtml(); }
     },
+    // The period typed on the page. From after To is refused as the
+    // reports, the Classes list and a register refuse it (W-3, W-4): said,
+    // the boxes put back to the period in use, and the page, and its
+    // address, left on it.
     async setPeriod() {
-        JobsPage._period = { start: $('#job-period-start')?.value || '', end: $('#job-period-end')?.value || '' };
+        const startEl = $('#job-period-start');
+        const endEl = $('#job-period-end');
+        const start = startEl?.value || '';
+        const end = endEl?.value || '';
+        if (reversedRangeRefused(start, end, JobsPage._period)) {
+            if (startEl) startEl.value = JobsPage._period.start;
+            if (endEl) endEl.value = JobsPage._period.end;
+            return;
+        }
+        JobsPage._period = { start, end };
         JobsPage._tree = null;
         JobsPage._syncAddress();
         await JobsPage.setTab(JobsPage._tab);

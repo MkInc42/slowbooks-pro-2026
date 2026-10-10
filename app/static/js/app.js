@@ -1383,15 +1383,25 @@ const App = {
         // (Ctrl+Alt is AltGr on some layouts, Shift another shortcut), not
         // by the character typed: on a Mac, Option-D types "∂", Option-H
         // "˙" and Option-Q "œ", and e.key carried those, so none of the
-        // documented shortcuts fired (macOS gate NEW-41). Inside a field,
-        // though, that character is what the Mac is typing — "∂", or the
-        // dead key of Option-N's tilde — and it must go through: there the
-        // plain letter alone is the shortcut, which is what Windows and
-        // Linux send for Alt+N (NEW-41 review).
+        // documented shortcuts fired (macOS gate NEW-41). Inside a field —
+        // an input, a textarea, a select, an editable region — no Alt
+        // letter is a shortcut, on any platform: a Mac's Option is typing
+        // there ("∂", or the dead key of Option-N's tilde), and letting
+        // the plain letter through for Windows and Linux meant Alt+N over
+        // a half-typed bill opened New Invoice in its place and the bill
+        // was gone (Windows gate W-6). Ctrl+K (⌘K) finds from anywhere,
+        // the search box included. Alt+N, P, Q and H leave what is open:
+        // over a form being filled in (App.editingDialog, as Back is) they
+        // do nothing from any of its controls either — one Tab away from
+        // the field, on Save or the ×, they opened another form in its
+        // place and the typed one was gone (W-6 review); over an addressed
+        // dialog (a report, a document, a page) and from the page they
+        // fire. Alt+D, the theme, fires anywhere but a field.
         document.addEventListener('keydown', (e) => {
             const alt = e.altKey && !e.ctrlKey && !e.metaKey && !e.shiftKey;
             const editing = !!(e.target && e.target.closest && e.target.closest('input, textarea, select, [contenteditable]:not([contenteditable="false"])'));
-            const letter = (code, key) => alt && e.code === code && (!editing || String(e.key).toLowerCase() === key);
+            const letter = (code) => alt && !editing && e.code === code;
+            const leaves = (code) => letter(code) && !App.editingDialog();
             // Back: ⌘[ on a Mac, Alt+← elsewhere, while an app page is
             // behind and no form is open over the page (the Mac app's
             // window has no Back of its own, NEW-30)
@@ -1408,20 +1418,20 @@ const App = {
             }
             // Alt+N / Alt+P / Alt+Q start new entries: a read-only sign-in is
             // told why nothing opens, rather than handed a blank locked form
-            const entry = letter('KeyN', 'n') || letter('KeyP', 'p') || letter('KeyQ', 'q');
+            const entry = leaves('KeyN') || leaves('KeyP') || leaves('KeyQ');
             if (entry && App.isReadOnly()) {
                 toast(App.READ_ONLY_MESSAGE, 'info'); e.preventDefault(); return;
             }
             // Alt+N: new invoice
-            if (letter('KeyN', 'n')) { InvoicesPage.showForm(); e.preventDefault(); }
+            if (leaves('KeyN')) { InvoicesPage.showForm(); e.preventDefault(); }
             // Alt+P: receive payment
-            if (letter('KeyP', 'p')) { PaymentsPage.showForm(); e.preventDefault(); }
+            if (leaves('KeyP')) { PaymentsPage.showForm(); e.preventDefault(); }
             // Alt+Q: quick entry
-            if (letter('KeyQ', 'q')) { App.navigate('#/quick-entry'); e.preventDefault(); }
+            if (leaves('KeyQ')) { App.navigate('#/quick-entry'); e.preventDefault(); }
             // Alt+H: home/dashboard
-            if (letter('KeyH', 'h')) { App.navigate('#/'); e.preventDefault(); }
+            if (leaves('KeyH')) { App.navigate('#/'); e.preventDefault(); }
             // Alt+D: toggle dark mode (Feature 12)
-            if (letter('KeyD', 'd')) { App.toggleTheme(); e.preventDefault(); }
+            if (letter('KeyD')) { App.toggleTheme(); e.preventDefault(); }
             // Escape: close modal (not the Escape that closes a date
             // field's calendar: utils.js escapeLeavesPicker, NEW-33)
             if (e.key === 'Escape' && !escapeLeavesPicker(e)) { closeModal(); }
