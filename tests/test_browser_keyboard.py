@@ -2431,3 +2431,77 @@ def test_back_after_a_mouse_click_keys_on_the_row_clicked_on_every_hop(
         assert was == f"customer:{customer}"
     finally:
         page.close()
+
+
+# window.open, recorded instead of opened: the statement's download
+HOLD_OPEN = """() => { window.__opened = [];
+    window.open = (url, target) => { window.__opened.push([url, target]); return null; }; }"""
+
+
+def test_back_from_a_pages_report_refocuses_its_link(browser, company, books):
+    """The Reports links on a customer's and a vendor's page noted no row,
+    so Back from the report put focus where the page puts it on opening
+    (review of W-7). Each is still a real link to the report's address,
+    with a key, and notes itself on its click: Back puts focus on the link
+    left, by keyboard (Enter) and after a WebKit-style mouse click (focus
+    not moved, left on another control). The statement (PDF) is a
+    download: its click opens it and notes nothing."""
+    pages = (
+        (
+            "customers",
+            books["customer"],
+            "report:income-by-customer",
+            "report:ar-aging",
+        ),
+        ("vendors", books["vendor"], "report:ap-aging", None),
+    )
+    for kind, rid, key, other in pages:
+        page, handled = _open_at(browser, company, f"#/{kind}/{rid}")
+        try:
+            page.wait_for_function(MODAL_SHOWN)
+            link = f'#modal-body a[data-row-key="{key}"]'
+            page.wait_for_selector(link)
+            settle(page, handled)
+            here = page.evaluate("location.hash")
+            assert page.get_attribute(link, "href").startswith("#/reports/")
+            # by keyboard: Enter on the link → the report → Back
+            page.focus(link)
+            page.keyboard.press("Enter")
+            page.wait_for_function("() => location.hash.startsWith('#/reports/')")
+            page.wait_for_function(MODAL_SHOWN)
+            settle(page, handled)
+            page.keyboard.press("Alt+ArrowLeft")
+            page.wait_for_function(AT, arg=here)
+            page.wait_for_function(
+                "(k) => document.activeElement && document.activeElement.dataset.rowKey === k",
+                arg=key,
+            )
+            # by a WebKit-style mouse click, focus left on another control
+            if other is None:  # the vendor's: its first bill's link
+                other = page.evaluate(
+                    """() => document.querySelector('#modal-body a[data-row-key^="bill:"]')
+                        .dataset.rowKey"""
+                )
+            page.evaluate(WEBKIT_CLICKS)
+            was = _webkit_hop_and_back(
+                page,
+                handled,
+                f'#modal-body a[data-row-key="{other}"]',
+                link,
+                "() => location.hash.startsWith('#/reports/')",
+                key,
+            )
+            assert was == other
+            if kind == "customers":
+                # the statement: a download, opened; nothing noted, no hop
+                page.evaluate(HOLD_OPEN)
+                page.get_by_role("button", name="Statement (PDF)").click()
+                opened = page.evaluate("() => window.__opened")
+                assert len(opened) == 1 and opened[0][1] == "_blank", opened
+                assert opened[0][0].startswith(
+                    f"/api/reports/customer-statement/{rid}/pdf?as_of_date="
+                )
+                assert page.evaluate("location.hash") == here
+                assert not page.evaluate("() => history.state && history.state.focus")
+        finally:
+            page.close()

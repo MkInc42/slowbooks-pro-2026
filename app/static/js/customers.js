@@ -265,9 +265,16 @@ const CustomersPage = {
     // Job Profitability is filtered to the customer's jobs and says so. The
     // statement PDF is the picker's, as of today; a nonprofit's is the
     // giving statement above. Reads: a read-only sign-in keeps them.
+    // Each report is a real link to its address (the keyboard and a screen
+    // reader find it as one); its click notes it on this page's entry
+    // (ReportsPage._leaveFrom, the link itself: after a mouse click too,
+    // which in WebKit focuses nothing), so Back from the report returns here
+    // with focus on it (App.withDocument); they noted nothing, so Back put
+    // focus where the page puts it on opening. The statement is a download,
+    // not a view: there is nothing to come back to, and it notes nothing.
     _reportsRow(id) {
         const link = (view, params, text) =>
-            `<a class="btn btn-sm btn-secondary" href="${ReportsPage.viewUrl(view, params)}">${text}</a>`;
+            `<a class="btn btn-sm btn-secondary" href="${ReportsPage.viewUrl(view, params)}" data-row-key="report:${view}" onclick="ReportsPage._leaveFrom(this)">${text}</a>`;
         const period = { customer_id: id, period: 'this_year_to_date' };
         return `<div role="group" aria-label="Reports for this ${T('customer')}" style="margin-top:8px;display:flex;flex-wrap:wrap;gap:4px;justify-content:flex-end">
             <span style="font-size:11px;color:var(--text-muted);text-transform:uppercase;letter-spacing:.05em;align-self:center">Reports</span>

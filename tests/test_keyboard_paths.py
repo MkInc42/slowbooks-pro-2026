@@ -733,3 +733,24 @@ def test_every_row_hop_passes_the_element_clicked():
             "const hop = (href) => `ReportsPage._leaveFrom(this);closeModal({ keepAddress: true });App.navigate('${href}')`;"
             in src
         ), name
+
+
+def test_a_pages_report_links_note_themselves():
+    """A customer's and a vendor's page's Reports links noted no row, so
+    Back from the report did not put focus back on the link: each is a
+    real link with a key that notes itself on its click; the statement
+    (a download) notes nothing."""
+    for name in ("customers.js", "vendors.js"):
+        src = _src(name)
+        row = src[src.index("    _reportsRow(") :]
+        row = row[: row.index("\n    },")]
+        assert (
+            '<a class="btn btn-sm btn-secondary" href="${ReportsPage.viewUrl(view, params)}"'
+            ' data-row-key="report:${view}" onclick="ReportsPage._leaveFrom(this)">'
+            in row
+        ), name
+    row = _src("customers.js")
+    row = row[row.index("    _reportsRow(id) {") :]
+    row = row[: row.index("\n    },")]
+    assert "onclick=\"window.open('/api/reports/customer-statement/${id}/pdf" in row
+    assert row.count("_leaveFrom") == 1

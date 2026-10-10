@@ -204,10 +204,12 @@ const VendorsPage = {
     // row highlighted; the 1099 Summary for this year, likewise, when the
     // vendor is a 1099 vendor; the default expense or COGS account's
     // register (the drill-down, this year to date). Reads: a read-only
-    // sign-in keeps them.
+    // sign-in keeps them. Each is a real link whose click notes it on this
+    // page's entry, the link itself, so Back from the report returns here
+    // with focus on it, after a mouse click too (CustomersPage._reportsRow).
     _reportsRow(vendor, acct) {
         const link = (view, params, text) =>
-            `<a class="btn btn-sm btn-secondary" href="${ReportsPage.viewUrl(view, params)}">${escapeHtml(text)}</a>`;
+            `<a class="btn btn-sm btn-secondary" href="${ReportsPage.viewUrl(view, params)}" data-row-key="report:${view}" onclick="ReportsPage._leaveFrom(this)">${escapeHtml(text)}</a>`;
         return `<div role="group" aria-label="Reports for this vendor" style="margin-top:8px;display:flex;flex-wrap:wrap;gap:4px;justify-content:flex-end">
             <span style="font-size:11px;color:var(--text-muted);text-transform:uppercase;letter-spacing:.05em;align-self:center">Reports</span>
             ${link('ap-aging', { vendor_id: vendor.id, period: 'this_year_to_date' }, 'A/P Aging')}
