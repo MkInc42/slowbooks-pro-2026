@@ -44,10 +44,16 @@
    a table's header row, the grey edge of a field beside it. So it has a
    halo of the theme's own ground on both its sides (--focus-halo: white in
    light, 3.9:1 against the gold; the page's dark in dark, 8.5), whatever
-   lies beyond: a box-shadow out to 6px, the ring drawn over it from 2px to
-   4px (out to 8px on a button and the like, below). The control is lifted
-   (position: relative, no offset, so nothing moves) to paint after what
-   follows it: a field just below a button painted over its halo.
+   lies beyond: a box-shadow out to 8px, the ring drawn over it from 2px to
+   4px, so the halo is also what lies 1-4px past the ring, where the macOS
+   gate reads a ring's ground. A link in running text has it too: with 2px
+   past its ring, the gate read the line or the table header beyond (the
+   General Ledger's account names, 2.24:1, 1.02 in dark; Settings'
+   developer.intuit.com, 1.44; a permit's lookup link, 1.36), so while it
+   has focus its halo covers a little of the lines above and below it.
+   The control is lifted (position: relative, no offset, so nothing moves)
+   to paint after what follows it: a field just below a button painted
+   over its halo.
    All in :where(), the rule counts for nothing against a selector of a
    control's own: the grid's and the search results' own rings win (bare,
    [tabindex]:not([tabindex="-1"]):focus-visible was (0,3,0) and beat
@@ -61,23 +67,8 @@
        input[type="radio"]:focus-visible) {
     outline: 2px solid var(--focus-ring);
     outline-offset: 2px;
-    box-shadow: 0 0 0 6px var(--focus-halo);
-    position: relative;
-}
-/* A button, a summary, a scroll region and a table's link: the halo out to
-   8px, 4px of it outside the ring, so it is also what lies 4-7px out,
-   where the macOS gate reads a ring's ground. These are the controls on
-   the toolbars, in a dialog's title bar, beside fields and under a table's
-   header row (a checkbox and a radio too: below). A link in running text
-   keeps 2px outside the ring: more would cover the lines above and below
-   it. */
-:where(button:focus-visible,
-       summary:focus-visible,
-       [tabindex]:not([tabindex="-1"]):focus-visible,
-       td a:focus-visible,
-       th a:focus-visible,
-       a.btn:focus-visible) {
     box-shadow: 0 0 0 8px var(--focus-halo);
+    position: relative;
 }
 /* Tab scrolls a control into view with room for its ring and halo: at a
    scrolling dialog's edge (New Customer's Create Customer) their outer
@@ -924,7 +915,7 @@ td.amount, th.amount {
     background: #fffff8;
     box-shadow: inset 1px 1px 2px rgba(0,0,0,0.08);
 }
-/* and the ring's halo, out to 8px as a button's, over the sunken shadow
+/* and the ring's halo, out to 8px as every control's, over the sunken shadow
    every input is given above (and in the line-item tables and the
    toolbars): a white box below, in the dark theme, would otherwise be the
    ground 4-7px out */

@@ -499,25 +499,17 @@ def test_the_ring_has_a_halo_of_the_themes_own_ground():
     css = (ROOT / "app/static/css/style.css").read_text(encoding="utf-8")
     dark = (ROOT / "app/static/css/dark.css").read_text(encoding="utf-8")
     ring = _rule(css, ":where(a:focus-visible,")
-    # from the border box out to 6px, the ring drawn over it from 2 to 4:
-    # 2px of halo on each side of the gold
-    assert "box-shadow: 0 0 0 6px var(--focus-halo);" in ring
+    # from the border box out to 8px, the ring drawn over it from 2 to 4:
+    # 2px of halo inside the gold and 4px outside it, where the gate reads
+    # the ground, on every control: a link in running text too (the
+    # General Ledger's account names met the table header beyond at 2.24:1
+    # with 2px), so there is no wider rule for buttons and table links
+    assert "box-shadow: 0 0 0 8px var(--focus-halo);" in ring
     assert "position: relative;" in ring
+    assert ":where(button:focus-visible," not in css
+    assert "0 0 0 6px var(--focus-halo)" not in css
     assert "--focus-halo:     #ffffff;" in css
     assert "--focus-halo:     #14161c;" in dark
-    # out to 8px, 4px outside the ring, where the gate reads the ground: on
-    # buttons, a summary, a scroll region, a table's link, a link-button
-    wide = _rule(css, ":where(button:focus-visible,")
-    for sel in (
-        "summary",
-        '[tabindex]:not([tabindex="-1"])',
-        "td a",
-        "th a",
-        "a.btn",
-    ):
-        assert f"{sel}:focus-visible" in wide, sel
-    assert "box-shadow: 0 0 0 8px var(--focus-halo);" in wide
-    assert css.index(":where(a:focus-visible,") < css.index(":where(button:focus")
     # on the toolbar the light theme's gold is the Back border's deeper one,
     # which clears the bar itself (3.2:1 against its darker stop); the dark
     # theme's own there

@@ -1661,11 +1661,12 @@ def _painted(page):
     lies, outline-offset to offset + width from the border box, and on
     while that colour goes on), its width in pixels, the colour painted
     against it on its inner and its outer side (an anti-aliased pixel
-    between the two skipped), and the ground as the macOS gate reads it,
-    the pixels 1 to 5 beyond the ring: medians over the middle of the
-    side, clear of the corners. A side with no ring painted is None; the
-    outer colour and the ground are None where the ring meets the window's
-    edge (`edge`)."""
+    between the two skipped): medians over the middle of the side, clear
+    of the corners; and the ground as the macOS gate reads it, the pixels
+    1 to 5 past the ring, the median on each line across the side and the
+    line where it stands least against the ring. A side with no ring
+    painted is None; the outer colour and the ground are None where the
+    ring meets the window's edge (`edge`)."""
     import io
     import math
     import re
@@ -1718,13 +1719,14 @@ def _painted(page):
         along = (
             middle(top, bottom) if side in ("left", "right") else middle(left, right)
         )
-        prof = {}
+        prof, lines = {}, {p: {} for p in along}
         for d in range(dev(off - 6), dev(off + wid + 10)):
-            got = [
-                px[x, y]
-                for x, y in (at[side](d, p) for p in along)
-                if 0 <= x < w and 0 <= y < h
-            ]
+            got = []
+            for p in along:
+                x, y = at[side](d, p)
+                if 0 <= x < w and 0 <= y < h:
+                    got.append(px[x, y])
+                    lines[p][d] = px[x, y]
             if got:
                 prof[d] = [statistics.median(g[k] for g in got) for k in range(3)]
         hits = [
@@ -1753,17 +1755,23 @@ def _painted(page):
                     break
             return prof.get(d)
 
-        beyond = [
-            prof[d] for d in range(dev(off + wid + 1), dev(off + wid + 6)) if d in prof
-        ]
+        # the gate's ground: the 1st to 5th pixel past the ring, on each
+        # line across the side; the line where it is nearest the ring
+        grounds = []
+        for line in lines.values():
+            band = [line[d] for d in range(r1 + 1, r1 + 6) if d in line]
+            if band:
+                grounds.append(
+                    [statistics.median(c[k] for c in band) for k in range(3)]
+                )
         sides[side] = {
             "ring": ring,
             "px": r1 - r0 + 1,
             "inner": against(r0 - 1, -1),
             "outer": against(r1 + 1, 1),
             "ground": (
-                [statistics.median(c[k] for c in beyond) for k in range(3)]
-                if beyond
+                min(grounds, key=lambda g, ring=ring: contrast(_rgb(ring), _rgb(g)))
+                if grounds
                 else None
             ),
             "edge": edge[side],
@@ -2308,6 +2316,69 @@ def test_tab_brings_every_grid_stop_out_from_under_the_frozen_parts(
         page.mouse.move(cut["x"], cut["y"] + 200)
         page.mouse.up()
         assert pressed == [cut["name"], False, 0], (cut, pressed)
+    finally:
+        page.close()
+
+
+def _keyed(page, element):
+    """Focus on `element` (a script expression) as the keyboard puts it
+    there: placed, then Shift+Tab and Tab back."""
+    page.evaluate(f"() => ({element}).focus()")
+    page.keyboard.press("Shift+Tab")
+    page.keyboard.press("Tab")
+    assert page.evaluate(f"() => document.activeElement === ({element})"), element
+
+
+GL_URL = "#/reports/general-ledger?start_date=2025-01-01&end_date=2026-12-31"
+GL_NAMES = "[...document.querySelectorAll('#report-content h3 a')]"
+LOOKUPS = """[...document.querySelectorAll('#modal-body a')]
+    .filter(a => /^Open .+ lookup$/.test(a.textContent.trim()))"""
+
+
+def test_a_link_in_running_text_has_the_halo_where_the_gate_reads_its_ground(
+    browser, company, books
+):
+    """A link in running text kept 2px of halo past its ring, and the
+    macOS gate's ground, 1 to 5px past the ring, was the line or the table
+    header beyond it: the General Ledger's account names (2.24:1, 1.02 in
+    dark), Banking's bridge.simplefin.org (2.94), Settings'
+    developer.intuit.com (1.44), a customer's permit lookup links (1.36)
+    (review). Every control's halo reaches 4px past the ring now, a
+    button's as before: at each of those links, the keyboard's focus on
+    it, the ring is painted on all four sides in each theme, 3:1 against
+    the halo on both its sides and against the gate's ground."""
+    page, handled = _open_at(browser, company, GL_URL)
+    try:
+        page.wait_for_selector("#report-content h3 a")
+        settle(page, handled)
+        names = page.evaluate(f"() => {GL_NAMES}.map(a => a.textContent.trim())")
+        assert len(names) > 3, names
+        for i, name in enumerate(names):
+            _keyed(page, f"{GL_NAMES}[{i}]")
+            _both_themes(page, ("General Ledger account", name), GOLD)
+    finally:
+        page.close()
+    page, handled = _open(browser, company)
+    try:
+        _no_splash(page)
+        for route, link in (
+            ("#/banking", 'a[href="https://bridge.simplefin.org"]'),
+            ("#/settings", 'a[href="https://developer.intuit.com"]'),
+        ):
+            _visit(page, handled, route)
+            _keyed(page, f"document.querySelector('#page-content {link}')")
+            _both_themes(page, (route, link), GOLD)
+    finally:
+        page.close()
+    page, handled = _open_at(browser, company, f"#/customers/{books['customer']}")
+    try:
+        page.wait_for_function(MODAL_SHOWN)
+        page.wait_for_function(f"() => {LOOKUPS}.length > 0")
+        settle(page, handled)
+        lookups = page.evaluate(f"() => {LOOKUPS}.length")
+        for i in range(lookups):
+            _keyed(page, f"{LOOKUPS}[{i}]")
+            _both_themes(page, ("the permit lookup", i), GOLD)
     finally:
         page.close()
 
