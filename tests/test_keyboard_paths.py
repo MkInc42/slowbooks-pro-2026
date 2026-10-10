@@ -1063,16 +1063,21 @@ def test_a_dark_themes_fields_say_they_are_dark():
 def test_what_keeps_the_keyboards_place_in_sight_asks_what_moved_focus():
     """A text box matches :focus-visible on a click as well as on Tab, so
     what scrolls a control into sight for the keyboard (Settings' save
-    bar, the grid) asks what moved focus last: Tab or an arrow, or a
-    pointer (App.init keeps it, ahead of anyone else's handlers)."""
+    bar, the grid) asks what moved focus last: a key (any but a modifier
+    alone), or a pointer (App.init keeps it, ahead of anyone else's
+    handlers)."""
     app = _src("app.js")
     assert "keyboardFocus() { return App._input !== 'pointer'; }," in app
     init = app[app.index("    init() {") :]
     init = init[: init.index("\n    },")]
-    assert (
-        "if (e.key === 'Tab' || String(e.key).startsWith('Arrow')) App._input = 'keyboard';"
-        in init
-    )
+    # any key but a modifier held alone is the keyboard's (a click, then the
+    # Mac's ⌘[ Back, is), a pointer's press the pointer's
+    assert "if (!App._MODIFIER_KEYS.includes(e.key)) App._input = 'keyboard';" in init
+    keys = app[app.index("    _MODIFIER_KEYS: [") :]
+    keys = keys[: keys.index("\n")]
+    for key in ("'Shift'", "'Control'", "'Alt'", "'Meta'", "'AltGraph'", "'CapsLock'"):
+        assert key in keys, key
+    assert "'[" not in keys and "'Tab'" not in keys
     assert (
         "document.addEventListener('pointerdown', () => { App._input = 'pointer'; }, true);"
         in init
@@ -1106,3 +1111,49 @@ def test_a_table_wider_than_its_container_scrolls_and_tab_brings_a_stop_in_whole
     init = app[app.index("    init() {") :]
     init = init[: init.index("\n    },")]
     assert "App.revealInTable(e);" in init
+
+
+def test_a_scrolling_table_container_has_the_keyboards_room_too():
+    """A line-item table's scrolling container has 8px below its table and
+    at its right end, as the keyboard's halo needs, and none at its left,
+    where the pay run's Employee column is held."""
+    css = (ROOT / "app/static/css/style.css").read_text(encoding="utf-8")
+    scroll = _rule(css, ".table-container--scroll {")
+    for line in ("overflow-x: auto;", "padding-right: 8px;", "padding-bottom: 8px;"):
+        assert line in scroll, line
+    assert "padding-left" not in scroll
+
+
+def test_a_wide_table_with_no_control_takes_tab_itself():
+    """A table container wider than itself with no control in it takes
+    Tab itself, a named region the arrow keys scroll; one that fits or
+    holds a control is left (or put back) as it was; the P&L grid is a
+    region of its own. Marked whenever the page or a dialog changes and
+    when the window does."""
+    app = _src("app.js")
+    mark = app[app.index("    markScrollRegions() {") :]
+    mark = mark[: mark.index("\n    },")]
+    for line in (
+        "const wide = c.scrollWidth > c.clientWidth;",
+        "const empty = !c.querySelector('a[href], button, input, select, textarea, summary, [tabindex]');",
+        "c.setAttribute('tabindex', '0');",
+        "c.setAttribute('role', 'region');",
+        "c.setAttribute('aria-label', App._regionName(c));",
+        "['data-scroll-region', 'tabindex', 'role', 'aria-label'].forEach(a => c.removeAttribute(a));",
+        "if (c.id === 'grid-scroll') continue;",
+    ):
+        assert line in mark, line
+    name = app[app.index("    _regionName(c) {") :]
+    name = name[: name.index("\n    },")]
+    assert "c.querySelector('caption')" in name and "'modal-title'" in name
+    init = app[app.index("    init() {") :]
+    init = init[: init.index("\n    },")]
+    assert (
+        "requestAnimationFrame(() => { marking = false; App.markScrollRegions(); });"
+        in init
+    )
+    assert (
+        "new MutationObserver(mark).observe(document.body, { childList: true, subtree: true });"
+        in init
+    )
+    assert "window.addEventListener('resize', mark);" in init

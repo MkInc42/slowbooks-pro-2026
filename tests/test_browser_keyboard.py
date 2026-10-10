@@ -4087,3 +4087,199 @@ def test_a_file_picker_draws_the_keyboards_ring(browser, company, books):
         page.evaluate("() => closeModal()")
     finally:
         page.close()
+
+
+# The focused control against its scrolling container: how far its ring
+# and halo (8px) end inside what the container shows, right and bottom
+SCROLL_ROOM = """() => { const a = document.activeElement, c = a.closest('.table-container'),
+        r = a.getBoundingClientRect(), cr = c.getBoundingClientRect();
+    return { text: (a.textContent || '').trim().slice(0, 20), scrolls: c.scrollWidth > c.clientWidth,
+             right: cr.left + c.clientLeft + c.clientWidth - (r.right + 8),
+             bottom: cr.top + c.clientTop + c.clientHeight - (r.bottom + 8),
+             sticky: getComputedStyle(c.querySelector('tbody td') || c).position }; }"""
+# The last button of a scrolling table's last row in the open dialog
+LAST_IN_SCROLLER = """() => [...document.querySelectorAll(
+    '#modal .table-container--scroll tbody tr:last-child button')].filter(b => b.offsetParent).pop()"""
+
+
+def test_a_scrolling_tables_last_row_and_column_draw_their_whole_halo(
+    browser, company, books
+):
+    """A line-item table's scrolling container (Job Cost Entry's lines, an
+    estimate's, the pay run) had none of the room a plain one has: its
+    last row's ✕ and the pay run's last Stub PDF sat 3 to 5px from its
+    edges, their halo cut at the bottom and the right, and once it
+    scrolled the ring sat on the scrollbar (final review). It has 8px
+    below its table and at its right end now: at 1440, 1024 and 900 each,
+    reached by Tab, ends with its ring and halo inside what the container
+    shows, whether the container scrolls or not, and draws the ring 3:1 as
+    painted on all four sides against the halo and the gate's ground (in
+    both themes at 1440); the pay run's Employee column is still held."""
+    page, handled = _open(browser, company)
+    try:
+        _no_splash(page)
+        scrolled = set()
+        for width in (1440, 1024, 900):
+            page.set_viewport_size({"width": width, "height": 800})
+            for what, open_it in (
+                ("Job Cost Entry's last ✕", "() => JobCostsPage.showForm()"),
+                ("an estimate's last ✕", "() => EstimatesPage.showForm()"),
+                (
+                    "the pay run's last Stub PDF",
+                    f"() => PayrollPage.view({books['pay_run']})",
+                ),
+            ):
+                page.evaluate("() => closeModal()")
+                page.evaluate(f"async () => {{ await ({open_it})(); }}")
+                page.wait_for_function(MODAL_SHOWN)
+                settle(page, handled)
+                _keyed(page, f"({LAST_IN_SCROLLER})()")
+                page.evaluate(SETTLED)
+                room = page.evaluate(SCROLL_ROOM)
+                assert room["right"] >= -0.5 and room["bottom"] >= -0.5, (
+                    width,
+                    what,
+                    room,
+                )
+                if room["scrolls"]:
+                    scrolled.add(what)
+                if "pay run" in what:
+                    held = page.evaluate(
+                        """() => getComputedStyle(document.querySelector(
+                            '#modal .pay-run-table td:first-child')).position"""
+                    )
+                    assert held == "sticky", (width, held)
+                if width == 1440:
+                    _both_themes(page, (what, width), GOLD)
+                else:
+                    _ring_clears(page, (what, width), GOLD["light"])
+            page.evaluate("() => closeModal()")
+        # and among them a container that scrolls
+        assert scrolled, scrolled
+    finally:
+        page.set_viewport_size({"width": 1500, "height": 980})
+        page.close()
+
+
+# A heading the grid's right edge cuts with 36px or more of it shown (so
+# that Chromium's own focus leaves it where it is): a point on its shown
+# part
+CUT_HEADING = """() => { const g = document.getElementById('grid-scroll'), gr = g.getBoundingClientRect(),
+        edge = gr.left + g.clientLeft + g.clientWidth;
+    const a = [...g.querySelectorAll('thead a')].find(a => { const r = a.getBoundingClientRect();
+        return edge - r.left >= 36 && r.right > edge + 2; });
+    if (!a) return null;
+    const r = a.getBoundingClientRect();
+    return { text: a.textContent.trim(), x: (r.left + Math.min(r.right, edge - 3)) / 2, y: r.top + r.height / 2 }; }"""
+HEADING_ROOM = """() => { const a = document.activeElement, g = document.getElementById('grid-scroll'),
+        r = a.getBoundingClientRect(), gr = g.getBoundingClientRect();
+    return { text: (a.textContent || '').trim(), input: App._input,
+             right: gr.left + g.clientLeft + g.clientWidth - (r.right + 8) }; }"""
+
+
+def test_a_key_after_a_click_is_the_keyboards(browser, company, books, divisions):
+    """What moved focus last was the keyboard only after Tab or an arrow
+    key, so after a click a Back chord that is neither — the Mac's ⌘[ —
+    left the heading it put focus back on 79px past the grid's edge
+    (final review). Any key but a modifier held alone is the keyboard's
+    now, and a click is still the pointer's: with the platform a Mac's, a
+    click on a heading the grid's edge cuts (36px or more of it shown, so
+    that Chromium's own focus would leave it) opens its class's P&L, and
+    ⌘[ comes back with focus on that heading, brought in whole with its
+    ring and halo."""
+    page, handled = _open_at(browser, company, BY_CLASS_URL)
+    try:
+        page.wait_for_selector("#report-content .pivot-grid")
+        # a window width at which the grid's edge cuts a heading so
+        cut = None
+        for width in range(1000, 1400, 8):
+            page.set_viewport_size({"width": width, "height": 768})
+            page.wait_for_timeout(50)
+            cut = page.evaluate(CUT_HEADING)
+            if cut:
+                break
+        assert cut, "no heading cut at the grid's edge"
+        settle(page, handled)
+        page.evaluate("""() => Object.defineProperty(Navigator.prototype, 'platform',
+                { get: () => 'MacIntel', configurable: true })""")
+        page.mouse.click(cut["x"], cut["y"])
+        page.wait_for_function(
+            "() => location.hash.startsWith('#/reports/profit-loss-class')"
+        )
+        settle(page, handled)
+        assert page.evaluate("() => App._input") == "pointer"
+        page.keyboard.press("Meta+BracketLeft")
+        page.wait_for_function(
+            "() => location.hash.startsWith('#/reports/profit-loss-by-class')"
+        )
+        page.wait_for_function(
+            "(t) => (document.activeElement.textContent || '').trim() === t",
+            arg=cut["text"],
+        )
+        settle(page, handled)
+        room = page.evaluate(HEADING_ROOM)
+        assert room["input"] == "keyboard" and room["right"] >= -0.5, (cut, room)
+    finally:
+        page.close()
+
+
+SCROLL_REGION = "#modal .table-container"
+
+
+def test_a_wide_table_with_no_control_is_a_region_the_keyboard_scrolls(
+    browser, company, books
+):
+    """A table wider than its box with no control inside it — Benefits'
+    Rates, 106px wider — scrolled for a mouse but not for the keyboard,
+    since a dialog's Tab walks controls only (WCAG 2.1.1; final review).
+    Such a box takes Tab itself, a region named by its heading or its
+    dialog's title: on the Rates dialog it is a region named "Rates — …"
+    as the browser computes it, Tab reaches it and it draws the keyboard's
+    ring as painted in both themes, and → scrolls it. A table that fits,
+    or one that holds a control (Fixed Assets' at 1024, its Dispose
+    buttons), takes no Tab of its own."""
+    page, handled = _open(browser, company)
+    try:
+        _no_splash(page)
+        page.set_viewport_size({"width": 1440, "height": 900})
+        _visit(page, handled, "#/hr/benefits")
+        page.evaluate(
+            f"async () => {{ await BenefitsPage.showRates({books['benefit_code']}); }}"
+        )
+        page.wait_for_function(MODAL_SHOWN)
+        page.wait_for_selector(f"{SCROLL_REGION}[data-scroll-region]")
+        settle(page, handled)
+        title = page.evaluate(
+            "() => document.getElementById('modal-title').textContent.trim()"
+        )
+        ax = _ax(page, SCROLL_REGION)
+        assert ax["role"] == "region" and ax["name"] == title, (ax, title)
+        assert title.startswith("Rates")
+        _keyed(page, f"document.querySelector({SCROLL_REGION!r})")
+        assert page.evaluate("() => document.activeElement.matches(':focus-visible')")
+        _both_themes(page, "the Rates table", GOLD)
+        before = page.evaluate(
+            f"() => document.querySelector({SCROLL_REGION!r}).scrollLeft"
+        )
+        page.keyboard.press("ArrowRight")
+        page.wait_for_function(
+            f"(b) => document.querySelector({SCROLL_REGION!r}).scrollLeft > b",
+            arg=before,
+        )
+        page.evaluate("() => closeModal()")
+        # one that holds a control, and one that fits: nothing of their own
+        for width, route in ((1024, "#/fixed-assets"), (1440, "#/customers")):
+            page.set_viewport_size({"width": width, "height": 800})
+            _visit(page, handled, route)
+            page.wait_for_timeout(100)
+            marks = page.evaluate(
+                """() => [...document.querySelectorAll('#page-content .table-container')]
+                    .filter(c => c.offsetParent).map(c => [c.scrollWidth > c.clientWidth,
+                        c.hasAttribute('tabindex'), c.getAttribute('role')])"""
+            )
+            assert marks and all(m[1:] == [False, None] for m in marks), (route, marks)
+            if route == "#/fixed-assets":
+                assert any(m[0] for m in marks), marks  # it does overflow
+    finally:
+        page.set_viewport_size({"width": 1500, "height": 980})
+        page.close()
