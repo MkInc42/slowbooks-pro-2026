@@ -411,10 +411,16 @@ def test_back_is_a_bordered_gold_button_in_both_themes():
 # ── Round 3, NEW-43: focus is visible on every control, by keyboard only ─
 
 
+def _rule(css, head, last=False):
+    """The body of the (first, or `last`) rule whose selector starts with
+    `head`."""
+    start = css.rindex(head) if last else css.index(head)
+    return css[start : css.index("}", start)]
+
+
 def test_focus_is_visible_on_every_control_by_keyboard_only():
     css = (ROOT / "app/static/css/style.css").read_text(encoding="utf-8")
-    start = css.index("a:focus-visible,")
-    ring = css[start : css.index("}", start)]
+    ring = _rule(css, ":where(a:focus-visible,")
     for sel in ("a", "button", "summary", '[tabindex]:not([tabindex="-1"])'):
         assert f"{sel}:focus-visible" in ring, sel
     assert "outline: 2px solid var(--focus-ring);" in ring
@@ -422,11 +428,10 @@ def test_focus_is_visible_on_every_control_by_keyboard_only():
     assert ":focus {" not in ring and ":focus," not in ring  # never a mouse click's
     # a field keeps its own focus style (the blue border and pale ground):
     # no ring on a click into a box of a dense form
-    for sel in ("input", "select", "textarea"):
-        assert f"{sel}:focus-visible" not in ring, sel
-    # the ring sits first, so a control's own ring still wins on order
-    assert start < css.index(":root {")
-    assert ".grid-scroll:focus-visible { outline: 2px solid var(--qb-navy);" in css
+    for sel in ("input:", "select", "textarea"):
+        assert sel not in ring, sel
+    # the ring sits first
+    assert css.index(":where(a:focus-visible,") < css.index(":root {")
     # the token: a deeper gold than the brand's in light (3.9:1 on white,
     # WCAG 1.4.11), the brand's own in dark
     assert "--focus-ring:     #a37a29;" in css
@@ -442,6 +447,34 @@ def test_focus_is_visible_on_every_control_by_keyboard_only():
     docs = (ROOT / "docs/accessibility.md").read_text(encoding="utf-8")
     assert "**The keyboard's place is visible**" in docs
     assert "A field keeps its own focus style" in docs
+
+
+# ── Round 3 review: the ring is two colours, and a control's own ring wins ─
+
+
+def test_the_generic_ring_counts_for_nothing_against_a_controls_own():
+    """Bare, [tabindex]:not([tabindex="-1"]):focus-visible is (0,3,0) and
+    beat the search results' and the grid's own rings, (0,2,0): a result
+    drew the gold, cut to its top line, and the grid the gold. The rule is
+    wholly inside :where(), :focus-visible too, so it counts for nothing."""
+    css = (ROOT / "app/static/css/style.css").read_text(encoding="utf-8")
+    dark = (ROOT / "app/static/css/dark.css").read_text(encoding="utf-8")
+    start = css.index(":where(a:focus-visible,")
+    selector = css[start : css.index("{", start)]
+    # every selector of the ring inside the one :where(...)
+    assert selector.rstrip().endswith(")"), selector
+    assert selector.count(":where(") == 1 and ":is(" not in selector
+    assert "\n" + selector.split(",")[0] in css  # the rule begins at :where
+    # the controls' own rings, as they were before the gold came
+    grid = _rule(css, ".grid-scroll:focus-visible {")
+    assert "outline: 2px solid var(--qb-navy);" in grid
+    item = _rule(css, ".search-item:focus-visible {", last=True)
+    assert "outline: 2px solid var(--qb-blue, #2a6fb4);" in item
+    assert "outline-offset: -2px;" in item
+    assert (
+        '[data-theme="dark"] .grid-scroll:focus-visible { outline-color: var(--text-link); }'
+        in dark
+    )
 
 
 # ── Round 3, NEW-44: a page's Notes box saves only a change ──────────────

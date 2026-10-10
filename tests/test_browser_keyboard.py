@@ -1621,3 +1621,202 @@ def test_the_dialog_itself_and_a_field_take_focus_without_the_ring(
         assert box["at"] == "report-period-select" and "none" in box["outline"], box
     finally:
         page.close()
+
+
+# ── Round 3 review: the ring as painted, on every ground it meets ───────
+#
+# Read off the screen, as the macOS gate reads it: the pixels the browser
+# painted around the focused control, not the stylesheet's colours.
+
+# The focused control's border box and its outline, as computed
+PAINT_BOX = """() => { const el = document.activeElement, cs = getComputedStyle(el),
+        r = el.getBoundingClientRect();
+    return { x: r.left, y: r.top, w: r.width, h: r.height, dpr: devicePixelRatio,
+             off: parseFloat(cs.outlineOffset) || 0, wid: parseFloat(cs.outlineWidth) || 0,
+             color: cs.outlineColor, shadow: cs.boxShadow, vw: innerWidth, vh: innerHeight }; }"""
+SIDES = ("top", "right", "bottom", "left")
+def _far(a, b):
+    return max(abs(a[k] - b[k]) for k in range(3))
+
+
+def _between(a, b, c, slack=8):
+    """b lies between a and c, and is neither: an anti-aliased edge."""
+    inside = all(
+        min(a[k], c[k]) - slack <= b[k] <= max(a[k], c[k]) + slack for k in range(3)
+    )
+    return inside and _far(a, b) > 12 and _far(b, c) > 12
+
+
+def _painted(page):
+    """The ring around the focused control as painted. Per side: the ring's
+    colour (the pixels of the outline's computed colour where the outline
+    lies, outline-offset to offset + width from the border box, and on
+    while that colour goes on), its width in pixels, the colour painted
+    against it on its inner and its outer side (an anti-aliased pixel
+    between the two skipped), and the ground as the macOS gate reads it,
+    the pixels 1 to 5 beyond the ring: medians over the middle of the
+    side, clear of the corners. A side with no ring painted is None; the
+    outer colour and the ground are None where the ring meets the window's
+    edge (`edge`)."""
+    import io
+    import math
+    import re
+    import statistics
+
+    from PIL import Image
+
+    b = page.evaluate(PAINT_BOX)
+    s, off, wid = b["dpr"], b["off"], b["wid"] or 2
+    pad = max(off, 0) + wid + 12
+    # the clip on whole pixels, so a pixel of the shot is a pixel of the page
+    x0, y0 = max(math.floor(b["x"] - pad), 0), max(math.floor(b["y"] - pad), 0)
+    x1 = min(math.ceil(b["x"] + b["w"] + pad), b["vw"])
+    y1 = min(math.ceil(b["y"] + b["h"] + pad), b["vh"])
+    shot = page.screenshot(clip={"x": x0, "y": y0, "width": x1 - x0, "height": y1 - y0})
+    img = Image.open(io.BytesIO(shot)).convert("RGB")
+    px, w, h = img.load(), img.width, img.height
+    want = [float(v) for v in re.findall(r"[\d.]+", b["color"])[:3]]
+
+    def dev(v):  # CSS px, in device pixels
+        return int(round(v * s))
+
+    # the border box's edges as painted (snapped to the pixel grid)
+    left, top = dev(b["x"]) - dev(x0), dev(b["y"]) - dev(y0)
+    right = dev(b["x"] + b["w"]) - dev(x0)
+    bottom = dev(b["y"] + b["h"]) - dev(y0)
+    at = {  # the pixel `d` out from the border box on a side, at `p` along it
+        "top": lambda d, p: (p, top - 1 - d),
+        "right": lambda d, p: (right + d, p),
+        "bottom": lambda d, p: (p, bottom + d),
+        "left": lambda d, p: (left - 1 - d, p),
+    }
+    edge = {
+        "top": y0 <= 0,
+        "left": x0 <= 0,
+        "right": x1 >= b["vw"],
+        "bottom": y1 >= b["vh"],
+    }
+
+    def middle(a, z):
+        n = z - a
+        return (
+            [a + n // 2]
+            if n <= 8 * s
+            else sorted({a + n * f // 20 for f in range(6, 15)})
+        )
+
+    sides = {}
+    for side in SIDES:
+        along = (
+            middle(top, bottom) if side in ("left", "right") else middle(left, right)
+        )
+        prof = {}
+        for d in range(dev(off - 6), dev(off + wid + 10)):
+            got = [
+                px[x, y]
+                for x, y in (at[side](d, p) for p in along)
+                if 0 <= x < w and 0 <= y < h
+            ]
+            if got:
+                prof[d] = [statistics.median(g[k] for g in got) for k in range(3)]
+        hits = [
+            d
+            for d in range(dev(off) - 1, dev(off + wid) + 1)
+            if d in prof and _far(prof[d], want) <= 40
+        ]
+        if not hits:
+            sides[side] = None
+            continue
+        r0, r1 = min(hits), max(hits)
+        while r0 - 1 in prof and _far(prof[r0 - 1], want) <= 40:
+            r0 -= 1
+        while r1 + 1 in prof and _far(prof[r1 + 1], want) <= 40:
+            r1 += 1
+        ring = [
+            statistics.median(prof[d][k] for d in range(r0, r1 + 1)) for k in range(3)
+        ]
+
+        def against(d, step, ring=ring, prof=prof):
+            for _ in range(2):
+                nxt = prof.get(d + step)
+                if d in prof and nxt is not None and _between(ring, prof[d], nxt):
+                    d += step
+                else:
+                    break
+            return prof.get(d)
+
+        beyond = [
+            prof[d] for d in range(dev(off + wid + 1), dev(off + wid + 6)) if d in prof
+        ]
+        sides[side] = {
+            "ring": ring,
+            "px": r1 - r0 + 1,
+            "inner": against(r0 - 1, -1),
+            "outer": against(r1 + 1, 1),
+            "ground": (
+                [statistics.median(c[k] for c in beyond) for k in range(3)]
+                if beyond
+                else None
+            ),
+            "edge": edge[side],
+        }
+    return sides
+
+
+# The controls' own rings: a search result's blue, the grid's navy (light)
+# or blue (dark), both inside their edge
+OWN = {
+    "search": {"light": "rgb(51, 102, 153)", "dark": "rgb(74, 127, 181)"},
+    "grid": {"light": "rgb(0, 51, 102)", "dark": "rgb(107, 179, 232)"},
+}
+# What the browser computed for the focused control's ring
+OWN_RING = """() => { const a = document.activeElement, cs = getComputedStyle(a);
+    return { cls: String(a.className), id: a.id, offset: cs.outlineOffset, shadow: cs.boxShadow,
+             outline: [cs.outlineWidth, cs.outlineStyle, cs.outlineColor].join(' '),
+             keyboard: a.matches(':focus-visible') }; }"""
+
+
+def test_a_controls_own_ring_wins_over_the_keyboards(
+    browser, company, books, divisions
+):
+    """The generic ring's selector, [tabindex]:not([tabindex="-1"]):focus-
+    visible, is (0,3,0) and beat the search results' and the grid's own
+    rings, (0,2,0): a result drew the gold at +2px, cut by the list to its
+    top line, and the grid the gold in light and blue in dark. Inside
+    :where() it counts for nothing, and each draws its own, as before the
+    gold came: the blue inset ring on a search result, the navy (light) or
+    blue (dark) inset ring on the grid."""
+    page, handled = _open(browser, company)
+    try:
+        _no_splash(page)
+        page.click("#global-search")
+        page.keyboard.type("Harbor")
+        page.wait_for_selector("#search-results:not(.hidden) .search-item[tabindex]")
+        settle(page, handled)
+        page.keyboard.press("ArrowDown")
+        for theme in ("light", "dark"):
+            _theme(page, theme)
+            page.evaluate(SETTLED)
+            item = page.evaluate(OWN_RING)
+            assert "search-item" in item["cls"] and item["keyboard"], item
+            assert item["outline"] == f"2px solid {OWN['search'][theme]}", (theme, item)
+            assert item["offset"] == "-2px" and item["shadow"] == "none", (theme, item)
+            # its own ring, painted on all four sides: not cut to a line
+            sides = _painted(page)
+            assert all(sides[side] for side in SIDES), (theme, sides)
+        _theme(page, "light")
+        page.keyboard.press("Escape")
+        _visit(page, handled, BY_CLASS_URL)
+        page.wait_for_selector("#grid-scroll")
+        settle(page, handled)
+        page.evaluate(FIRST)
+        _tab_until(page, "() => document.activeElement.id === 'grid-scroll'", cap=60)
+        for theme in ("light", "dark"):
+            _theme(page, theme)
+            page.evaluate(SETTLED)
+            grid = page.evaluate(OWN_RING)
+            assert grid["id"] == "grid-scroll" and grid["keyboard"], grid
+            assert grid["outline"] == f"2px solid {OWN['grid'][theme]}", (theme, grid)
+            assert grid["offset"] == "-2px" and grid["shadow"] == "none", (theme, grid)
+    finally:
+        page.close()

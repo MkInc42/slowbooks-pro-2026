@@ -31,13 +31,15 @@
    link's ring, in gold (--focus-ring, each theme's own), on :focus-visible
    only, so a mouse click on a button or a link draws none. A field keeps
    its own focus style (the blue border and pale ground, below), so a
-   dense form gets no ring on a click into a box. The rule sits first so
-   that a control's own ring (the P&L by Class grid, the search results)
-   still wins. */
-a:focus-visible,
-button:focus-visible,
-summary:focus-visible,
-[tabindex]:not([tabindex="-1"]):focus-visible {
+   dense form gets no ring on a click into a box.
+   All in :where(), the rule counts for nothing against a selector of a
+   control's own: the grid's and the search results' own rings win (bare,
+   [tabindex]:not([tabindex="-1"]):focus-visible was (0,3,0) and beat
+   their (0,2,0)). */
+:where(a:focus-visible,
+       button:focus-visible,
+       summary:focus-visible,
+       [tabindex]:not([tabindex="-1"]):focus-visible) {
     outline: 2px solid var(--focus-ring);
     outline-offset: 2px;
 }
