@@ -262,6 +262,7 @@ def test_from_after_to_typed_is_refused_in_one_wording_wherever_dates_are_typed(
         "reports.js": "if (reversedRangeRefused(startInput.value, endInput.value, keep)) {",
         "classes.js": "if (period === 'custom' && reversedRangeRefused(start, end, state)) {",
         "banking.js": "if (reversedRangeRefused(next.start_date, next.end_date, { start: was.start_date, end: was.end_date })) {",
+        "jobs.js": "if (reversedRangeRefused(start, end, JobsPage._period)) {",
     }
     for name, call in uses.items():
         src = (JS / name).read_text(encoding="utf-8")

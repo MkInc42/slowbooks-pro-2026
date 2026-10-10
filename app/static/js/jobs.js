@@ -220,8 +220,21 @@ const JobsPage = {
         const body = $('#job-tab-body');
         if (body) { body.innerHTML = '<p style="color:var(--gray-500);">Loading…</p>'; body.innerHTML = await JobsPage.tabHtml(); }
     },
+    // The period typed on the page. From after To is refused as the
+    // reports, the Classes list and a register refuse it (W-3, W-4): said,
+    // the boxes put back to the period in use, and the page, and its
+    // address, left on it.
     async setPeriod() {
-        JobsPage._period = { start: $('#job-period-start')?.value || '', end: $('#job-period-end')?.value || '' };
+        const startEl = $('#job-period-start');
+        const endEl = $('#job-period-end');
+        const start = startEl?.value || '';
+        const end = endEl?.value || '';
+        if (reversedRangeRefused(start, end, JobsPage._period)) {
+            if (startEl) startEl.value = JobsPage._period.start;
+            if (endEl) endEl.value = JobsPage._period.end;
+            return;
+        }
+        JobsPage._period = { start, end };
         JobsPage._tree = null;
         JobsPage._syncAddress();
         await JobsPage.setTab(JobsPage._tab);

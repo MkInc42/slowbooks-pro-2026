@@ -966,6 +966,61 @@ def test_a_register_refuses_from_after_to_typed_before_touching_its_address(
         page.close()
 
 
+def test_the_job_page_refuses_from_after_to_typed_and_keeps_its_period(
+    browser, company, books
+):
+    """The job page's period boxes had the gap the Classes list and the
+    register had (W-3, W-4): setPeriod took From after To, put it on the
+    address and reloaded the tab on it. It is refused the same way: said,
+    the boxes put back, the page and its address on the period in use.
+    Off the boxes (Job to date) with only a From typed, To typed before it
+    is refused and "from" is what is kept."""
+    url = f"#/jobs/{books['job']}?start_date={SEPT[0]}&end_date={SEPT[1]}"
+    page, handled = _open_at(browser, company, url)
+    try:
+        page.wait_for_selector("#job-tab-body")
+        assert _hash(page) == url
+        length = _history(page)
+        page.fill("#job-period-start", "2026-12-26")
+        page.dispatch_event("#job-period-start", "change")
+        page.wait_for_function(REFUSED)
+        settle(page, handled)
+        assert (
+            "From (Dec 26, 2026) is after To (Sep 30, 2026) — kept Sep 1, 2026 to Sep 30, 2026"
+            in _toasts(page)
+        )
+        assert "in the address" not in _toasts(page)
+        assert page.input_value("#job-period-start") == SEPT[0]
+        assert page.input_value("#job-period-end") == SEPT[1]
+        assert _hash(page) == url
+        assert _history(page) == length
+
+        page.get_by_role("button", name="JTD").click()
+        page.wait_for_function(
+            "(h) => location.hash === h", arg=f"#/jobs/{books['job']}"
+        )
+        settle(page, handled)
+        page.fill("#job-period-start", "2026-09-01")
+        page.dispatch_event("#job-period-start", "change")
+        page.wait_for_function("() => location.hash.includes('start_date=2026-09-01')")
+        settle(page, handled)
+        page.fill("#job-period-end", "2026-08-31")
+        page.dispatch_event("#job-period-end", "change")
+        page.wait_for_function(
+            "() => [...document.querySelectorAll('#toast-container .toast')].some(t => t.textContent.includes('is after To (Aug 31, 2026)'))"
+        )
+        settle(page, handled)
+        assert (
+            "From (Sep 1, 2026) is after To (Aug 31, 2026) — kept from Sep 1, 2026"
+            in _toasts(page)
+        )
+        assert page.input_value("#job-period-start") == "2026-09-01"
+        assert page.input_value("#job-period-end") == ""
+        assert _query(_hash(page)) == {"start_date": "2026-09-01"}
+    finally:
+        page.close()
+
+
 def test_saved_reports_are_listed_by_their_views_title_and_what_they_were_saved_on(
     browser, company, books
 ):
