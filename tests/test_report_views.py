@@ -230,6 +230,19 @@ def test_the_dashboard_cards_link_to_the_dated_report():
     assert "ReportsPage.viewUrl(" in src
 
 
+def test_a_date_in_the_address_must_be_a_real_calendar_date():
+    # The shape alone let 2026-02-30 through: Chromium's Date rolls it to
+    # March 2, the date box then refused it, and the report opened on
+    # another day with no toast (W-5). The day the Date gives back must be
+    # the day asked for, and what is not a date is said so (one wording).
+    utils = (JS / "utils.js").read_text(encoding="utf-8")
+    reader = utils[utils.index("function datesFromQuery(q) {") :]
+    reader = reader[: reader.index("\nfunction todayISO()")]
+    assert "if (!/^\\d{4}-\\d{2}-\\d{2}$/.test(v || '')) return false;" in reader
+    assert "return !isNaN(d.getTime()) && d.toISOString().slice(0, 10) === v;" in reader
+    assert reader.count("in the address is not a date (${q[key]}) — ignored") == 1
+
+
 def test_the_dev_note_is_short_and_says_how_to_register_a_view():
     note = (ROOT / "docs" / "dev" / "report-views.md").read_text(encoding="utf-8")
     assert len(note.strip().splitlines()) <= 40

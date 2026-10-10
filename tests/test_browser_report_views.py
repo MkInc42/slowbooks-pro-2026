@@ -561,6 +561,40 @@ def test_a_date_in_the_address_that_is_not_one_is_said_so(browser, company, book
     finally:
         page.close()
 
+    # an impossible day has the shape of a date, and Chromium's Date rolls
+    # it over (2026-02-30 is March 2), so it passed as one; the date box
+    # then refused it, and the report opened on January 1 with no toast
+    # (W-5). A real calendar date is asked for, and said so the same way.
+    page, handled = _open_at(
+        browser,
+        company,
+        "#/reports/profit-loss?start_date=2026-02-30&end_date=2026-08-31",
+    )
+    try:
+        page.wait_for_selector("#report-content table")
+        assert (
+            "start_date in the address is not a date (2026-02-30) — ignored"
+            in _toasts(page)
+        )
+        assert "end_date" not in _toasts(page)
+        assert _hash(page) == (
+            f"#/reports/profit-loss?start_date={dt.date.today().year}-01-01&end_date=2026-08-31"
+        )
+        assert page.evaluate(PERIOD) == {
+            "period": "custom",
+            "start": f"{dt.date.today().year}-01-01",
+            "end": "2026-08-31",
+        }
+        # the reader itself: a day a month does not have, a leap day in a
+        # year without one, a month nobody has — none is a date; a real
+        # leap day is
+        assert page.evaluate(
+            "() => ['2026-02-30', '2026-04-31', '2023-02-29', '2024-02-29', '2026-13-01', '2026-09-31']"
+            ".map(d => datesFromQuery({ start_date: d }).start_date)"
+        ) == ["", "", "", "2024-02-29", "", ""]
+    finally:
+        page.close()
+
 
 def test_a_saved_report_opens_through_its_address_and_an_unknown_view_does_not_crash(
     browser, company, books
