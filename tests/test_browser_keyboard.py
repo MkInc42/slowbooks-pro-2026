@@ -2569,6 +2569,64 @@ def test_the_notes_box_saves_a_change_once_trimmed_and_in_order(
         page.close()
 
 
+@pytest.mark.parametrize(
+    ("kind", "box"), [("customers", "cust-notes"), ("vendors", "vend-notes")]
+)
+def test_a_failed_save_says_so_after_a_saved_one(browser, company, books, kind, box):
+    """A "✓ saved" was cleared 1.5s later whatever the box said by then,
+    so a "⚠ save failed" shown within those 1.5s was wiped too, and the
+    failure went unsaid (review). A save that fails just after one that
+    went through says so, and still does once the 1.5s are long past; a
+    "✓ saved" alone clears as before."""
+    rid = books["customer" if kind == "customers" else "vendor"]
+    api = f"/api/{kind}/{rid}"
+    sel = f"#{box}-{rid}"
+    status = f"#{box.replace('notes', 'note-status')}-{rid}"
+    page, handled = _open_at(browser, company, f"#/{kind}/{rid}")
+
+    def leave(words):
+        page.focus(sel)
+        page.fill(sel, words)
+        page.keyboard.press("Tab")
+
+    def says():
+        return page.evaluate("(s) => document.querySelector(s).textContent", status)
+
+    try:
+        page.wait_for_function(MODAL_SHOWN)
+        page.wait_for_selector(sel)
+        settle(page, handled)
+        leave("Ships on Tuesdays.")
+        page.wait_for_function(
+            "(s) => document.querySelector(s).textContent === '✓ saved'", arg=status
+        )
+        # the next save fails, within the first one's 1.5s
+        page.evaluate(
+            """() => { window.__put = API.put;
+                API.put = () => Promise.reject(new Error('The server did not answer')); }"""
+        )
+        leave("Ships on Tuesdays and Fridays.")
+        page.wait_for_function(
+            "(s) => document.querySelector(s).textContent === '⚠ save failed'",
+            arg=status,
+        )
+        page.wait_for_timeout(2000)
+        assert says() == "⚠ save failed"
+        assert company.get(api).json()["notes"] == "Ships on Tuesdays."
+        # a save that goes through clears its "✓ saved" as before
+        page.evaluate("() => { API.put = window.__put; }")
+        leave("Ships on Fridays.")
+        page.wait_for_function(
+            "(s) => document.querySelector(s).textContent === '✓ saved'", arg=status
+        )
+        page.wait_for_timeout(2000)
+        assert says() == ""
+        assert company.get(api).json()["notes"] == "Ships on Fridays."
+    finally:
+        page.close()
+        company.put(api, json={"notes": ""})
+
+
 # A click that, as in WebKit, does not put focus on the link clicked:
 # the mouse goes down without moving focus; where focus was is noted.
 WEBKIT_CLICKS = """() => {

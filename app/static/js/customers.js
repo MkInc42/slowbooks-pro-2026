@@ -297,14 +297,29 @@ const CustomersPage = {
     // change made while one is on its way goes after it.
     _notesSaving: {},
 
+    // The word beside the box, one at a time: showing one stops the
+    // clearing an earlier "✓ saved" set going, which wiped a "⚠ save
+    // failed" shown within its 1.5s (review).
+    _noteTimers: {},
+    _noteStatus(id, text, clearAfter = 0) {
+        clearTimeout(CustomersPage._noteTimers[id]);
+        delete CustomersPage._noteTimers[id];
+        const status = document.getElementById(`cust-note-status-${id}`);
+        if (!status) return;
+        status.textContent = text;
+        if (clearAfter) CustomersPage._noteTimers[id] = setTimeout(() => {
+            delete CustomersPage._noteTimers[id];
+            status.textContent = '';
+        }, clearAfter);
+    },
+
     async _saveNotes(id, value) {
         const box = document.getElementById(`cust-notes-${id}`);
         const pending = CustomersPage._notesSaving[id];
         const onFile = pending ? pending.value : box ? box.defaultValue : null;
         if (onFile !== null && value.trim() === onFile.trim()) return;
         if (!value.trim()) value = '';
-        const status = document.getElementById(`cust-note-status-${id}`);
-        if (status) status.textContent = 'saving…';
+        CustomersPage._noteStatus(id, 'saving…');
         const save = { value };
         save.done = (async () => {
             if (pending) await pending.done.catch(() => {});
@@ -314,12 +329,9 @@ const CustomersPage = {
         try {
             await save.done;
             if (box) box.defaultValue = value;
-            if (status) {
-                status.textContent = '✓ saved';
-                setTimeout(() => { if (status) status.textContent = ''; }, 1500);
-            }
+            CustomersPage._noteStatus(id, '✓ saved', 1500);
         } catch (err) {
-            if (status) status.textContent = '⚠ save failed';
+            CustomersPage._noteStatus(id, '⚠ save failed');
             toast(err.message, 'error');
         } finally {
             if (CustomersPage._notesSaving[id] === save) delete CustomersPage._notesSaving[id];

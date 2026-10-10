@@ -225,14 +225,29 @@ const VendorsPage = {
     // spaces as empty; one save at a time.
     _notesSaving: {},
 
+    // The word beside the box, one at a time: showing one stops the
+    // clearing an earlier "✓ saved" set going, which wiped a "⚠ save
+    // failed" shown within its 1.5s (review).
+    _noteTimers: {},
+    _noteStatus(id, text, clearAfter = 0) {
+        clearTimeout(VendorsPage._noteTimers[id]);
+        delete VendorsPage._noteTimers[id];
+        const status = document.getElementById(`vend-note-status-${id}`);
+        if (!status) return;
+        status.textContent = text;
+        if (clearAfter) VendorsPage._noteTimers[id] = setTimeout(() => {
+            delete VendorsPage._noteTimers[id];
+            status.textContent = '';
+        }, clearAfter);
+    },
+
     async _saveNotes(id, value) {
         const box = document.getElementById(`vend-notes-${id}`);
         const pending = VendorsPage._notesSaving[id];
         const onFile = pending ? pending.value : box ? box.defaultValue : null;
         if (onFile !== null && value.trim() === onFile.trim()) return;
         if (!value.trim()) value = '';
-        const status = document.getElementById(`vend-note-status-${id}`);
-        if (status) status.textContent = 'saving…';
+        VendorsPage._noteStatus(id, 'saving…');
         const save = { value };
         save.done = (async () => {
             if (pending) await pending.done.catch(() => {});
@@ -242,12 +257,9 @@ const VendorsPage = {
         try {
             await save.done;
             if (box) box.defaultValue = value;
-            if (status) {
-                status.textContent = '✓ saved';
-                setTimeout(() => { if (status) status.textContent = ''; }, 1500);
-            }
+            VendorsPage._noteStatus(id, '✓ saved', 1500);
         } catch (err) {
-            if (status) status.textContent = '⚠ save failed';
+            VendorsPage._noteStatus(id, '⚠ save failed');
             toast(err.message, 'error');
         } finally {
             if (VendorsPage._notesSaving[id] === save) delete VendorsPage._notesSaving[id];

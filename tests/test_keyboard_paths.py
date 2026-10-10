@@ -659,6 +659,21 @@ def test_a_pages_notes_box_saves_only_a_change():
             f"if ({page}._notesSaving[id] === save) delete {page}._notesSaving[id];"
             in notes
         ), name
+        # the word beside the box, one at a time: a new one stops the
+        # clearing a "✓ saved" set going (it wiped a "⚠ save failed")
+        for said in (
+            f"{page}._noteStatus(id, 'saving…');",
+            f"{page}._noteStatus(id, '✓ saved', 1500);",
+            f"{page}._noteStatus(id, '⚠ save failed');",
+        ):
+            assert said in notes, (name, said)
+        assert "setTimeout" not in notes and "textContent" not in notes, name
+        status = src[src.index("    _noteStatus(id, text, clearAfter = 0) {") :]
+        status = status[: status.index("\n    },")]
+        assert status.index(f"clearTimeout({page}._noteTimers[id]);") < status.index(
+            "status.textContent = text;"
+        ), name
+        assert f"{page}._noteTimers[id] = setTimeout(" in status, name
 
 
 # ── Round 3, W-7: Back refocuses the chart's account and the drill-down's line ──
