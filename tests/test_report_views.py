@@ -243,6 +243,35 @@ def test_a_date_in_the_address_must_be_a_real_calendar_date():
     assert reader.count("in the address is not a date (${q[key]}) — ignored") == 1
 
 
+def test_from_after_to_typed_is_refused_in_one_wording_wherever_dates_are_typed():
+    # The Classes list took From after To typed into its boxes (W-3), and
+    # a register wrote them to the address and read them back as "in the
+    # address … both ignored" with both boxes emptied (W-4), while the
+    # reports said "From (…) is after To (…) — kept …" and put the boxes
+    # back. One helper says it for all of them, and the address is never
+    # touched with a reversed range.
+    utils = (JS / "utils.js").read_text(encoding="utf-8")
+    helper = utils[utils.index("function reversedRangeRefused(start, end, kept") :]
+    helper = helper[: helper.index("\n}\n")]
+    assert "if (!(start && end && start > end)) return false;" in helper
+    assert (
+        "toast(`From (${formatDate(start)}) is after To (${formatDate(end)}) — kept ${was}`, 'error');"
+        in helper
+    )
+    uses = {
+        "reports.js": "if (reversedRangeRefused(startInput.value, endInput.value, keep)) {",
+        "classes.js": "if (period === 'custom' && reversedRangeRefused(start, end, state)) {",
+    }
+    for name, call in uses.items():
+        src = (JS / name).read_text(encoding="utf-8")
+        assert call in src, name
+        assert "is after To" not in src, f"{name} words the refusal itself"
+    classes = (JS / "classes.js").read_text(encoding="utf-8")
+    # the list and the class page stop on a refused range: no reload, no
+    # address written
+    assert classes.count("if (p.kept) return;") == 2
+
+
 def test_the_dev_note_is_short_and_says_how_to_register_a_view():
     note = (ROOT / "docs" / "dev" / "report-views.md").read_text(encoding="utf-8")
     assert len(note.strip().splitlines()) <= 40

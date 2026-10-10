@@ -104,6 +104,23 @@ function datesFromQuery(q) {
     return out;
 }
 
+// From after To typed into a page's boxes — a report's custom range, the
+// Classes list's or a class page's, a register's, the job page's — is
+// refused the one way (NEW-35; W-3, W-4): said, naming both dates and the
+// range kept, which the page stays on. The caller puts the boxes back and
+// leaves the address alone. `kept` is { start, end }; a register may have
+// one of them or neither, in which case `none` says what is kept. True
+// when refused.
+function reversedRangeRefused(start, end, kept, none = 'every date') {
+    if (!(start && end && start > end)) return false;
+    const k = kept || {};
+    const was = k.start && k.end ? `${formatDate(k.start)} to ${formatDate(k.end)}`
+        : k.start ? `from ${formatDate(k.start)}`
+            : k.end ? `to ${formatDate(k.end)}` : none;
+    toast(`From (${formatDate(start)}) is after To (${formatDate(end)}) — kept ${was}`, 'error');
+    return true;
+}
+
 function todayISO() {
     const d = new Date();
     return d.getFullYear() + '-' + String(d.getMonth()+1).padStart(2,'0') + '-' + String(d.getDate()).padStart(2,'0');

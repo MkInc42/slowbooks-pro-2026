@@ -840,6 +840,69 @@ def test_from_after_to_is_refused_and_the_dates_before_it_are_kept(
         page.close()
 
 
+REFUSED = "() => [...document.querySelectorAll('#toast-container .toast')].some(t => t.textContent.includes('is after To'))"
+
+
+def test_the_classes_list_and_a_class_page_refuse_from_after_to_typed(
+    browser, company, books
+):
+    """The Classes list took From after To typed into its boxes: no toast,
+    the address became the reversed range, and the note read "nets to
+    $0.00" (W-3). Typed dates go through the refusal every period report
+    has: said, naming both dates and the range kept; the boxes put back;
+    the list, and its address, still on that range. The class page reads
+    its boxes the same way."""
+    url = f"#/classes?start_date={SEPT[0]}&end_date={SEPT[1]}"
+    page, handled = _open_at(browser, company, url)
+    try:
+        page.wait_for_selector("#classes-total-note")
+        assert _hash(page) == url
+        note = page.inner_text("#classes-total-note")
+        length = _history(page)
+        page.fill("#classes-start", "2026-12-26")
+        page.dispatch_event("#classes-start", "change")
+        page.wait_for_function(REFUSED)
+        settle(page, handled)
+        assert (
+            "From (Dec 26, 2026) is after To (Sep 30, 2026) — kept Sep 1, 2026 to Sep 30, 2026"
+            in _toasts(page)
+        )
+        assert "in the address" not in _toasts(page)
+        assert page.input_value("#classes-period") == "custom"
+        assert page.input_value("#classes-start") == SEPT[0]
+        assert page.input_value("#classes-end") == SEPT[1]
+        assert _hash(page) == url
+        assert _history(page) == length
+        assert page.inner_text("#classes-total-note") == note
+        assert "$0.00, the Profit & Loss" not in note
+
+        # the class page: To moved before From
+        uncat = next(
+            c for c in company.get("/api/classes").json() if c["is_system_default"]
+        )
+        url = f"#/classes/{uncat['id']}?start_date={SEPT[0]}&end_date={SEPT[1]}"
+        _visit(page, handled, url)
+        page.wait_for_selector("#class-stats")
+        assert _hash(page) == url
+        stats = page.inner_text("#class-stats")
+        page.fill("#class-end", "2026-08-01")
+        page.dispatch_event("#class-end", "change")
+        page.wait_for_function(
+            "() => [...document.querySelectorAll('#toast-container .toast')].some(t => t.textContent.includes('is after To (Aug 1, 2026)'))"
+        )
+        settle(page, handled)
+        assert (
+            "From (Sep 1, 2026) is after To (Aug 1, 2026) — kept Sep 1, 2026 to Sep 30, 2026"
+            in _toasts(page)
+        )
+        assert page.input_value("#class-start") == SEPT[0]
+        assert page.input_value("#class-end") == SEPT[1]
+        assert _hash(page) == url
+        assert page.inner_text("#class-stats") == stats
+    finally:
+        page.close()
+
+
 def test_saved_reports_are_listed_by_their_views_title_and_what_they_were_saved_on(
     browser, company, books
 ):
