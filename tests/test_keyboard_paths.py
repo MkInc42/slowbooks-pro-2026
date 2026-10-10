@@ -1035,3 +1035,20 @@ def test_the_docs_say_what_tab_reaches_on_a_mac_page():
         " — reaches links and buttons too",
     ):
         assert words in dialogs, words
+
+
+def test_a_dark_themes_fields_say_they_are_dark():
+    """The browser draws a field's own parts (a date's calendar icon, a
+    select's arrow) for a light page unless the field says it is dark: the
+    dark theme's fields say so; the light theme sets no color-scheme, and
+    checkboxes, radios and a file's button keep their look."""
+    css = (ROOT / "app/static/css/style.css").read_text(encoding="utf-8")
+    dark = (ROOT / "app/static/css/dark.css").read_text(encoding="utf-8")
+    assert "color-scheme" not in css
+    head = (
+        '[data-theme="dark"] .form-group :is(input:not([type="checkbox"], [type="radio"],'
+        ' [type="file"]), select, textarea),\n'
+        f'[data-theme="dark"] {FIELD} {{'
+    )
+    assert "color-scheme: dark;" in _rule(dark, head)
+    assert dark.count("color-scheme") == 1

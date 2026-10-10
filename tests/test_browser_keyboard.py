@@ -3609,3 +3609,94 @@ def test_banking_and_the_dashboards_bank_cards_are_links_the_keyboard_opens(
         )
     finally:
         page.close()
+
+
+# The far end of a field, where the browser draws its own part (a date's
+# calendar icon, a select's arrow), inside the border: its ground (the
+# median pixel), the part (the dozen pixels furthest from the ground), and
+# the field's color-scheme
+FIELD_END = """(sel) => { const e = document.querySelector(sel), r = e.getBoundingClientRect();
+    return { x: r.left + r.width - 26, y: r.top + 3, w: 22, h: r.height - 6,
+             scheme: getComputedStyle(e).colorScheme }; }"""
+
+
+def _part_contrast(page, sel):
+    """The browser's own part at the field's far end, as painted: its
+    contrast against the field's ground there, and the field's
+    color-scheme."""
+    import io
+    import math
+    import statistics
+
+    from PIL import Image
+
+    b = page.evaluate(FIELD_END, sel)
+    clip = {
+        "x": math.floor(b["x"]),
+        "y": math.floor(b["y"]),
+        "width": math.ceil(b["w"]),
+        "height": math.ceil(b["h"]),
+    }
+    img = Image.open(io.BytesIO(page.screenshot(clip=clip))).convert("RGB")
+    px = list(img.getdata())
+    ground = [statistics.median(c[k] for c in px) for k in range(3)]
+    far = sorted(px, key=lambda c: -_far(c, ground))[:12]
+    part = [sum(c[k] for c in far) / len(far) for k in range(3)]
+    return contrast(_rgb(part), _rgb(ground)), b["scheme"]
+
+
+# Each kind of date field and select, where it is: (route or opener, field)
+FIELD_PARTS = [
+    ("() => InvoicesPage.showForm()", "#modal .form-group input[type=date]"),
+    (
+        f"#/reports/profit-loss?start_date={SEPT[0]}&end_date={SEPT[1]}",
+        "#report-custom-start",
+    ),
+    (
+        f"#/reports/profit-loss?start_date={SEPT[0]}&end_date={SEPT[1]}",
+        "#report-period-select",
+    ),
+    ("#/iif", "#page-content .iif-date-range input[type=date]"),
+    ("#/invoices", "#inv-status-filter"),
+    (
+        "#/reports/general-ledger?start_date=2025-01-01&end_date=2026-12-31",
+        "#gl-account",
+    ),
+]
+
+
+def test_a_dark_fields_own_parts_are_drawn_for_a_dark_field(browser, company, books):
+    """The browser draws a field's own parts — a date's calendar icon, a
+    select's arrow — for a light page unless the field says it is dark:
+    black on the dark field, 1.15:1 (review), on a form's dates, a
+    report's From and To, IIF export's dates and the selects. In the dark
+    theme the fields say so (color-scheme: dark): each kind's icon or arrow
+    stands 3:1 against its field as painted; in light the field is as it
+    was (color-scheme normal) and its icon or arrow 3:1 too."""
+    page, handled = _open(browser, company)
+    try:
+        _no_splash(page)
+        seen = {}
+        for where, sel in FIELD_PARTS:
+            if where.startswith("#/"):
+                _visit(page, handled, where)
+            else:
+                page.evaluate("() => closeModal()")
+                page.evaluate(f"async () => {{ await ({where})(); }}")
+                page.wait_for_function(MODAL_SHOWN)
+            page.wait_for_selector(sel)
+            settle(page, handled)
+            page.evaluate(
+                f"() => document.querySelector({sel!r}).scrollIntoView({{block: 'center'}})"
+            )
+            for theme in ("light", "dark"):
+                _theme(page, theme)
+                page.evaluate(SETTLED)
+                seen[(sel, theme)] = _part_contrast(page, sel)
+            _theme(page, "light")
+            page.evaluate("() => closeModal()")
+    finally:
+        page.close()
+    for (sel, theme), (ratio, scheme) in seen.items():
+        assert scheme == ("dark" if theme == "dark" else "normal"), (sel, theme, scheme)
+        assert ratio >= 3.0, (sel, theme, ratio, seen)

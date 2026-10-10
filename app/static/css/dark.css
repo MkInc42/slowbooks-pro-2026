@@ -228,6 +228,15 @@
     background: #1a1e28;
     border-color: var(--input-focus);
 }
+/* The browser draws a field's own parts for a light page unless the field
+   says it is dark: a date's calendar icon was black on the dark field,
+   1.15:1 (review), and a select's arrow and a number's steppers with it.
+   The fields are dark and say so (the browser's popup lists and calendar
+   follow); a checkbox, a radio and a file's button keep the look they had. */
+[data-theme="dark"] .form-group :is(input:not([type="checkbox"], [type="radio"], [type="file"]), select, textarea),
+[data-theme="dark"] :where(#page-content, #modal) :where(input:not([type="checkbox"], [type="radio"], [type="file"], [type="range"], [type="color"], [type="hidden"], [type="submit"], [type="button"], [type="reset"], [type="image"]), select, textarea) {
+    color-scheme: dark;
+}
 /* a checkbox or a radio keeps the keyboard's ring and its halo over the
    sunken shadow above (style.css) */
 [data-theme="dark"] input:is([type="checkbox"], [type="radio"]):focus-visible {
