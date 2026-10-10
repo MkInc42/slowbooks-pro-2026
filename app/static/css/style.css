@@ -22,6 +22,27 @@
     outline-offset: 2px;
 }
 
+/* Focus is visible on every control (WCAG 2.4.7). Links and buttons had
+   no focus style of their own and relied on the browser's ring, which
+   WebKit, with the Mac's keyboard navigation off as it ships, draws
+   faintly on buttons and not at all on links: Tab walked A/R Aging's
+   customers with nothing to show where it was (macOS gate NEW-43, 2.22.0).
+   Every control the keyboard reaches draws the skip link's ring, in the
+   brand's gold (--focus-ring, each theme's own), on :focus-visible only,
+   so a mouse click on a button or a link draws none. The rule sits first
+   so that a control's own ring (the P&L by Class grid, the search results)
+   still wins; the two form rules that dropped the outline no longer do. */
+a:focus-visible,
+button:focus-visible,
+input:focus-visible,
+select:focus-visible,
+textarea:focus-visible,
+summary:focus-visible,
+[tabindex]:focus-visible {
+    outline: 2px solid var(--focus-ring);
+    outline-offset: 2px;
+}
+
 /* ============================================================================
  * BUILD NOTE: The yellow invoice texture (RT_BITMAP 0x012C) was a 4x4 px
  * tiled BMP in the original. We recreated it as a CSS gradient. Close enough.
@@ -78,6 +99,7 @@
     --qb-green:       #2b8055;
     --qb-green-dark:  #2d7d56;
     --qb-gold:        #cc9933;
+    --focus-ring:     var(--qb-gold);   /* the keyboard's ring (NEW-43) */
     --qb-red:         #cc3333;
     --qb-orange:      #b2592d;
 
@@ -798,7 +820,6 @@ td.amount, th.amount {
 .form-group input:focus,
 .form-group select:focus,
 .form-group textarea:focus {
-    outline: none;
     border-color: var(--input-focus);
     background: #fffff8;
     box-shadow: inset 1px 1px 2px rgba(0,0,0,0.08);
@@ -1497,7 +1518,6 @@ tr.clickable { cursor: pointer; }
 }
 
 .tb-search:focus {
-    outline: none;
     border-color: var(--input-focus);
     box-shadow: inset 0 1px 2px rgba(0,0,0,0.08), 0 0 0 2px rgba(51,102,204,0.2);
 }

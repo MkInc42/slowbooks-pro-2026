@@ -1276,3 +1276,87 @@ def test_back_is_a_bordered_gold_button_that_is_never_grey_while_it_works(
         assert rest["background"] == NONE and float(rest["opacity"]) < 1
     finally:
         page.close()
+
+
+# ── Round 3, NEW-43: the keyboard's place is visible on links and buttons ──
+
+# Where focus is, and the ring drawn there: the computed outline, and
+# whether the browser counts this focus as the keyboard's.
+RING = """() => { const a = document.activeElement, cs = getComputedStyle(a);
+    return { at: a.dataset.rowKey || a.id || a.getAttribute('href') || a.tagName.toLowerCase(),
+             tag: a.tagName.toLowerCase(), offset: cs.outlineOffset,
+             outline: [cs.outlineWidth, cs.outlineStyle, cs.outlineColor].join(' '),
+             keyboard: a.matches(':focus-visible') }; }"""
+# a button's colours fade (transition: all 0.1s): the ring is read settled
+SETTLED = "() => document.getAnimations().forEach(a => a.finish())"
+
+
+def _tab_until(page, test, cap=40, shift=False):
+    for _ in range(cap):
+        page.keyboard.press("Shift+Tab" if shift else "Tab")
+        if page.evaluate(test):
+            page.evaluate(SETTLED)
+            return page.evaluate(RING)
+    raise AssertionError(f"Tab never reached {test}")
+
+
+def test_tab_shows_where_it_is_on_a_report_row_and_a_mouse_click_draws_no_ring(
+    browser, company, books
+):
+    """style.css had no focus style for links or buttons, and WebKit draws
+    no ring on a link with the Mac's keyboard navigation off: the owner
+    tabbed through A/R Aging and never saw the customer names take focus
+    (macOS gate, round 2). Now every control draws the skip link's ring,
+    2px of the brand's gold with an offset, in both themes — on keyboard
+    focus only."""
+    page, handled = _open_at(
+        browser, company, "#/reports/ar-aging?as_of_date=2026-09-30"
+    )
+    try:
+        page.wait_for_function(MODAL_SHOWN)
+        page.wait_for_selector('#modal a[data-row-key^="customer:"]')
+        settle(page, handled)
+        page.evaluate(FIRST)
+        row = _tab_until(
+            page,
+            "() => (document.activeElement.dataset.rowKey || '').startsWith('customer:')",
+        )
+        assert row["tag"] == "a" and row["keyboard"], row
+        for theme in ("light", "dark"):
+            _theme(page, theme)
+            on = page.evaluate(RING)
+            assert on["outline"] == f"2px solid {GOLD[theme]}", (theme, on)
+            assert on["offset"] == "2px", (theme, on)
+        # a button before the table the same: Apply Late Fees, Email All
+        # Overdue, Send Collection Letters
+        button = _tab_until(
+            page, "() => document.activeElement.tagName === 'BUTTON'", shift=True
+        )
+        assert button["keyboard"] and button["outline"] == f"2px solid {GOLD['dark']}"
+        _theme(page, "light")
+        page.evaluate(SETTLED)
+        assert page.evaluate(RING)["outline"] == f"2px solid {GOLD['light']}"
+        # the dialog closed from the keyboard; a mouse click on a button:
+        # focus, and no ring
+        page.keyboard.press("Escape")
+        page.wait_for_function(f"!({MODAL_SHOWN})()")
+        page.click("#theme-toggle")
+        page.evaluate(SETTLED)
+        clicked = page.evaluate(RING)
+        assert clicked["at"] == "theme-toggle" and not clicked["keyboard"], clicked
+        assert "none" in clicked["outline"], clicked
+        page.click("#theme-toggle")  # light again
+        # a link clicked: the same; the next Tab from it draws the ring
+        page.click('#sidebar a[href="#/customers"]')
+        page.wait_for_function(AT, arg="#/customers")
+        settle(page, handled)
+        page.evaluate(SETTLED)
+        link = page.evaluate(RING)
+        assert link["at"] == "#/customers" and not link["keyboard"], link
+        assert "none" in link["outline"], link
+        page.keyboard.press("Tab")
+        page.evaluate(SETTLED)
+        after = page.evaluate(RING)
+        assert after["keyboard"] and after["outline"] == f"2px solid {GOLD['light']}"
+    finally:
+        page.close()

@@ -33,6 +33,7 @@
     --qb-green:       #4caf7a;
     --qb-green-dark:  #3d9065;
     --qb-gold:        #e0a840;
+    --focus-ring:     var(--qb-gold);   /* the keyboard's ring: 6.4:1 on the panel (NEW-43) */
     /* red text (overdue counts and days, negative figures, errors) was
        4.33:1 on the panel, 5.05 now; the void and overdue badges take the
        same red, 4.86 on their ground */

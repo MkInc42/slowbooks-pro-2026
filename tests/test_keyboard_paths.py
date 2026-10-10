@@ -405,3 +405,27 @@ def test_back_is_a_bordered_gold_button_in_both_themes():
     off = dark[dark.index('[data-theme="dark"] .tb-back:disabled {') :]
     off = off[: off.index("}")]
     assert "border-color: transparent;" in off and "color: var(--text-muted);" in off
+
+
+# ── Round 3, NEW-43: focus is visible on every control, by keyboard only ─
+
+
+def test_focus_is_visible_on_every_control_by_keyboard_only():
+    css = (ROOT / "app/static/css/style.css").read_text(encoding="utf-8")
+    start = css.index("a:focus-visible,")
+    ring = css[start : css.index("}", start)]
+    for sel in ("a", "button", "input", "select", "textarea", "summary", "[tabindex]"):
+        assert f"{sel}:focus-visible" in ring, sel
+    assert "outline: 2px solid var(--focus-ring);" in ring
+    assert "outline-offset: 2px;" in ring
+    assert ":focus {" not in ring and ":focus," not in ring  # never a mouse click's
+    # the ring sits first, so a control's own ring still wins on order
+    assert start < css.index(":root {")
+    assert ".grid-scroll:focus-visible { outline: 2px solid var(--qb-navy);" in css
+    # the token, each theme's own gold; no rule drops the outline any more
+    assert "--focus-ring:     var(--qb-gold);" in css
+    assert "outline: none" not in css
+    dark = (ROOT / "app/static/css/dark.css").read_text(encoding="utf-8")
+    assert "--focus-ring:     var(--qb-gold);" in dark
+    docs = (ROOT / "docs/accessibility.md").read_text(encoding="utf-8")
+    assert "**The keyboard's place is visible**" in docs
