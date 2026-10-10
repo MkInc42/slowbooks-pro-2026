@@ -363,10 +363,10 @@ const ReportsPage = {
     // written (the heading's capitals are the stylesheet's, and reached the
     // name), the line under it its description; and its key, noted on its
     // click (ReportsPage._leaveFrom), puts focus back on it when Back
-    // returns here. It looks as the card did (.report-card).
+    // returns here. It looks as the card did (.card-link).
     _card(view, title, text) {
         const id = `report-card-${view}`;
-        return `<a class="card report-card" href="${ReportsPage.viewUrl(view, {})}" data-row-key="report:${view}"
+        return `<a class="card card-link" href="${ReportsPage.viewUrl(view, {})}" data-row-key="report:${view}"
                     aria-label="${escapeHtml(title)}" aria-describedby="${id}-text"
                     onclick="ReportsPage._leaveFrom(this)" onkeydown="ReportsPage._cardKey(event)">
                     <div class="card-header">${title}</div>

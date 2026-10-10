@@ -970,16 +970,49 @@ def test_a_report_center_card_is_a_link_that_looks_as_the_card_did():
     shadow while focused, over the dark theme's .card too; Space opens one
     as Enter does."""
     css = (ROOT / "app/static/css/style.css").read_text(encoding="utf-8")
-    card = _rule(css, ".report-card {")
+    card = _rule(css, ".card-link {")
     for line in ("display: block;", "color: inherit;", "text-decoration: none;"):
         assert line in card, line
-    assert ".report-card:hover { text-decoration: none; }" in css
+    assert ".card-link:hover { text-decoration: none; }" in css
     assert (
-        "a.report-card:focus-visible { box-shadow: 0 0 0 8px var(--focus-halo); }"
-        in css
+        "a.card-link:focus-visible { box-shadow: 0 0 0 8px var(--focus-halo); }" in css
     )
     src = _src("reports.js")
     key = src[src.index("    _cardKey(e) {") :]
     key = key[: key.index("\n    },")]
     assert "if (e.key !== ' ' || e.altKey || e.ctrlKey || e.metaKey) return;" in key
     assert "e.preventDefault();" in key and "e.currentTarget.click();" in key
+
+
+def test_banking_and_the_dashboards_bank_cards_are_links():
+    """Banking's account cards and the dashboard's bank cards are links to
+    their registers, keyed, named by the account and described by the rest
+    of the card, noting themselves on their click; Space opens one as Enter
+    does. No card anywhere is a click alone any more."""
+    banking = _src("banking.js")
+    assert (
+        '<a class="card card-link" href="#/banking/${a.account_id}"'
+        ' data-row-key="bank:${a.account_id}"' in banking
+    )
+    assert (
+        'aria-label="${escapeHtml(a.name)}" aria-describedby="${id}-kind ${id}-value ${id}-feed"'
+        in banking
+    )
+    dash = _src("dashboard.js")
+    assert (
+        '<a class="card card-link" href="#/banking/${b.id}" data-row-key="bank:${b.id}"'
+        in dash
+    )
+    assert (
+        'aria-label="${escapeHtml(b.name)}" aria-describedby="dash-bank-${b.id}-value'
+        in dash
+    )
+    for src in (banking, dash):
+        assert (
+            'onclick="ReportsPage._leaveFrom(this)" onkeydown="ReportsPage._cardKey(event)"'
+            in src
+        )
+    for f in sorted(JS.glob("*.js")):
+        assert 'class="card" style="cursor:pointer" onclick=' not in f.read_text(
+            encoding="utf-8"
+        ), f.name

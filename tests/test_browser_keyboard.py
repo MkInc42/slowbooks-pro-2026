@@ -457,7 +457,7 @@ def test_back_goes_back_within_the_app_while_there_is_somewhere_to_go(
         # a report pushed from the Report Center: Back closes it and returns
         _sidebar(page, handled, "#/reports")
         page.evaluate(
-            """() => document.querySelector('#page-content a.report-card[data-row-key="report:profit-loss"]').click()"""
+            """() => document.querySelector('#page-content a.card-link[data-row-key="report:profit-loss"]').click()"""
         )
         page.wait_for_selector("#report-content table")
         settle(page, handled)
@@ -934,7 +934,7 @@ def test_back_is_inert_over_a_form_but_live_over_an_addressed_dialog(
         # overlay and takes the report back to the Report Center
         _sidebar(page, handled, "#/reports")
         page.evaluate(
-            """() => document.querySelector('#page-content a.report-card[data-row-key="report:profit-loss"]').click()"""
+            """() => document.querySelector('#page-content a.card-link[data-row-key="report:profit-loss"]').click()"""
         )
         page.wait_for_selector("#report-content table")
         settle(page, handled)
@@ -3123,7 +3123,7 @@ def test_a_click_that_opens_elsewhere_notes_nothing_and_steals_nothing(
         page.close()
 
 
-CARDS = "[...document.querySelectorAll('#page-content a.report-card')]"
+CARDS = "[...document.querySelectorAll('#page-content a.card-link')]"
 CARD_LIST = f"""() => {CARDS}.map(a => ({{ key: a.dataset.rowKey, href: a.getAttribute('href'),
     title: a.querySelector('.card-header').textContent.trim(),
     text: a.querySelector('p').textContent.trim() }}))"""
@@ -3155,11 +3155,11 @@ def _ax(page, selector):
         cdp.detach()
 
 
-def _cards_by_keyboard(page, handled, cards, opened=None):
+def _cards_by_keyboard(page, handled, cards, opened=None, home="#/reports"):
     """Tab reaches every card in turn; Enter on each (those in `opened`, or
-    all) opens its report over the Report Center at its view's address (or
-    the one it puts in place of it, OPENS_AT), and Back returns there with
-    focus on the card."""
+    all) opens what it links to — a report over the Report Center at its
+    view's address (or the one it puts in place of it, OPENS_AT), or a page
+    — and Back returns to `home` with focus on the card."""
     first = f'#page-content a[data-row-key="{cards[0]["key"]}"]'
     page.focus(first)
     page.keyboard.press("Shift+Tab")
@@ -3178,14 +3178,20 @@ def _cards_by_keyboard(page, handled, cards, opened=None):
         page.keyboard.press("Tab")
         assert page.evaluate(FOCUS_KEY) == c["key"]
         page.keyboard.press("Enter")
-        page.wait_for_function(MODAL_SHOWN)
         page.wait_for_function(
             "(h) => location.hash === h || location.hash.startsWith(h + '?')",
             arg=OPENS_AT.get(c["key"], c["href"]),
         )
+        if c["href"].startswith("#/reports/"):
+            page.wait_for_function(MODAL_SHOWN)
+        else:
+            page.wait_for_function(
+                '(k) => !document.querySelector(`#page-content a[data-row-key="${k}"]`)',
+                arg=c["key"],
+            )
         settle(page, handled)
         page.keyboard.press("Alt+ArrowLeft")
-        page.wait_for_function(AT, arg="#/reports")
+        page.wait_for_function(AT, arg=home)
         page.wait_for_function(f"!({MODAL_SHOWN})()")
         page.wait_for_function(f"(k) => ({FOCUS_KEY})() === k", arg=c["key"])
         settle(page, handled)
@@ -3512,3 +3518,94 @@ def test_a_nonprofits_fields_keep_a_fields_focus_style_too(
     assert unopened == []
     assert seen > 100, seen
     assert wrong == [], (len(wrong), wrong)
+
+
+# A page's card links: key, address, name (aria-label) and the words of its
+# description (what aria-describedby names), as the page has them
+CARD_LINKS = """(sel) => [...document.querySelectorAll(sel)].map(a => ({ key: a.dataset.rowKey,
+    href: a.getAttribute('href'), title: a.getAttribute('aria-label'),
+    text: (a.getAttribute('aria-describedby') || '').split(/\\s+/)
+        .map(id => document.getElementById(id)).filter(Boolean)
+        .map(el => el.textContent.replace(/\\s+/g, ' ').trim()).join(' ') }))"""
+# The first card link beside a <div class="card"> with the same words: the
+# computed look of the card and of each element in it, and its height
+CARD_LOOK = """(sel) => { const a = document.querySelector(sel), d = document.createElement('div');
+    d.className = 'card'; d.innerHTML = a.innerHTML.replace(/ id="[^"]*"/g, '');
+    a.after(d);
+    const style = (el) => { const cs = getComputedStyle(el);
+        return [cs.color, cs.backgroundColor, cs.borderTopColor, cs.borderTopWidth,
+                cs.paddingTop, cs.paddingLeft, cs.textDecorationLine, cs.fontSize,
+                cs.boxShadow, el.getBoundingClientRect().height].join(' | '); };
+    const parts = (el) => [el, ...el.querySelectorAll('*')].map(style);
+    const out = [parts(a), parts(d), getComputedStyle(a).cursor];
+    d.remove();
+    return out; }"""
+
+
+def _norm(text):
+    return re.sub(r"\s+", " ", text or "").strip().lower()
+
+
+def _bank_cards(page, handled, route, sel):
+    """The bank cards on `route`: links to their registers, named by the
+    account and described by the rest of the card, as the browser computes
+    it; looking as the card did; reached, opened and come back to by the
+    keyboard (Enter, and Space on the first); the ring and halo painted in
+    both themes."""
+    _visit(page, handled, route)
+    page.wait_for_selector(sel)
+    settle(page, handled)
+    cards = page.evaluate(CARD_LINKS, sel)
+    assert len(cards) >= 2, (route, cards)
+    for c in cards:
+        account = c["key"].split(":", 1)[1]
+        assert c["key"] == f"bank:{account}" and c["href"] == f"#/banking/{account}", c
+        ax = _ax(page, f'#page-content a[data-row-key="{c["key"]}"]')
+        assert ax["role"] == "link" and ax["name"] == c["title"], (c, ax)
+        assert _norm(ax["description"]) == _norm(c["text"]) and c["text"], (c, ax)
+    look = page.evaluate(CARD_LOOK, sel)
+    assert look[0] == look[1] and look[2] == "pointer", look
+    _cards_by_keyboard(page, handled, cards, home=route)
+    # Space opens one too
+    first = f'#page-content a[data-row-key="{cards[0]["key"]}"]'
+    page.focus(first)
+    page.keyboard.press("Shift+Tab")
+    page.keyboard.press("Tab")
+    page.keyboard.press(" ")
+    page.wait_for_function("(h) => location.hash === h", arg=cards[0]["href"])
+    settle(page, handled)
+    page.keyboard.press("Alt+ArrowLeft")
+    page.wait_for_function(f"(k) => ({FOCUS_KEY})() === k", arg=cards[0]["key"])
+    settle(page, handled)
+    # the ring and halo
+    page.keyboard.press("Shift+Tab")
+    page.keyboard.press("Tab")
+    assert page.evaluate(FOCUS_KEY) == cards[0]["key"]
+    _both_themes(page, ("a bank card", route), GOLD)
+
+
+def test_banking_and_the_dashboards_bank_cards_are_links_the_keyboard_opens(
+    browser, company, books
+):
+    """Banking's account cards and the dashboard's bank cards were a <div>
+    with a click alone, as the Report Center's were (review). Each is a
+    link to its account's register, named by the account and described by
+    the rest of the card: on Banking and on the dashboard, the browser
+    computes that name and description; the card looks as a <div
+    class="card"> with the same words (the computed look of it and of
+    everything in it, and its height); Tab reaches every card in turn,
+    Enter on each opens its register, and Back returns with focus on the
+    card; Space opens one; and the focused card draws the ring and halo,
+    as painted, in light and dark."""
+    page, handled = _open(browser, company)
+    try:
+        _no_splash(page)
+        _bank_cards(page, handled, "#/banking", "#page-content a.card-link")
+        _bank_cards(
+            page,
+            handled,
+            "#/",
+            '#page-content [data-widget="bank_balances"] a.card-link',
+        )
+    finally:
+        page.close()

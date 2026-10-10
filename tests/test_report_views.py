@@ -176,7 +176,7 @@ def test_every_report_the_report_center_offers_has_a_view_name():
     card = src[src.index("    _card(view, title, text) {") :]
     card = card[: card.index("\n    },")]
     assert (
-        '<a class="card report-card" href="${ReportsPage.viewUrl(view, {})}"'
+        '<a class="card card-link" href="${ReportsPage.viewUrl(view, {})}"'
         ' data-row-key="report:${view}"' in card
     )
     assert 'aria-label="${escapeHtml(title)}" aria-describedby="${id}-text"' in card

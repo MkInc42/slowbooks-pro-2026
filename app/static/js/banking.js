@@ -46,18 +46,26 @@ const BankingPage = {
         if (rows.length === 0) {
             html += `<div class="empty-state"><p>No bank or credit-card accounts yet. Add one, or flag an existing chart account as a bank account.</p></div>`;
         } else {
+            // Each account's card is a link to its register (the cards were
+            // a click alone: neither the keyboard nor a screen reader could
+            // open one), named by the account, the rest of the card its
+            // description; Enter or Space opens it, and Back comes back to
+            // it (its key, noted on its click: ReportsPage._leaveFrom).
             html += `<div class="card-grid">`;
             for (const a of rows) {
                 const owed = a.bank_kind === 'credit_card';
-                html += `<div class="card" style="cursor:pointer" onclick="BankingPage.go('#/banking/${a.account_id}')">
-                    <div class="card-header">${escapeHtml(a.name)} <span style="font-size:10px; color:var(--gray-400);">${escapeHtml(a.account_number || '')} · ${BankingPage._kindLabel(a.bank_kind)}</span></div>
-                    <div class="card-value">${formatCurrency(a.balance)}${owed ? ' <span style="font-size:11px; color:var(--gray-500);">owed</span>' : ''}</div>
-                    <div style="font-size:12px; color:var(--gray-400); margin-top:4px;">
+                const id = `bank-card-${a.account_id}`;
+                html += `<a class="card card-link" href="#/banking/${a.account_id}" data-row-key="bank:${a.account_id}"
+                    aria-label="${escapeHtml(a.name)}" aria-describedby="${id}-kind ${id}-value ${id}-feed"
+                    onclick="ReportsPage._leaveFrom(this)" onkeydown="ReportsPage._cardKey(event)">
+                    <div class="card-header">${escapeHtml(a.name)} <span id="${id}-kind" style="font-size:10px; color:var(--gray-400);">${escapeHtml(a.account_number || '')} · ${BankingPage._kindLabel(a.bank_kind)}</span></div>
+                    <div class="card-value" id="${id}-value">${formatCurrency(a.balance)}${owed ? ' <span style="font-size:11px; color:var(--gray-500);">owed</span>' : ''}</div>
+                    <div id="${id}-feed" style="font-size:12px; color:var(--gray-400); margin-top:4px;">
                         ${a.feed ? `${escapeHtml(a.feed.bank_name || a.feed.name)} ${a.feed.last_four ? '****' + a.feed.last_four : ''}` : 'No bank feed'}
                         ${a.to_review ? `<span style="color:var(--text-warning); font-weight:700;"> · ${a.to_review} to review</span>` : ''}
                         ${a.last_reconciled ? ` · reconciled ${formatDate(a.last_reconciled)}` : ''}
                     </div>
-                </div>`;
+                </a>`;
             }
             html += `</div>`;
         }

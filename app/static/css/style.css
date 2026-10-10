@@ -854,18 +854,20 @@ td.amount, th.amount {
     gap: 10px;
     margin-bottom: 16px;
 }
-/* A report's card on the Report Center is a link to the report
-   (ReportsPage._card) that looks as the card did: no link colour or
-   underline, a hand over it. Its focus draws the keyboard's ring and halo
-   in place of the card's own shadow (a.: over the dark theme's .card). */
-.report-card {
+/* A card that opens something is a link to its address, looking as the
+   card did: no link colour or underline, a hand over it — the Report
+   Center's reports (ReportsPage._card), Banking's accounts and the
+   dashboard's bank cards (each to its register). Its focus draws the
+   keyboard's ring and halo in place of the card's own shadow (a.: over the
+   dark theme's .card). */
+.card-link {
     display: block;
     color: inherit;
     text-decoration: none;
     cursor: pointer;
 }
-.report-card:hover { text-decoration: none; }
-a.report-card:focus-visible { box-shadow: 0 0 0 8px var(--focus-halo); }
+.card-link:hover { text-decoration: none; }
+a.card-link:focus-visible { box-shadow: 0 0 0 8px var(--focus-halo); }
 
 /* ========================================================================
  * FORMS — Modal forms styled like QB2003 data entry windows
