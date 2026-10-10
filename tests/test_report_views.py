@@ -261,6 +261,7 @@ def test_from_after_to_typed_is_refused_in_one_wording_wherever_dates_are_typed(
     uses = {
         "reports.js": "if (reversedRangeRefused(startInput.value, endInput.value, keep)) {",
         "classes.js": "if (period === 'custom' && reversedRangeRefused(start, end, state)) {",
+        "banking.js": "if (reversedRangeRefused(next.start_date, next.end_date, { start: was.start_date, end: was.end_date })) {",
     }
     for name, call in uses.items():
         src = (JS / name).read_text(encoding="utf-8")
@@ -270,6 +271,18 @@ def test_from_after_to_typed_is_refused_in_one_wording_wherever_dates_are_typed(
     # the list and the class page stop on a refused range: no reload, no
     # address written
     assert classes.count("if (p.kept) return;") == 2
+    # the register refuses before its address is written, and keeps the
+    # filter it was on
+    banking = (JS / "banking.js").read_text(encoding="utf-8")
+    changed = banking[banking.index("    regFilterChanged(id, filter = null) {") :]
+    changed = changed[: changed.index("\n    },")]
+    assert changed.index("reversedRangeRefused(") < changed.index(
+        "BankingPage._regFilter = next;"
+    )
+    assert changed.index("BankingPage._regFilter = next;") < changed.index(
+        "history.replaceState(history.state, '', url)"
+    )
+    assert "if (startEl) startEl.value = was.start_date;" in changed
 
 
 def test_the_dev_note_is_short_and_says_how_to_register_a_view():

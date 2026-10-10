@@ -903,6 +903,69 @@ def test_the_classes_list_and_a_class_page_refuse_from_after_to_typed(
         page.close()
 
 
+def test_a_register_refuses_from_after_to_typed_before_touching_its_address(
+    browser, company, books
+):
+    """A register wrote the typed dates to its address and read them back
+    through datesFromQuery, so From after To typed emptied both boxes and
+    the toast blamed the address (W-4). It refuses them first, as the
+    reports do: said, naming the dates and the filter kept; the boxes put
+    back; the address, the history and the rows unchanged. With only a To
+    in use, what is kept is "to <that date>"."""
+    bank = next(
+        a for a in company.get("/api/accounts").json() if a["account_number"] == "1000"
+    )
+    url = f"#/banking/{bank['id']}?start_date={SEPT[0]}&end_date={SEPT[1]}"
+    page, handled = _open_at(browser, company, url)
+    try:
+        page.wait_for_selector("#reg-filter-note")
+        assert _hash(page) == url
+        note = page.inner_text("#reg-filter-note")
+        rows = page.locator("#page-content tbody tr").count()
+        length = _history(page)
+        page.fill("#reg-start", "2026-12-26")
+        page.dispatch_event("#reg-start", "change")
+        page.wait_for_function(REFUSED)
+        settle(page, handled)
+        assert (
+            "From (Dec 26, 2026) is after To (Sep 30, 2026) — kept Sep 1, 2026 to Sep 30, 2026"
+            in _toasts(page)
+        )
+        assert "in the address" not in _toasts(page)
+        assert page.input_value("#reg-start") == SEPT[0]
+        assert page.input_value("#reg-end") == SEPT[1]
+        assert _hash(page) == url
+        assert _history(page) == length
+        assert page.inner_text("#reg-filter-note") == note
+        assert page.locator("#page-content tbody tr").count() == rows
+
+        # only a To in use: From typed past it is refused, and "to" is kept
+        page.get_by_role("button", name="Clear").click()
+        page.wait_for_function(
+            "() => document.getElementById('reg-start').value === ''"
+        )
+        settle(page, handled)
+        page.fill("#reg-end", "2026-08-31")
+        page.dispatch_event("#reg-end", "change")
+        page.wait_for_function("() => location.hash.includes('end_date=2026-08-31')")
+        settle(page, handled)
+        page.fill("#reg-start", "2026-09-01")
+        page.dispatch_event("#reg-start", "change")
+        page.wait_for_function(
+            "() => [...document.querySelectorAll('#toast-container .toast')].some(t => t.textContent.includes('is after To (Aug 31, 2026)'))"
+        )
+        settle(page, handled)
+        assert (
+            "From (Sep 1, 2026) is after To (Aug 31, 2026) — kept to Aug 31, 2026"
+            in _toasts(page)
+        )
+        assert page.input_value("#reg-start") == ""
+        assert page.input_value("#reg-end") == "2026-08-31"
+        assert _query(_hash(page)) == {"end_date": "2026-08-31"}
+    finally:
+        page.close()
+
+
 def test_saved_reports_are_listed_by_their_views_title_and_what_they_were_saved_on(
     browser, company, books
 ):

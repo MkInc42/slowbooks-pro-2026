@@ -388,12 +388,27 @@ const BankingPage = {
         return `#/banking/${id}${q ? `?${q}` : ''}`;
     },
 
+    // A filter change, typed or chosen. From after To is refused before
+    // the address is touched, as the reports refuse it (W-4: written to
+    // the address first, the dates came back through datesFromQuery as
+    // "in the address … both ignored", and both boxes were emptied):
+    // said, with the filter kept, and the boxes put back to it — the
+    // register, and its address, stay on that filter.
     regFilterChanged(id, filter = null) {
-        BankingPage._regFilter = filter || {
+        const was = BankingPage._regFilter;
+        const next = filter || {
             start_date: $('#reg-start')?.value || '',
             end_date: $('#reg-end')?.value || '',
             class_id: $('#reg-class')?.value || '',
         };
+        if (reversedRangeRefused(next.start_date, next.end_date, { start: was.start_date, end: was.end_date })) {
+            const startEl = $('#reg-start');
+            const endEl = $('#reg-end');
+            if (startEl) startEl.value = was.start_date;
+            if (endEl) endEl.value = was.end_date;
+            return;
+        }
+        BankingPage._regFilter = next;
         const url = BankingPage._regUrl(id);
         if ((location.hash || '#/') !== url) history.replaceState(history.state, '', url);
         App.navigate(url);
