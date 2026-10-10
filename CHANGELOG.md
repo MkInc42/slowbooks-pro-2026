@@ -260,7 +260,10 @@ dates and shortcuts ones are in the lines above):
   tab notes nothing.
 - **Wide tables scroll sideways** in their box instead of being cut off (at
   the desktop app's 900px minimum a list's last column could hide its
-  buttons); every table has 8px of room below it inside its border.
+  buttons); every table, the line-item tables and the pay run included, has
+  8px of room below it (and at its right end where it scrolls) for a
+  focused control's ring; a wide table with no controls in it (Benefits'
+  rates) is a Tab stop the arrow keys scroll.
 
 No schema migration. 555 operations.
 
