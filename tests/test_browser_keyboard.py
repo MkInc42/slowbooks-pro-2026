@@ -1432,3 +1432,110 @@ def test_a_tab_through_a_page_writes_no_note_and_a_change_saves_once(
         assert len(puts) == 2
     finally:
         page.close()
+
+
+# ── Round 3, W-7: Back refocuses the chart's account and the drill-down's line ──
+
+ROW_KEY = (
+    "() => (document.activeElement && document.activeElement.dataset.rowKey) || null"
+)
+WORDS = "() => document.activeElement.textContent.trim()"
+
+
+def test_back_from_a_register_or_a_drill_down_refocuses_the_charts_account(
+    browser, company, books
+):
+    """Chart of Accounts → a register (or a drill-down) → Back landed on
+    the page body (Windows gate W-7). The chart's account links carry a
+    key, noted on the way out as a report's rows are, and the page's
+    render on return puts the keyboard back on it — by Alt+←, by the
+    toolbar's button, and after a mouse click on the name too."""
+    page, handled = _open(browser, company)
+    try:
+        _no_splash(page)
+        _sidebar(page, handled, "#/accounts")
+        links = page.evaluate(
+            """() => [...document.querySelectorAll('#page-content a[data-row-key^="account:"]')]
+                .map(a => [a.dataset.rowKey, a.getAttribute('href'), a.textContent.trim()])"""
+        )
+        bank = next(x for x in links if x[1].startswith("#/banking/"))
+        drill = next(
+            x for x in links if x[1].startswith("#/reports/account-transactions?")
+        )
+
+        def leave(key, where, click=False):
+            sel = f'#page-content a[data-row-key="{key}"]'
+            if click:
+                page.click(sel)
+            else:
+                page.focus(sel)
+                page.keyboard.press("Enter")
+            page.wait_for_function("(s) => location.hash.startsWith(s)", arg=where)
+            settle(page, handled)
+            assert page.evaluate(ROW_KEY) != key  # left
+
+        def back(key, words, button=False):
+            if button:
+                page.click("#back-btn")
+            else:
+                page.keyboard.press("Alt+ArrowLeft")
+            page.wait_for_function(AT, arg="#/accounts")
+            settle(page, handled)
+            assert page.evaluate(ROW_KEY) == key
+            assert page.evaluate(WORDS) == words
+
+        # a bank account's name opens its register, a page of its own
+        leave(bank[0], "#/banking/")
+        back(bank[0], bank[2])
+        # an expense account's name opens its drill-down, a dialog over
+        # the Report Center; the toolbar's button returns the same
+        leave(drill[0], "#/reports/account-transactions?")
+        page.wait_for_selector("#drilldown-body table")
+        settle(page, handled)
+        back(drill[0], drill[2], button=True)
+        # by mouse: the click puts focus on the name, and that is noted
+        leave(bank[0], "#/banking/", click=True)
+        back(bank[0], bank[2])
+    finally:
+        page.close()
+
+
+def test_back_from_a_drill_downs_document_refocuses_the_line(browser, company, books):
+    """A drill-down's line → its document → Back landed on the period
+    select (Windows gate W-7). Each line's link carries its own key, noted
+    on the way out, and the drill-down's render on return focuses it."""
+    checking = _account(company, "1000")
+    url = (
+        f"#/reports/account-transactions?account_id={checking['id']}"
+        "&start_date=2026-01-01&end_date=2026-12-31&from=trial-balance"
+    )
+    page, handled = _open_at(browser, company, url)
+    try:
+        page.wait_for_selector("#drilldown-body table")
+        settle(page, handled)
+        here = page.evaluate("location.hash")
+        lines = page.evaluate(
+            """() => [...document.querySelectorAll('#drilldown-body a[data-row-key^="line:"]')]
+                .map(a => [a.dataset.rowKey, a.getAttribute('href'), a.textContent.trim()])"""
+        )
+        assert len(lines) >= 3, lines
+        assert len({k for k, _, _ in lines}) == len(lines)  # each line its own
+        for key, href, words in (lines[1], lines[-1]):
+            doc = "#" + href.split("#", 1)[1]
+            page.focus(f'#drilldown-body a[data-row-key="{key}"]')
+            page.keyboard.press("Enter")
+            page.wait_for_function(AT, arg=doc)
+            page.wait_for_function("() => !document.getElementById('drilldown-body')")
+            page.wait_for_function(MODAL_SHOWN)
+            settle(page, handled)
+            page.keyboard.press("Alt+ArrowLeft")
+            page.wait_for_function(AT, arg=here)
+            page.wait_for_selector("#drilldown-body table")
+            settle(page, handled)
+            assert page.evaluate(ROW_KEY) == key, (key, words)
+            assert page.evaluate(WORDS) == words
+            assert page.evaluate("() => document.activeElement.id") != (
+                "report-period-select"
+            )
+    finally:
+        page.close()

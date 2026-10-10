@@ -94,22 +94,28 @@ const ReportsPage = {
     // The row a hop leaves from, noted on the view's own history entry
     // (history.state.focus) so that Back puts the keyboard back on it (R9):
     // the row's data-row-key, else its place among the dialog's controls.
-    // Nothing is kept in memory, so Back, Forward and a reload agree.
+    // A page's own row carries a key too (the chart's account links,
+    // App.renderAccounts: W-7); the place among the controls is a dialog's
+    // alone. Nothing is kept in memory, so Back, Forward and a reload agree.
     _leaveFrom() {
         const el = document.activeElement;
-        if (!el || !el.closest || !el.closest('#modal-body')) return;
-        const n = [...document.querySelectorAll('#modal-body a[href], #modal-body button')].indexOf(el);
+        if (!el || !el.closest) return;
+        const inDialog = !!el.closest('#modal-body');
+        const n = inDialog ? [...document.querySelectorAll('#modal-body a[href], #modal-body button')].indexOf(el) : -1;
         const key = el.getAttribute('data-row-key') || (n >= 0 ? `n:${n}` : null);
-        if (!key) return;  // a select, a date: not a row left from
+        if (!key) return;  // a select, a date, a page's unkeyed control: not a row left from
         history.replaceState({ ...(history.state || {}), focus: key }, '', location.hash || '#/');
     },
 
     // Focus back on the row the view was left from, once; a later render
     // of the same view (a period change) leaves focus where the user has
-    // it. True when it did.
+    // it. True when it did. A page's render asks too (App.navigate, with
+    // #page-content): a key that is a place among a dialog's controls is
+    // not its to use, and is left for the dialog that opens over it.
     _refocusRow(root) {
         const key = history.state && history.state.focus;
         if (!key || !root) return false;
+        if (key.startsWith('n:') && !root.closest('#modal-body')) return false;
         const el = key.startsWith('n:')
             ? document.querySelectorAll('#modal-body a[href], #modal-body button')[parseInt(key.slice(2), 10)]
             : root.querySelector(`[data-row-key="${CSS.escape(key)}"]`);
@@ -598,8 +604,11 @@ const ReportsPage = {
                 // expenses both read "expense #6" (NEW-40).
                 const m = link ? /\/(\d+)$/.exec(link) : null;
                 const num = m ? m[1] : e.transaction_id;
+                // The line's key is noted on the way out (ReportsPage._leaveFrom)
+                // so that Back from the document puts focus on this link,
+                // not on the period select (W-7).
                 const src = link
-                    ? `<a href="${escapeHtml(link)}" style="color:var(--text-link); text-decoration:none;">${escapeHtml(sourceWord(e.source_type || 'journal'))} #${num}</a>`
+                    ? `<a href="${escapeHtml(link)}" data-row-key="line:${escapeHtml(String(e.line_id || e.transaction_id || ''))}" onclick="ReportsPage._leaveFrom()" style="color:var(--text-link); text-decoration:none;">${escapeHtml(sourceWord(e.source_type || 'journal'))} #${num}</a>`
                     : (e.source_type ? escapeHtml(sourceWord(e.source_type)) : '');
                 const mark = e.reconciliation_id ? 'R' : (e.cleared ? '✓' : '');
                 return `<tr${e.voided ? ' class="row--void" style="color:var(--text-muted); text-decoration:line-through;"' : ''}>

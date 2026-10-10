@@ -444,3 +444,37 @@ def test_a_pages_notes_box_saves_only_a_change():
         assert "if (box && value === box.defaultValue) return;" in notes, name
         assert "if (box) box.defaultValue = value;" in notes, name
         assert notes.index("return;") < notes.index("'saving…'"), name
+
+
+# ── Round 3, W-7: Back refocuses the chart's account and the drill-down's line ──
+
+
+def test_back_refocuses_the_charts_account_link_and_the_drill_downs_line():
+    app = _src("app.js")
+    assert (
+        'data-row-key="account:${Number(a.id)}" onclick="ReportsPage._leaveFrom()"'
+        in app
+    )
+    nav = app[app.index("async navigate(hash) {") :]
+    nav = nav[: nav.index("\n    },")]
+    hook = "if (history.state && history.state.focus) ReportsPage._refocusRow($('#page-content'));"
+    assert hook in nav
+    assert nav.index("$('#page-content').innerHTML = html;") < nav.index(hook)
+    reports = _src("reports.js")
+    assert (
+        "data-row-key=\"line:${escapeHtml(String(e.line_id || e.transaction_id || ''))}\""
+        ' onclick="ReportsPage._leaveFrom()"' in reports
+    )
+    leave = reports[reports.index("_leaveFrom() {") :]
+    leave = leave[: leave.index("\n    },")]
+    assert "const inDialog = !!el.closest('#modal-body');" in leave
+    assert (
+        "const n = inDialog ? [...document.querySelectorAll('#modal-body a[href], #modal-body button')].indexOf(el) : -1;"
+        in leave
+    )
+    refocus = reports[reports.index("_refocusRow(root) {") :]
+    refocus = refocus[: refocus.index("\n    },")]
+    assert (
+        "if (key.startsWith('n:') && !root.closest('#modal-body')) return false;"
+        in refocus
+    )

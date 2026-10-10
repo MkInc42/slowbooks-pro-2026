@@ -418,6 +418,10 @@ const App = {
             $('#page-content').innerHTML = html;
             App.setStatus(`${route.label} — Ready`);
             if (route.mount) App._pageCleanup = route.mount();
+            // Back to a page left by one of its own rows (the chart's
+            // account links to a register or a drill-down): the keyboard
+            // goes back on the row, as a report's rows have it (W-7)
+            if (history.state && history.state.focus) ReportsPage._refocusRow($('#page-content'));
         } catch (err) {
             if (adminOnly()) return showAdminOnly();
             // Server-side detail (err.message and stack) goes to console
@@ -807,7 +811,7 @@ const App = {
                 const haystack = escapeHtml(`${a.account_number || ''} ${a.name}`.toLowerCase());
                 html += `<tr${inactive ? ' class="row--dim"' : ''} data-account-row="${haystack}" data-account-type="${type}">
                     <td style="font-family:var(--font-mono);">${escapeHtml(a.account_number || '')}</td>
-                    <td><a href="${escapeHtml(App.accountRegisterHref(a))}" style="font-weight:700; color:var(--text-link); text-decoration:none;" title="Open the register">${escapeHtml(a.name)}</a>${a.is_control ? ` <span class="badge-control" title="${escapeHtml(a.control_purpose || 'the software finds this account by its number')}">control</span>` : ''}${inactive ? ' <span class="badge badge-draft">inactive</span>' : ''}</td>
+                    <td><a href="${escapeHtml(App.accountRegisterHref(a))}" data-row-key="account:${Number(a.id)}" onclick="ReportsPage._leaveFrom()" style="font-weight:700; color:var(--text-link); text-decoration:none;" title="Open the register">${escapeHtml(a.name)}</a>${a.is_control ? ` <span class="badge-control" title="${escapeHtml(a.control_purpose || 'the software finds this account by its number')}">control</span>` : ''}${inactive ? ' <span class="badge badge-draft">inactive</span>' : ''}</td>
                     <td>${a.account_type}</td>
                     <td class="amount">${formatCurrency(a.balance)}</td>
                     <td class="actions">
