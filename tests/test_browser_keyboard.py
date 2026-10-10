@@ -2322,3 +2322,106 @@ def test_back_after_a_mouse_click_keys_on_the_link_not_on_focus(
         assert page.evaluate(WORDS) == clicked[2]
     finally:
         page.close()
+
+
+def _webkit_hop_and_back(page, handled, focus_sel, click_sel, gone, key):
+    """Focus left on one element, a WebKit click (no focus move) on another
+    that hops away; Back to the address left: focus on the one clicked, by
+    its key."""
+    here = page.evaluate("location.hash")
+    page.focus(focus_sel)
+    page.click(click_sel)
+    page.wait_for_function(gone)
+    settle(page, handled)
+    page.keyboard.press("Alt+ArrowLeft")
+    page.wait_for_function(AT, arg=here)
+    page.wait_for_function(
+        "(k) => document.activeElement && document.activeElement.dataset.rowKey === k",
+        arg=key,
+    )
+    return page.evaluate("() => window.__focusAtClick")
+
+
+def test_back_after_a_mouse_click_keys_on_the_row_clicked_on_every_hop(
+    browser, company, books
+):
+    """The other row hops noted the focused element too, so a WebKit click
+    (which focuses nothing) brought Back to whatever had focus before
+    (review of W-7): a report's row to a customer's page, a customer's
+    invoice row to the invoice, a trial balance's account to its
+    drill-down, a job's row to the job's page. Each passes the element
+    clicked (its `this`; a drill-down's link is the click's own element),
+    and Back puts focus on the row clicked."""
+    customer, customer2 = books["customer"], books["customer2"]
+    aging = "#/reports/ar-aging?as_of_date=2026-09-30"
+    page, handled = _open_at(browser, company, aging)
+    try:
+        page.wait_for_selector(f'#report-content a[data-row-key="customer:{customer}"]')
+        settle(page, handled)
+        page.evaluate(WEBKIT_CLICKS)
+        # a report's row → the customer's page → Back
+        was = _webkit_hop_and_back(
+            page,
+            handled,
+            f'#report-content a[data-row-key="customer:{customer2}"]',
+            f'#report-content a[data-row-key="customer:{customer}"]',
+            f"() => location.hash === '#/customers/{customer}'",
+            f"customer:{customer}",
+        )
+        assert was == f"customer:{customer2}"  # focus was elsewhere at the click
+        # the customer's page: an invoice row's amount → the invoice → Back
+        _visit(page, handled, f"#/customers/{customer}")
+        page.wait_for_function(MODAL_SHOWN)
+        page.wait_for_selector('#modal-body a[data-row-key^="invoice:"]')
+        settle(page, handled)
+        keys = page.evaluate(
+            """() => [...document.querySelectorAll('#modal-body a[data-row-key^="invoice:"]')]
+                .map(a => a.dataset.rowKey)"""
+        )
+        assert len(keys) >= 2, keys
+        first, row = keys[0], keys[-1]
+        was = _webkit_hop_and_back(
+            page,
+            handled,
+            f'#modal-body a[data-row-key="{first}"]',
+            f'#modal-body tr:has(a[data-row-key="{row}"]) td.amount',
+            "() => location.hash.startsWith('#/invoices/')",
+            row,
+        )
+        assert was == first
+        # a trial balance's account → its drill-down → Back
+        tb = "#/reports/trial-balance?as_of_date=2026-09-30"
+        _visit(page, handled, tb)
+        page.wait_for_selector('#report-content a[data-row-key^="drill:"]')
+        settle(page, handled)
+        drills = page.evaluate(
+            """() => [...document.querySelectorAll('#report-content a[data-row-key^="drill:"]')]
+                .map(a => a.dataset.rowKey)"""
+        )
+        assert len(drills) >= 3, drills
+        was = _webkit_hop_and_back(
+            page,
+            handled,
+            f'#report-content a[data-row-key="{drills[0]}"]',
+            f'#report-content a[data-row-key="{drills[2]}"]',
+            "() => location.hash.startsWith('#/reports/account-transactions')",
+            drills[2],
+        )
+        assert was == drills[0]
+        # a job's row (its contract amount) → the job's page → Back
+        jp = "#/reports/job-profitability?start_date=2026-01-01&end_date=2026-12-31"
+        _visit(page, handled, jp)
+        job = f"job:{books['job']}"
+        page.wait_for_selector(f'#report-content a[data-row-key="{job}"]')
+        settle(page, handled)
+        was = _webkit_hop_and_back(
+            page,
+            handled,
+            f'#report-content a[data-row-key="customer:{customer}"]',
+            f'#report-content tr:has(a[data-row-key="{job}"]) td.amount >> nth=1',
+            f"() => location.hash.startsWith('#/jobs/{books['job']}')",
+            job,
+        )
+        assert was == f"customer:{customer}"
+    finally:
+        page.close()

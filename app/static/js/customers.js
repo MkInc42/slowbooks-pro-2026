@@ -112,10 +112,12 @@ const CustomersPage = {
         // address now, named by its words. The row's click does the opening,
         // for the link too (its own navigation is left to it, so the hop is
         // the one history entry App.navigate pushes); the link left is noted
-        // on this page's entry (ReportsPage._leaveFrom), so Back returns here
-        // with the focus on it (App.withDocument).
+        // on this page's entry (ReportsPage._leaveFrom, given the row: its
+        // link is the one noted, after a mouse click too, which in WebKit
+        // puts focus nowhere), so Back returns here with the focus on it
+        // (App.withDocument).
         const rowLink = (href, key, text) => `<a href="${href}" data-row-key="${key}" style="color:var(--text-link); text-decoration:none;" onclick="event.preventDefault()">${escapeHtml(text)}</a>`;
-        const hop = (href) => `ReportsPage._leaveFrom();closeModal({ keepAddress: true });App.navigate('${href}')`;
+        const hop = (href) => `ReportsPage._leaveFrom(this);closeModal({ keepAddress: true });App.navigate('${href}')`;
         const invRows = invoices.slice(0, 10).map(i =>
             `<tr style="cursor:pointer" onclick="${hop(`#/invoices/${i.id}`)}">
                 <td>${rowLink(`#/invoices/${i.id}`, `invoice:${i.id}`, i.invoice_number || `#${i.id}`)}</td>

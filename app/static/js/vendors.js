@@ -78,8 +78,9 @@ const VendorsPage = {
         // -- Bills + payments — last 10 each, newest first, click-through --
         // a row opens the document at its own address, the page's address
         // kept behind it so Back returns here with focus on the link
-        // (NEW-38's rule, the vendor's side; NEW-23 review)
-        const hop = (href) => `ReportsPage._leaveFrom();closeModal({ keepAddress: true });App.navigate('${href}')`;
+        // (NEW-38's rule, the vendor's side; NEW-23 review); the row is
+        // passed, so the link noted is the row clicked, not the focused one
+        const hop = (href) => `ReportsPage._leaveFrom(this);closeModal({ keepAddress: true });App.navigate('${href}')`;
         const rowLink = (href, key, text) => `<a href="${href}" data-row-key="${key}" style="color:var(--text-link); text-decoration:none;" onclick="event.preventDefault()">${escapeHtml(text)}</a>`;
         const billRows = bills.slice(0, 10).map(b =>
             `<tr style="cursor:pointer" onclick="${hop(`#/bills/${b.id}`)}">

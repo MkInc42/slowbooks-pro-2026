@@ -213,9 +213,10 @@ def test_the_customer_pages_invoice_and_payment_rows_carry_links():
     )
     assert 'onclick="event.preventDefault()">${escapeHtml(text)}</a>' in src
     # the row's click still opens the document, through the router (a
-    # history entry, Back returns), noting the link left for the focus
+    # history entry, Back returns), noting the link left for the focus: the
+    # row passes itself, its link is the one noted (review of W-7)
     assert (
-        "const hop = (href) => `ReportsPage._leaveFrom();closeModal({ keepAddress: true });App.navigate('${href}')`;"
+        "const hop = (href) => `ReportsPage._leaveFrom(this);closeModal({ keepAddress: true });App.navigate('${href}')`;"
         in src
     )
     assert 'onclick="${hop(`#/invoices/${i.id}`)}"' in src
@@ -662,10 +663,15 @@ def test_back_refocuses_the_charts_account_link_and_the_drill_downs_line():
     )
     leave = reports[reports.index("_leaveFrom(from) {") :]
     leave = leave[: leave.index("\n    },")]
-    assert (
-        "const el = (from && from.nodeType === 1) ? from : document.activeElement;"
-        in leave
-    )
+    # the element passed, else the one whose click is being handled, else
+    # the focused one; a row is left from by its keyed link
+    for line in (
+        "let el = (from && from.nodeType === 1) ? from",
+        ": (ev && ev.type === 'click' && ev.currentTarget && ev.currentTarget.nodeType === 1) ? ev.currentTarget",
+        ": document.activeElement;",
+        "if (el && el.tagName === 'TR') el = el.querySelector('[data-row-key]') || el;",
+    ):
+        assert line in leave, line
     assert "const inDialog = !!el.closest('#modal-body');" in leave
     assert (
         "const n = inDialog ? [...document.querySelectorAll('#modal-body a[href], #modal-body button')].indexOf(el) : -1;"
@@ -677,3 +683,47 @@ def test_back_refocuses_the_charts_account_link_and_the_drill_downs_line():
         "if (key.startsWith('n:') && !root.closest('#modal-body')) return false;"
         in refocus
     )
+
+
+# ── Round 3 review, Q6: every row hop keys on the element clicked ────────
+
+
+def test_every_row_hop_passes_the_element_clicked():
+    """A mouse click focuses nothing in WebKit, so a hop that noted the
+    focused element noted whatever had focus before: each passes its own
+    `this` — a report's customer and vendor rows, a customer's and a
+    vendor's document rows, Job Profitability's rows, a class's heading or
+    fund row (whose own push comes after an await), P&L by Job's heading."""
+    reports = _src("reports.js")
+    for page in ("Customer", "Vendor"):
+        fn = reports[reports.index(f"open{page}(id, from) {{") :]
+        fn = fn[: fn.index("\n    },")]
+        assert "ReportsPage._leaveFrom(from);" in fn, page
+    assert reports.count("ReportsPage.openCustomer(${i.customer_id}, this)") == 2
+    assert reports.count("ReportsPage.openVendor(${i.vendor_id}, this)") == 2
+    assert "ReportsPage.openCustomer(${j.customer_id}, this)" in reports
+    calls = re.findall(r"ReportsPage\.open(?:Customer|Vendor)\(([^)]*)\)", reports)
+    assert len(calls) == 5 and all(c.endswith(", this") for c in calls), calls
+    # Job Profitability: the job's link passes itself, the row its job's link
+    assert "`ReportsPage._leaveFrom(${from});App.navigate(" in reports
+    assert """jobCall(j, "this.querySelector('[data-row-key^=job]')")""" in reports
+    assert "jobCall(j, 'this')" in reports
+    # a class's heading, subtotal and fund row pass the link through the await
+    assert reports.count("${args(c.class_id, c.class_name, dates)}, null, this)") == 2
+    assert "'fund-balances', this)" in reports
+    plc = reports[reports.index("ReportsPage.profitLossOfClass = async function") :]
+    plc = plc[: plc.index("await API.get('/classes")]
+    assert "(classId, className, prefill, from = null, row = null)" in plc
+    assert "if (row) ReportsPage._leaveFrom(row);" in plc
+    assert (
+        "`ReportsPage._leaveFrom(this);App.navigate(${JSON.stringify(jobUrl(c))})`"
+        in reports
+    )
+    # no hop is left noting the focused element alone
+    assert "ReportsPage._leaveFrom();App.navigate" not in reports
+    for name in ("customers.js", "vendors.js"):
+        src = _src(name)
+        assert (
+            "const hop = (href) => `ReportsPage._leaveFrom(this);closeModal({ keepAddress: true });App.navigate('${href}')`;"
+            in src
+        ), name

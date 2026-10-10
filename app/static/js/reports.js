@@ -97,12 +97,19 @@ const ReportsPage = {
     // A page's own row carries a key too (the chart's account links,
     // App.renderAccounts: W-7); the place among the controls is a dialog's
     // alone. Nothing is kept in memory, so Back, Forward and a reload agree.
-    // A link that hops passes itself (`from`): a click with the mouse does
-    // not put focus on a link in WebKit, so the focused element would be
-    // whatever had it before (W-7 review); else the focused element is the
-    // one left from.
+    // The row left is the element clicked, not the focused one: a click with
+    // the mouse does not put focus on a link in WebKit, so focus named
+    // whatever had it before (W-7 review). A link or a row that hops passes
+    // itself (`from`, its `this`); a hop reached from a click without it
+    // (openDrillDown's links) is the element whose click is being handled,
+    // the same `this`; anything else (a key, a script) the focused one. A
+    // row passed is left from by its keyed link.
     _leaveFrom(from) {
-        const el = (from && from.nodeType === 1) ? from : document.activeElement;
+        const ev = window.event;
+        let el = (from && from.nodeType === 1) ? from
+            : (ev && ev.type === 'click' && ev.currentTarget && ev.currentTarget.nodeType === 1) ? ev.currentTarget
+            : document.activeElement;
+        if (el && el.tagName === 'TR') el = el.querySelector('[data-row-key]') || el;
         if (!el || !el.closest) return;
         const inDialog = !!el.closest('#modal-body');
         const n = inDialog ? [...document.querySelectorAll('#modal-body a[href], #modal-body button')].indexOf(el) : -1;
@@ -169,12 +176,14 @@ const ReportsPage = {
     // it left from.
     // (App.navigate closes the report itself, keeping its address on the
     // entry left behind, so Back returns to it.)
-    openCustomer(id) {
-        ReportsPage._leaveFrom();
+    // `from` is the row's link (its onclick's `this`), so the row noted is
+    // the one clicked (ReportsPage._leaveFrom).
+    openCustomer(id, from) {
+        ReportsPage._leaveFrom(from);
         App.navigate(`#/customers/${id}`);
     },
-    openVendor(id) {
-        ReportsPage._leaveFrom();
+    openVendor(id, from) {
+        ReportsPage._leaveFrom(from);
         App.navigate(`#/vendors/${id}`);
     },
 
@@ -1250,7 +1259,7 @@ const ReportsPage = {
             // A customer's name opens the customer's page (R9)
             let rows = data.items.map(i =>
                 `<tr>
-                    <td>${i.customer_id ? ReportsPage._rowLink(`ReportsPage.openCustomer(${i.customer_id})`, i.customer_name, `customer:${i.customer_id}`) : escapeHtml(i.customer_name)}</td>
+                    <td>${i.customer_id ? ReportsPage._rowLink(`ReportsPage.openCustomer(${i.customer_id}, this)`, i.customer_name, `customer:${i.customer_id}`) : escapeHtml(i.customer_name)}</td>
                     <td class="amount">${i.invoice_count}</td>
                     <td class="amount">${formatCurrency(i.total_sales)}</td>
                     <td class="amount">${formatCurrency(i.total_tax || 0)}</td>
@@ -1326,7 +1335,7 @@ const ReportsPage = {
                 </tr>`;
             // A customer's name opens the customer's page (R9)
             const name = (i) => i.customer_id
-                ? ReportsPage._rowLink(`ReportsPage.openCustomer(${i.customer_id})`, i.customer_name, `customer:${i.customer_id}`)
+                ? ReportsPage._rowLink(`ReportsPage.openCustomer(${i.customer_id}, this)`, i.customer_name, `customer:${i.customer_id}`)
                 : escapeHtml(i.customer_name);
             let rows = data.items.map(i => agingRow(i, name(i))).join("");
             const t = data.totals;
@@ -1359,7 +1368,7 @@ const ReportsPage = {
             // A vendor's name opens the vendor's page (R9)
             let rows = data.items.map(i =>
                 `<tr>
-                    <td>${i.vendor_id ? ReportsPage._rowLink(`ReportsPage.openVendor(${i.vendor_id})`, i.vendor_name, `vendor:${i.vendor_id}`) : escapeHtml(i.vendor_name)}</td>
+                    <td>${i.vendor_id ? ReportsPage._rowLink(`ReportsPage.openVendor(${i.vendor_id}, this)`, i.vendor_name, `vendor:${i.vendor_id}`) : escapeHtml(i.vendor_name)}</td>
                     <td class="amount">${formatCurrency(i.current)}</td>
                     <td class="amount">${formatCurrency(i.over_30)}</td>
                     <td class="amount">${formatCurrency(i.over_60)}</td>
@@ -1502,7 +1511,7 @@ const ReportsPage = {
             // A vendor's name opens the vendor's page (R9)
             let rows = data.items.map(i =>
                 `<tr${i.above_threshold ? ' style="background:var(--primary-light);"' : ''}>
-                    <td>${i.vendor_id ? ReportsPage._rowLink(`ReportsPage.openVendor(${i.vendor_id})`, i.vendor_name, `vendor:${i.vendor_id}`) : escapeHtml(i.vendor_name)}</td>
+                    <td>${i.vendor_id ? ReportsPage._rowLink(`ReportsPage.openVendor(${i.vendor_id}, this)`, i.vendor_name, `vendor:${i.vendor_id}`) : escapeHtml(i.vendor_name)}</td>
                     <td>${escapeHtml(i.tax_id)}</td>
                     <td>${escapeHtml(i.vendor_1099_type)}</td>
                     <td class="amount">${formatCurrency(i.total_paid)}</td>
@@ -1874,8 +1883,8 @@ ReportsPage.profitLossByClass = async function (prefill) {
                 note: ReportsPage._filteredNote(data, columns, T('classes')),
                 totalLabel: data.filtered ? 'Total (shown)' : 'Total',
                 drill: (a, c) => `ReportsPage.openDrillDown(${args(a.account_id, a.account_name, range.start, range.end, c.class_id, c.class_name, 'profit-loss-by-class')})`,
-                head: (c) => `ReportsPage.profitLossOfClass(${args(c.class_id, c.class_name, dates)})`,
-                sum: (c) => `ReportsPage.profitLossOfClass(${args(c.class_id, c.class_name, dates)})`,
+                head: (c) => `ReportsPage.profitLossOfClass(${args(c.class_id, c.class_name, dates)}, null, this)`,
+                sum: (c) => `ReportsPage.profitLossOfClass(${args(c.class_id, c.class_name, dates)}, null, this)`,
             })}`;
     }, "Dates", false, { reportType: 'profit_loss_by_class', view: 'profit-loss-by-class', params, prefill, toolbar, wide: true, afterRender: (_c, first) => { if (first && prefill && prefill.jump) ReportsPage.gridJumpTo(prefill.jump); } });
 };
@@ -1926,7 +1935,7 @@ ReportsPage.profitLossByJob = async function (prefill) {
                 note: ReportsPage._filteredNote(data, columns, T('jobs')),
                 totalLabel: data.filtered ? 'Total (shown)' : 'Total',
                 drill: (a, c) => `ReportsPage.openDrillDown(${args(a.account_id, a.account_name, range.start, range.end, null, null, 'profit-loss-by-job', { job_id: jobKey(c), job_name: c.job_name })})`,
-                head: (c) => c.job_id ? `App.navigate(${JSON.stringify(jobUrl(c))})` : null,
+                head: (c) => c.job_id ? `ReportsPage._leaveFrom(this);App.navigate(${JSON.stringify(jobUrl(c))})` : null,
             })}`;
     }, "Dates", false, { reportType: 'profit_loss_by_job', view: 'profit-loss-by-job', params, prefill, toolbar, wide: true });
 };
@@ -1938,9 +1947,14 @@ ReportsPage.profitLossByJob = async function (prefill) {
 // #/reports/profit-loss-class?class_id=…&start_date=…&end_date=… (R7):
 // opened from it, the class's name comes from the server. `prefill` is the
 // query (period, start_date, end_date) the view starts on.
-ReportsPage.profitLossOfClass = async function (classId, className, prefill, from = null) {
+ReportsPage.profitLossOfClass = async function (classId, className, prefill, from = null, row = null) {
     classId = parseInt(classId, 10);
     if (!classId) { toast(`No ${T('class')} on this column`, 'error'); return; }
+    // The grid's heading or a fund's row that opened it (`row`, its link's
+    // `this`) is noted now, while it is the row clicked: the view's own
+    // push comes after the class list is fetched, when the click is over
+    // and, in WebKit, focus was never on the link (W-7 review).
+    if (row) ReportsPage._leaveFrom(row);
     prefill = prefill || {};
     // `from` names the view that opened it when it is not the by-class grid
     // (Fund Balances, #239): the "Back to …" button returns there.
@@ -2142,15 +2156,18 @@ ReportsPage.jobProfitability = async function (prefill) {
         // "No job" is no document: its row opens P&L by Job on its column,
         // the accounts behind the untagged activity (#245).
         const dates = { period: _period, start_date: data.start_date, end_date: data.end_date };
-        const jobCall = (j) => j.job_id
-            ? `ReportsPage._leaveFrom();App.navigate(${JSON.stringify(`#/jobs/${j.job_id}?start_date=${data.start_date}&end_date=${data.end_date}&from=job-profitability`)})`
-            : `ReportsPage._leaveFrom();App.navigate(${JSON.stringify(ReportsPage.viewUrl('profit-loss-by-job', { ...dates, job_ids: '0' }))})`;
+        // The row left is the one clicked: the job's link passes itself, the
+        // row its job's link (the customer's is the row's other link), so
+        // Back puts focus there after a mouse click too (W-7 review).
+        const jobCall = (j, from) => j.job_id
+            ? `ReportsPage._leaveFrom(${from});App.navigate(${JSON.stringify(`#/jobs/${j.job_id}?start_date=${data.start_date}&end_date=${data.end_date}&from=job-profitability`)})`
+            : `ReportsPage._leaveFrom(${from});App.navigate(${JSON.stringify(ReportsPage.viewUrl('profit-loss-by-job', { ...dates, job_ids: '0' }))})`;
         const customerCell = (j) => j.customer_id
-            ? ReportsPage._rowLink(`event.stopPropagation(); ReportsPage.openCustomer(${j.customer_id})`, j.customer_name || '', `customer:${j.customer_id}`)
+            ? ReportsPage._rowLink(`event.stopPropagation(); ReportsPage.openCustomer(${j.customer_id}, this)`, j.customer_name || '', `customer:${j.customer_id}`)
             : escapeHtml(j.customer_name || '');
-        const rows = data.jobs.map(j => `<tr style="cursor:pointer" onclick="${escapeHtml(jobCall(j))}">
+        const rows = data.jobs.map(j => `<tr style="cursor:pointer" onclick="${escapeHtml(jobCall(j, "this.querySelector('[data-row-key^=job]')"))}">
             <td>${customerCell(j)}</td>
-            <td>${ReportsPage._rowLink(`event.stopPropagation(); ${jobCall(j)}`, j.job_name, `job:${j.job_id || 0}`)}</td>
+            <td>${ReportsPage._rowLink(`event.stopPropagation(); ${jobCall(j, 'this')}`, j.job_name, `job:${j.job_id || 0}`)}</td>
             <td class="amount">${j.contract_amount !== null && j.contract_amount !== undefined ? formatCurrency(j.contract_amount) : ''}</td>
             <td class="amount">${formatCurrency(j.income)}</td>
             <td class="amount">${formatCurrency(j.total_costs)}</td>
@@ -2378,7 +2395,7 @@ ReportsPage.fundBalances = async function (prefill) {
         // A fund's name opens the fund's own P&L for the report's dates (R9),
         // with "Back to Fund Balances"; the Unassigned row has no class
         const name = (f) => f.class_id
-            ? ReportsPage._rowLink(`ReportsPage.profitLossOfClass(${f.class_id},${JSON.stringify(f.class_name)},${JSON.stringify({ start_date: range.start, end_date: range.end })},'fund-balances')`, f.class_name, `class:${f.class_id}`)
+            ? ReportsPage._rowLink(`ReportsPage.profitLossOfClass(${f.class_id},${JSON.stringify(f.class_name)},${JSON.stringify({ start_date: range.start, end_date: range.end })},'fund-balances', this)`, f.class_name, `class:${f.class_id}`)
             : escapeHtml(f.class_name);
         const row = (f, style = '') => `<tr style="${style}"><td>${name(f)}${f.donor_name ? `<div style="font-size:10px;color:var(--gray-500)">${escapeHtml(f.donor_name)}</div>` : ''}</td>${keys.map(k => `<td class="amount">${formatCurrency(f[k])}</td>`).join('')}</tr>`;
         const rows = d.funds.map(f => row(f)).join('') + (d.unassigned ? row(d.unassigned, 'font-style:italic') : '');
