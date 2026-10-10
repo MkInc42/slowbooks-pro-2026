@@ -628,9 +628,9 @@ const InvoicesPage = {
                         <select name="customer_id" id="inv-customer-select" required onchange="InvoicesPage.customerSelected(this.value)"><option value="">Select...</option><option value="__new__">+ ${T('New Customer')}</option>${custOpts}</select>
                         <div id="inv-new-customer-form" style="display:none; margin-top:8px; padding:8px; border:1px solid var(--gray-300); border-radius:4px; background:var(--primary-light);">
                             <div style="font-weight:700; font-size:11px; margin-bottom:6px;">Quick Add ${T('Customer')}</div>
-                            <input id="inv-new-cust-name" placeholder="Name *" aria-label="${T('Customer')} name" aria-required="true" style="width:100%; margin-bottom:4px; padding:4px 8px; border:1px solid var(--gray-300); border-radius:4px;">
-                            <input id="inv-new-cust-email" placeholder="Email" style="width:100%; margin-bottom:4px; padding:4px 8px; border:1px solid var(--gray-300); border-radius:4px;">
-                            <input id="inv-new-cust-phone" placeholder="Phone" style="width:100%; margin-bottom:4px; padding:4px 8px; border:1px solid var(--gray-300); border-radius:4px;">
+                            <input id="inv-new-cust-name" placeholder="Name *" aria-label="${T('Customer')} name" aria-required="true" style="width:100%; margin-bottom:4px;">
+                            <input id="inv-new-cust-email" placeholder="Email" style="width:100%; margin-bottom:4px;">
+                            <input id="inv-new-cust-phone" placeholder="Phone" style="width:100%; margin-bottom:4px;">
                             <div style="display:flex; gap:6px;">
                                 <button type="button" class="btn btn-sm btn-primary" onclick="InvoicesPage.saveNewCustomer()">Save</button>
                                 <button type="button" class="btn btn-sm btn-secondary" onclick="InvoicesPage.cancelNewCustomer()">Cancel</button>

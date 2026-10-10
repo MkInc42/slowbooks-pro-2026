@@ -166,7 +166,7 @@ const VendorsPage = {
                     <span>Notes</span>
                     <span id="vend-note-status-${id}" style="font-size:10px;color:var(--text-muted);text-transform:none;letter-spacing:0;font-weight:normal"></span>
                 </h4>
-                <textarea id="vend-notes-${id}" class="field" rows="3" data-write aria-label="Notes" style="width:100%;font-size:13px;font-family:inherit"
+                <textarea id="vend-notes-${id}" rows="3" data-write aria-label="Notes" style="width:100%;font-size:13px;font-family:inherit"
                     placeholder="Internal notes about this vendor — visible to everyone with admin access."
                     onblur="VendorsPage._saveNotes(${id}, this.value)">${escapeHtml(vendor.notes || '')}</textarea>
             </div>
@@ -492,7 +492,7 @@ const VendorQuickAdd = {
                 <option value="">Select...</option><option value="${this.NEW}">+ New Vendor</option>${opts}</select>
             <div id="${id}-new" style="display:none; margin-top:8px; padding:8px; border:1px solid var(--gray-300); border-radius:4px; background:var(--primary-light);">
                 <div style="font-weight:700; font-size:11px; margin-bottom:6px;">Quick Add Vendor</div>
-                <input id="${id}-new-name" placeholder="Name *" aria-label="Vendor name" aria-required="true" style="width:100%; margin-bottom:4px; padding:4px 8px; border:1px solid var(--gray-300); border-radius:4px;">
+                <input id="${id}-new-name" placeholder="Name *" aria-label="Vendor name" aria-required="true" style="width:100%; margin-bottom:4px;">
                 <div style="display:flex; gap:6px;">
                     <button type="button" class="btn btn-sm btn-primary" onclick="VendorQuickAdd.save('${id}')">Save</button>
                     <button type="button" class="btn btn-sm btn-secondary" onclick="VendorQuickAdd.cancel('${id}')">Cancel</button>

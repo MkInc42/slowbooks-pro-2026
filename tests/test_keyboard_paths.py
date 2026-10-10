@@ -443,11 +443,14 @@ def test_focus_is_visible_on_every_control_by_keyboard_only():
     # the token: a deeper gold than the brand's in light (3.9:1 on white,
     # WCAG 1.4.11), the brand's own in dark
     assert "--focus-ring:     #a37a29;" in css
-    # the outline is dropped in three places only: the two field rules (the
-    # exception above) and what takes focus by script alone — the dialog
-    # itself and the skip link's target, a place rather than a control
-    assert css.count("outline: none") == 3
-    assert ".form-group textarea:focus,\n.field:focus {\n    outline: none;" in css
+    # the outline is dropped in four places only: a field's focus style (a
+    # form's, and every field's at the end of the sheet: the exception
+    # above), the toolbar's search box's own, and what takes focus by
+    # script alone — the dialog itself and the skip link's target, a place
+    # rather than a control
+    assert css.count("outline: none") == 4
+    assert ".form-group textarea:focus {\n    outline: none;" in css
+    assert ":focus {\n    outline: none;\n    border-color: var(--input-focus);" in css
     assert ".tb-search:focus {\n    outline: none;" in css
     assert '[tabindex="-1"]:focus {\n    outline: none;\n}' in css
     dark = (ROOT / "app/static/css/dark.css").read_text(encoding="utf-8")
@@ -550,8 +553,7 @@ def test_a_checkbox_or_a_radio_takes_the_ring_and_a_field_does_not():
     assert (
         '.form-group input:not([type="checkbox"]):not([type="radio"]):focus,\n'
         ".form-group select:focus,\n"
-        ".form-group textarea:focus,\n"
-        ".field:focus {\n"
+        ".form-group textarea:focus {\n"
         "    outline: none;" in css
     )
     assert ".form-group input:focus" not in css
@@ -852,41 +854,88 @@ def test_a_click_that_opens_elsewhere_notes_nothing():
     assert "!ev.defaultPrevented" in away
 
 
-def test_a_field_outside_a_form_group_takes_a_fields_look_and_focus():
-    """A page's Notes box and a report's From and To are not in a form
-    group: with .field they take its look and its focus style (the blue
-    border and the pale ground, no outline) in both themes, not the
-    browser's ring."""
+# Every field on a page or in a dialog that is not a control (a checkbox,
+# a radio, a file, a button), as style.css and dark.css select it
+FIELD = (
+    ':where(#page-content, #modal) :where(input:not([type="checkbox"], [type="radio"],'
+    ' [type="file"], [type="range"], [type="color"], [type="hidden"], [type="submit"],'
+    ' [type="button"], [type="reset"], [type="image"]), select, textarea)'
+)
+FIELD_FOCUSED = FIELD.replace(":where(input", ":is(input", 1) + ":focus"
+
+
+def test_every_field_takes_a_fields_look_and_focus_style():
+    """Every field on a page or in a dialog, not only a form group's — a
+    list's search box and filters, a line item, a type-ahead box, Budgets'
+    cells, Settings' lists, the chart's filter, a report's pickers and
+    dates, a page's Notes box — takes a field's look at no specificity (a
+    look of its own wins) and a field's focus style over every look (last
+    in the sheet), in both themes; with the system's high-contrast colours
+    the system's highlight is its ring. The dark theme's focus for a form's
+    own text box outranks the light one again (round 3 had given the light
+    rule two :not()s, and the pale ground showed in the dark theme)."""
     css = (ROOT / "app/static/css/style.css").read_text(encoding="utf-8")
     dark = (ROOT / "app/static/css/dark.css").read_text(encoding="utf-8")
     rest = _rule(
-        css, ".form-group input,\n.form-group select,\n.form-group textarea,\n.field {"
+        css,
+        f".form-group input,\n.form-group select,\n.form-group textarea,\n{FIELD} {{",
     )
-    assert "border: 1px solid var(--input-border);" in rest
-    focus = _rule(
-        css, '.form-group input:not([type="checkbox"]):not([type="radio"]):focus,'
+    for line in (
+        "padding: 4px 6px;",
+        "border: 1px solid var(--input-border);",
+        "color: var(--text-primary);",
+        "background: #ffffff;",
+    ):
+        assert line in rest, line
+    assert "background: linear-gradient(180deg, #ffffff 0%, #f0f2f4 100%);" in _rule(
+        css, ".form-group select,\n:where(#page-content, #modal) :where(select) {"
     )
-    assert ".field:focus" in focus and "outline: none;" in focus
-    assert "border-color: var(--input-focus);" in focus
-    assert '[data-theme="dark"] .field {' in dark
+    assert "background: #f1f3f6;" in _rule(
+        css,
+        ".form-group input[disabled],\n.form-group select[disabled],\n"
+        ":where(#page-content, #modal) :where(input, select, textarea):disabled {",
+    )
+    # the focus: last in the sheet (before the high-contrast block), over
+    # every look of a field's own
+    forced_at = css.rindex("@media (forced-colors: active) {")
+    at = css.rindex(FIELD_FOCUSED + " {", 0, forced_at)
+    focus = css[at : css.index("}", at)]
+    for line in (
+        "outline: none;",
+        "border-color: var(--input-focus);",
+        "background: #fffff8;",
+    ):
+        assert line in focus, line
+    assert at > css.index(".ai-settings-form input:focus,")
+    forced = css[forced_at:]
+    assert FIELD_FOCUSED in forced and "outline: 2px solid Highlight;" in forced
+    # the dark theme's
     assert "background: #14161c;" in _rule(
-        dark, '[data-theme="dark"] .form-group input,'
+        dark,
+        f'[data-theme="dark"] .form-group textarea,\n[data-theme="dark"] {FIELD} {{',
     )
-    assert '[data-theme="dark"] .field:focus {' in dark
-    assert "background: #1a1e28;" in _rule(
-        dark, '[data-theme="dark"] .form-group input:focus,'
+    dfocus = _rule(
+        dark,
+        '[data-theme="dark"] .form-group input:not([type="checkbox"]):not([type="radio"]):focus,',
     )
-    assert (
-        '<textarea id="cust-notes-${id}" class="field" rows="3" data-write aria-label="Notes"'
-        in _src("customers.js")
+    assert f'[data-theme="dark"] {FIELD_FOCUSED}' in dfocus
+    assert "background: #1a1e28;" in dfocus
+    assert '[data-theme="dark"] .form-group input:focus' not in dark
+    # no field of a page or a dialog has a border or a class of its own in
+    # place of the field's: the quick-add boxes and the payment's amounts
+    for name in (
+        "invoices.js",
+        "estimates.js",
+        "sales_receipts.js",
+        "vendors.js",
+        "payments.js",
+    ):
+        assert not re.search(
+            r"<input[^>]*border:1px solid var\(--gray-300\)", _src(name)
+        ), name
+    assert 'class="field"' not in _src("customers.js") + _src("vendors.js") + _src(
+        "reports.js"
     )
-    assert (
-        '<textarea id="vend-notes-${id}" class="field" rows="3" data-write aria-label="Notes"'
-        in _src("vendors.js")
-    )
-    src = _src("reports.js")
-    assert '<input id="report-custom-start" class="field" type="date"' in src
-    assert '<input id="report-custom-end" class="field" type="date"' in src
 
 
 def test_a_control_the_keyboard_puts_under_settings_save_bar_is_scrolled_clear():

@@ -905,12 +905,18 @@ a.report-card:focus-visible { box-shadow: 0 0 0 8px var(--focus-halo); }
     letter-spacing: 0.02em;
 }
 
-/* A field outside a form group (a page's Notes box, a report's From and To)
-   takes the same look with .field, and the same focus style below. */
+/* A field's look: a form's fields, and every other field on a page or in
+   a dialog — a list's search box and filters, a line item, a type-ahead
+   box, Budgets' cells, Settings' lists, the chart's filter, a report's
+   pickers and dates, a page's Notes box. Those kept the browser's own
+   look, white in the dark theme, and its ring on focus (review). Their
+   rule counts for nothing (:where), so a look of a field's own still
+   wins: a toolbar's or a line item's narrower padding, an AI panel's
+   rounded box. Their focus style is at the end of the sheet. */
 .form-group input,
 .form-group select,
 .form-group textarea,
-.field {
+:where(#page-content, #modal) :where(input:not([type="checkbox"], [type="radio"], [type="file"], [type="range"], [type="color"], [type="hidden"], [type="submit"], [type="button"], [type="reset"], [type="image"]), select, textarea) {
     padding: 4px 6px;
     border: 1px solid var(--input-border);
     border-radius: 0;
@@ -928,8 +934,7 @@ a.report-card:focus-visible { box-shadow: 0 0 0 8px var(--focus-halo); }
    the keyboard's ring (top of the sheet). */
 .form-group input:not([type="checkbox"]):not([type="radio"]):focus,
 .form-group select:focus,
-.form-group textarea:focus,
-.field:focus {
+.form-group textarea:focus {
     outline: none;   /* a field's own focus style, not the keyboard's ring */
     border-color: var(--input-focus);
     background: #fffff8;
@@ -948,7 +953,8 @@ input:is([type="checkbox"], [type="radio"]):focus-visible {
     resize: vertical;
 }
 
-.form-group select {
+.form-group select,
+:where(#page-content, #modal) :where(select) {
     box-shadow: none;
     background: linear-gradient(180deg, #ffffff 0%, #f0f2f4 100%);
 }
@@ -2715,7 +2721,8 @@ tbody tr.row--dim > td strong,
 tbody tr.row--dim > td.amount { color: var(--text-muted); }
 
 .form-group input[disabled],
-.form-group select[disabled] {
+.form-group select[disabled],
+:where(#page-content, #modal) :where(input, select, textarea):disabled {
     background: #f1f3f6;
     color: var(--text-muted, #6b7090);
     cursor: not-allowed;
@@ -2836,4 +2843,31 @@ tbody tr.row--dim > td.amount { color: var(--text-muted); }
 }
 @media (forced-colors: active) {
     .cbx-opt[aria-selected="true"] { outline: 2px solid Highlight; outline-offset: -2px; }
+}
+
+/* ============================================================================
+ * A FIELD'S FOCUS, everywhere on a page and in a dialog
+ * The blue border and the pale ground, never the browser's ring or the
+ * keyboard's gold: the form's own, given to every field outside a form too
+ * (see the field's look, above). Last in the sheet and (0,2,1), so it is
+ * over every look of a field's own, an AI panel's coloured outline among
+ * them; a checkbox, a radio and the like are not fields and keep the
+ * keyboard's ring.
+ * ============================================================================ */
+:where(#page-content, #modal) :is(input:not([type="checkbox"], [type="radio"], [type="file"], [type="range"], [type="color"], [type="hidden"], [type="submit"], [type="button"], [type="reset"], [type="image"]), select, textarea):focus {
+    outline: none;
+    border-color: var(--input-focus);
+    background: #fffff8;
+    box-shadow: inset 1px 1px 2px rgba(0,0,0,0.08);
+}
+/* With the system's high-contrast colours on, a border takes the system's
+   colour and the blue border shows nothing: there a focused field draws the
+   system's highlight as its ring. */
+@media (forced-colors: active) {
+    .form-group input:not([type="checkbox"]):not([type="radio"]):focus,
+    .form-group select:focus,
+    .form-group textarea:focus,
+    :where(#page-content, #modal) :is(input:not([type="checkbox"], [type="radio"], [type="file"], [type="range"], [type="color"], [type="hidden"], [type="submit"], [type="button"], [type="reset"], [type="image"]), select, textarea):focus {
+        outline: 2px solid Highlight;
+    }
 }

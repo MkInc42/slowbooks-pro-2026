@@ -214,17 +214,17 @@
 [data-theme="dark"] .form-group input,
 [data-theme="dark"] .form-group select,
 [data-theme="dark"] .form-group textarea,
-[data-theme="dark"] .field {
+[data-theme="dark"] :where(#page-content, #modal) :where(input:not([type="checkbox"], [type="radio"], [type="file"], [type="range"], [type="color"], [type="hidden"], [type="submit"], [type="button"], [type="reset"], [type="image"]), select, textarea) {
     background: #14161c;
     color: var(--text-primary);
     border-color: var(--input-border);
     box-shadow: inset 1px 1px 2px rgba(0,0,0,0.3);
 }
 
-[data-theme="dark"] .form-group input:focus,
+[data-theme="dark"] .form-group input:not([type="checkbox"]):not([type="radio"]):focus,
 [data-theme="dark"] .form-group select:focus,
 [data-theme="dark"] .form-group textarea:focus,
-[data-theme="dark"] .field:focus {
+[data-theme="dark"] :where(#page-content, #modal) :is(input:not([type="checkbox"], [type="radio"], [type="file"], [type="range"], [type="color"], [type="hidden"], [type="submit"], [type="button"], [type="reset"], [type="image"]), select, textarea):focus {
     background: #1a1e28;
     border-color: var(--input-focus);
 }
@@ -234,7 +234,8 @@
     box-shadow: 0 0 0 8px var(--focus-halo);
 }
 
-[data-theme="dark"] .form-group select {
+[data-theme="dark"] .form-group select,
+[data-theme="dark"] :where(#page-content, #modal) :where(select) {
     background: linear-gradient(180deg, #1a1c24 0%, #14161c 100%);
 }
 
@@ -467,7 +468,8 @@
 }
 [data-theme="dark"] .hint--locked em { color: #e0a840; }
 [data-theme="dark"] .form-group input[disabled],
-[data-theme="dark"] .form-group select[disabled] { background: #23262b; color: #8b9098; }
+[data-theme="dark"] .form-group select[disabled],
+[data-theme="dark"] :where(#page-content, #modal) :where(input, select, textarea):disabled { background: #23262b; color: #8b9098; }
 
 /* Contrast, from the macOS gate's sweep (2.18.0) and the same sweep over
    every page (tests/test_theme_contrast.py). */

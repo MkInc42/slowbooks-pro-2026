@@ -220,7 +220,7 @@ const PaymentsPage = {
                     type="number" step="0.01" min="0" max="${inv.balance_due}"
                     aria-label="Apply to ${escapeHtml(inv.invoice_number)}"
                     oninput="PaymentsPage._updateAllocStatus()"
-                    style="width:100px; padding:4px 8px; border:1px solid var(--gray-300); border-radius:4px;"></td>
+                    style="width:100px;"></td>
             </tr>`;
         }
         // Running total — updated live as the user types into any allocation

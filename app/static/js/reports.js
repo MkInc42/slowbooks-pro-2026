@@ -838,9 +838,9 @@ const ReportsPage = {
         return `
             <div id="report-custom-range" style="display:none; margin:4px 0 12px 0; font-size:11px; align-items:center; gap:8px;">
                 <label for="report-custom-start">From:</label>
-                <input id="report-custom-start" class="field" type="date" value="${initialStart}">
+                <input id="report-custom-start" type="date" value="${initialStart}">
                 <label for="report-custom-end">To:</label>
-                <input id="report-custom-end" class="field" type="date" value="${initialEnd}">
+                <input id="report-custom-end" type="date" value="${initialEnd}">
             </div>`;
     },
 

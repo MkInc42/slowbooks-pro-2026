@@ -54,6 +54,7 @@ from tests.test_dialog_contrast import (  # noqa: E402,F401  (the dialogs)
     nonprofit,
 )
 from tests.test_theme_contrast import (  # noqa: E402,F401  (the fixtures)
+    REDIRECTS,
     _open,
     _theme,
     _visit,
@@ -2397,8 +2398,9 @@ FIELD_LOOK = """() => { const a = document.activeElement, cs = getComputedStyle(
 def _field_focus_painted(page, what, theme):
     """The focused field in its own focus style, as computed and as
     painted: its border the theme's focus blue on every side, at the middle
-    of the side, and nothing drawn just outside it (the 1st to 3rd pixel
-    out are the ground 6px out: no ring of the browser's or the keyboard's)."""
+    of the side, and nothing drawn just outside it — the 1st to 3rd pixel
+    out are what they are with the field at rest: no ring of the browser's
+    or the keyboard's."""
     import io
     import math
 
@@ -2412,8 +2414,20 @@ def _field_focus_painted(page, what, theme):
     x0, y0 = math.floor(look["x"]) - 8, math.floor(look["y"]) - 8
     x1 = math.ceil(look["x"] + look["w"]) + 8
     y1 = math.ceil(look["y"] + look["h"]) + 8
-    shot = page.screenshot(clip={"x": x0, "y": y0, "width": x1 - x0, "height": y1 - y0})
-    img = Image.open(io.BytesIO(shot)).convert("RGB")
+    clip = {"x": x0, "y": y0, "width": x1 - x0, "height": y1 - y0}
+
+    def grab():
+        return Image.open(io.BytesIO(page.screenshot(clip=clip))).convert("RGB")
+
+    img = grab()
+    # the same pixels with the field at rest, then focus back on it
+    page.evaluate(
+        "() => { window.__field = document.activeElement; window.__field.blur(); }"
+    )
+    page.evaluate(SETTLED)
+    rest = grab()
+    page.evaluate("() => window.__field.focus({ preventScroll: true })")
+    page.evaluate(SETTLED)
     left, top = round(look["x"]) - x0, round(look["y"]) - y0
     right = round(look["x"] + look["w"]) - x0 - 1
     bottom = round(look["y"] + look["h"]) - y0 - 1
@@ -2427,9 +2441,15 @@ def _field_focus_painted(page, what, theme):
     ):
         edge = img.getpixel(at(0))
         assert _far(edge, blue) <= 40, (what, theme, side, edge)
-        ground = img.getpixel(at(6))
         out = [img.getpixel(at(d)) for d in (1, 2, 3)]
-        assert all(_far(o, ground) <= 12 for o in out), (what, theme, side, out, ground)
+        was = [rest.getpixel(at(d)) for d in (1, 2, 3)]
+        assert all(_far(o, w) <= 12 for o, w in zip(out, was)), (
+            what,
+            theme,
+            side,
+            out,
+            was,
+        )
 
 
 def test_a_field_outside_a_form_group_keeps_a_fields_own_focus_style(
@@ -2438,9 +2458,9 @@ def test_a_field_outside_a_form_group_keeps_a_fields_own_focus_style(
     """A customer's and a vendor's Notes box and a report's From and To are
     not in a form group, and drew the browser's own ring on focus, where
     every other field shows its own style (review). They take a field's
-    look and its focus style (.field): by the keyboard and by a click, in
-    each theme, the blue border on every side, the pale ground and no ring
-    around them, as computed and as painted."""
+    look and its focus style (every field's now): by the keyboard and by a
+    click, in each theme, the blue border on every side, the pale ground
+    and no ring around them, as computed and as painted."""
     pl = f"#/reports/profit-loss?start_date={SEPT[0]}&end_date={SEPT[1]}"
     for where, fields in (
         (f"#/customers/{books['customer']}", [f"#cust-notes-{books['customer']}"]),
@@ -3266,3 +3286,229 @@ def test_a_nonprofits_report_center_cards_are_reached_and_opened_by_the_keyboard
         )
     finally:
         page.close()
+
+
+# Every field under `root` (the page, or the open dialog) that Tab can reach,
+# each focused in turn without a scroll and read: how it looks focused, and
+# its ground at rest. Not a checkbox, a radio, a file or a button: those are
+# controls, with the keyboard's ring.
+FIELD_LOOKS = """(root) => { const r = document.querySelector(root);
+    if (!r) return [];
+    const skip = ['checkbox', 'radio', 'file', 'range', 'color', 'hidden', 'submit', 'button', 'reset', 'image'];
+    const fields = [...r.querySelectorAll('input, select, textarea')].filter(el =>
+        !skip.includes(el.type) && !el.disabled && el.tabIndex >= 0 && el.offsetWidth > 2
+        && el.getClientRects().length && getComputedStyle(el).visibility !== 'hidden');
+    return fields.map(el => {
+        const rest = getComputedStyle(el);
+        const ground = [rest.backgroundColor, rest.backgroundImage];
+        el.focus({ preventScroll: true });
+        const cs = getComputedStyle(el);
+        const out = { at: el.id || el.name || el.getAttribute('aria-label') || (el.className || '').toString().slice(0, 30) || el.tagName.toLowerCase(),
+            tag: el.tagName.toLowerCase(), type: el.type || '', focused: document.activeElement === el,
+            readonly: el.readOnly === true, outline: cs.outlineStyle,
+            border: [cs.borderTopStyle, cs.borderTopColor, cs.borderRightColor, cs.borderBottomColor, cs.borderLeftColor],
+            ground: cs.backgroundColor, image: cs.backgroundImage, shadow: cs.boxShadow, rest: ground };
+        el.blur();
+        return out;
+    }); }"""
+# The quick-add boxes inside a form, shown as choosing "+ New …" shows them
+QUICK_ADDS = [
+    "(async () => {{ await InvoicesPage.showForm();"
+    " document.getElementById('inv-new-customer-form').style.display = 'block'; }})()",
+    "(async () => {{ await EstimatesPage.showForm();"
+    " document.getElementById('est-new-customer-form').style.display = 'block'; }})()",
+    "(async () => {{ await SalesReceiptsPage.showForm();"
+    " document.getElementById('sr-new-customer-form').style.display = 'block'; }})()",
+    "(async () => {{ await BillsPage.showForm();"
+    " document.getElementById('bill-vendor-new').style.display = 'block'; }})()",
+    "(async () => {{ await ExpensesPage.showForm();"
+    " document.getElementById('expense-vendor-new').style.display = 'block'; }})()",
+]
+
+
+def _dark_ground(rest):
+    """The ground a field shows at rest: its colour, or the colours of its
+    gradient over a transparent one; dark (luminance under 0.05) or not."""
+    colour, image = rest
+    found = re.findall(r"rgba?\(([^)]*)\)", image or "")
+    if not found or "gradient" not in (image or ""):
+        found = re.findall(r"rgba?\(([^)]*)\)", colour)
+    out = []
+    for f in found:
+        parts = [float(v) for v in f.split(",")[:4]]
+        if len(parts) == 4 and parts[3] == 0:
+            continue
+        rgb = [v / 255 for v in parts[:3]]
+        lin = [v / 12.92 if v <= 0.04045 else ((v + 0.055) / 1.055) ** 2.4 for v in rgb]
+        out.append(0.2126 * lin[0] + 0.7152 * lin[1] + 0.0722 * lin[2])
+    return bool(out) and max(out) < 0.05
+
+
+def _fields_wrong(page, root, where, theme):
+    """What is wrong with each field under `root` in `theme`: focused, it
+    draws the field's focus style — no outline (no browser ring, no gold),
+    the theme's blue on every side of its border, the pale ground (a
+    read-only field keeps its grey), no halo — and at rest in the dark
+    theme its ground is dark."""
+    want = FIELD_FOCUS[theme]
+    wrong, seen = [], 0
+    for f in page.evaluate(FIELD_LOOKS, root):
+        seen += 1
+        bad = []
+        if not f["focused"]:
+            bad.append("no focus")
+        if f["outline"] != "none":
+            bad.append(f"outline {f['outline']}")
+        if f["border"][0] == "none" or any(
+            c != want["border"] for c in f["border"][1:]
+        ):
+            bad.append(f"border {f['border']}")
+        if f["ground"] != want["ground"] and not f["readonly"]:
+            bad.append(f"ground {f['ground']} {f['image'][:40]}")
+        if "8px" in f["shadow"] and "inset" not in f["shadow"]:
+            bad.append(f"halo {f['shadow']}")
+        if theme == "dark" and not _dark_ground(f["rest"]):
+            bad.append(f"rest {f['rest'][0]} {f['rest'][1][:40]}")
+        if bad:
+            wrong.append((where, theme, f["tag"], f["type"], f["at"], bad))
+    return wrong, seen
+
+
+def _sweep_fields(page, handled, books, pages, dialog_groups):
+    """Every field of every page in `pages` and every dialog in
+    `dialog_groups` ([(route, openers)]), in both themes."""
+    wrong, seen, unopened = [], 0, []
+    for route in pages:
+        _visit(page, handled, route.format(**books))
+        for theme in ("light", "dark"):
+            _theme(page, theme)
+            w, n = _fields_wrong(page, "#page-content", route, theme)
+            wrong += w
+            seen += n
+        _theme(page, "light")
+    for route, openers in dialog_groups:
+        _visit(page, handled, route.format(**books))
+        for opener in openers:
+            call = opener.format(**books)
+            page.evaluate("() => closeModal()")
+            try:
+                page.evaluate(f"async () => {{ await {call}; }}")
+                page.wait_for_function(MODAL_SHOWN, timeout=5000)
+            except Exception as exc:  # the call failed, or opened nothing
+                unopened.append(f"{call}: {str(exc).splitlines()[0]}")
+                continue
+            settle(page, handled)
+            for theme in ("light", "dark"):
+                _theme(page, theme)
+                w, n = _fields_wrong(page, "#modal", call, theme)
+                wrong += w
+                seen += n
+            _theme(page, "light")
+        page.evaluate("() => closeModal()")
+    return wrong, seen, unopened
+
+
+# One field of each kind that kept the browser's look, where it is: by the
+# keyboard, as painted, in both themes; and with the system's high-contrast
+# colours, the system's highlight as its ring
+FIELD_KINDS = [
+    ("#/customers", "#customer-search"),  # a list's search box
+    ("#/invoices", "#inv-status-filter"),  # a list's filter
+    ("#/jobs", "#job-filter-customer-box"),  # a type-ahead box
+    ("#/budgets", "#page-content .budget-cell"),  # a budget's cell
+    ("#/accounts", "#accounts-filter"),  # the chart's filter
+    ("#/settings", "#new-class-name"),  # a Settings list's box
+    ("#/settings", "#ai-settings-provider"),  # an AI panel's own box
+    ("#/quick-entry", "#page-content .line-desc"),  # a line item
+    ("#/deposits", "#deposit-date"),  # a toolbar's date
+]
+
+
+def test_every_field_keeps_a_fields_focus_style_on_every_page_and_dialog(
+    browser, company, books
+):
+    """A field outside a form group — a list's search box and filters, a
+    line item, a type-ahead box, Budgets' cells, Settings' lists, the
+    chart's filter, a report's pickers and dates, a quick-add box — took
+    the browser's own look, white in the dark theme, and its ring on focus
+    (review); and since round 3 a form's own fields drew the light pale
+    ground when focused in the dark theme (the light rule outranked the
+    dark one). Every field of every page of the app and of every dialog
+    the contrast sweeps open, and the quick-add boxes, in both themes:
+    focused, it draws a field's own focus style (no outline: neither the
+    browser's ring nor the keyboard's gold; the theme's focus blue on
+    every side of its border; the pale ground, a read-only field's own
+    grey kept; no halo), and at rest in the dark theme its ground is dark.
+    One field of each kind, by the keyboard, as painted in both themes:
+    the blue border on every side and nothing drawn outside it; and with
+    the system's high-contrast colours, the system's highlight as its
+    ring."""
+    page, handled = _open(browser, company)
+    try:
+        _no_splash(page)
+        paths = page.evaluate(
+            "() => Object.keys(App.routes).filter(k => !k.includes('/:'))"
+        )
+        pages = [f"#{p}" for p in paths if p not in REDIRECTS]
+        pages += ["#/jobs/{job}", "#/banking/{checking}"]
+        wrong, seen, unopened = _sweep_fields(
+            page,
+            handled,
+            books,
+            pages,
+            [
+                ("#/invoices", SALES + QUICK_ADDS),
+                ("#/bills", PURCHASES),
+                ("#/banking/{checking}", BANKING),
+                ("#/reports", REPORTS),
+                ("#/employees", PEOPLE),
+                ("#/settings", SETTINGS),
+            ],
+        )
+        assert unopened == []
+        assert seen > 2000, seen
+        assert wrong == [], (len(wrong), wrong)
+        for route, sel in FIELD_KINDS:
+            _visit(page, handled, route)
+            page.wait_for_selector(sel)
+            settle(page, handled)
+            _keyed(page, f"document.querySelector({sel!r})")
+            for theme in ("light", "dark"):
+                _theme(page, theme)
+                page.evaluate(SETTLED)
+                _field_focus_painted(page, (route, sel), theme)
+            _theme(page, "light")
+            page.emulate_media(forced_colors="active")
+            ring = page.evaluate(
+                "() => { const cs = getComputedStyle(document.activeElement);"
+                " return [cs.outlineStyle, cs.outlineWidth]; }"
+            )
+            page.emulate_media(forced_colors="none")
+            assert ring == ["solid", "2px"], (route, sel, ring)
+            page.evaluate("() => document.activeElement.blur()")
+    finally:
+        page.emulate_media(forced_colors="none")
+        page.close()
+
+
+def test_a_nonprofits_fields_keep_a_fields_focus_style_too(
+    browser, client, nonprofit  # noqa: F811  (the fixture, imported above)
+):
+    """A nonprofit's own pages and dialogs: every field, in both themes,
+    focused draws a field's own focus style, and at rest in the dark theme
+    its ground is dark."""
+    page, handled = _open(browser, client)
+    try:
+        _no_splash(page)
+        wrong, seen, unopened = _sweep_fields(
+            page,
+            handled,
+            nonprofit,
+            NONPROFIT_PAGES,
+            [("#/invoices", NONPROFIT_DIALOGS)],
+        )
+    finally:
+        page.close()
+    assert unopened == []
+    assert seen > 100, seen
+    assert wrong == [], (len(wrong), wrong)
