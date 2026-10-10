@@ -3940,3 +3940,33 @@ def test_the_new_tab_modifier_is_the_platforms_own(browser, company, books):
         page.wait_for_function(f"(k) => ({FOCUS_KEY})() === k", arg=key)
     finally:
         page.close()
+
+
+def test_a_file_picker_draws_the_keyboards_ring(browser, company, books):
+    """A file's picker — QuickBooks Interop's report CSV, an invoice's
+    attachment, the chart's import — drew the browser's own ring on Tab,
+    where a button draws the keyboard's gold (final review). Reached by
+    Tab, each draws the gold ring and its halo on all four sides, 3:1 as
+    painted against the halo on both sides and against the gate's ground,
+    in light and dark."""
+    page, handled = _open(browser, company)
+    try:
+        _no_splash(page)
+        _visit(page, handled, "#/iif")
+        page.wait_for_selector("#qbcsv-file-input")
+        _keyed(page, "document.getElementById('qbcsv-file-input')")
+        _both_themes(page, "QuickBooks report CSV", GOLD)
+        for opener, sel in (
+            (f"() => InvoicesPage.view({books['sent']})", "#inv-attach-file"),
+            ("() => App.showChartImport()", "#modal input[type=file]"),
+        ):
+            page.evaluate("() => closeModal()")
+            page.evaluate(f"async () => {{ await ({opener})(); }}")
+            page.wait_for_function(MODAL_SHOWN)
+            page.wait_for_selector(sel)
+            settle(page, handled)
+            _keyed(page, f"document.querySelector({sel!r})")
+            _both_themes(page, sel, GOLD)
+        page.evaluate("() => closeModal()")
+    finally:
+        page.close()

@@ -429,8 +429,16 @@ def test_focus_is_visible_on_every_control_by_keyboard_only():
         '[tabindex]:not([tabindex="-1"])',
         'input[type="checkbox"]',
         'input[type="radio"]',
+        'input[type="file"]',
     ):
         assert f"{sel}:focus-visible" in ring, sel
+    # a file's picker is a button as the keyboard has it, in a form too:
+    # the gold ring and its halo, not a field's focus style
+    assert 'input[type="file"]' in _rule(css, ":where(a, button, summary,")
+    assert (
+        'input:is([type="checkbox"], [type="radio"], [type="file"]):focus-visible {\n'
+        "    box-shadow: 0 0 0 8px var(--focus-halo);" in css
+    )
     assert "outline: 2px solid var(--focus-ring);" in ring
     assert "outline-offset: 2px;" in ring
     assert ":focus {" not in ring and ":focus," not in ring  # never a mouse click's
@@ -551,13 +559,13 @@ def test_a_checkbox_or_a_radio_takes_the_ring_and_a_field_does_not():
     css = (ROOT / "app/static/css/style.css").read_text(encoding="utf-8")
     dark = (ROOT / "app/static/css/dark.css").read_text(encoding="utf-8")
     assert (
-        '.form-group input:not([type="checkbox"]):not([type="radio"]):focus,\n'
+        '.form-group input:not([type="checkbox"]):not([type="radio"]):not([type="file"]):focus,\n'
         ".form-group select:focus,\n"
         ".form-group textarea:focus {\n"
         "    outline: none;" in css
     )
     assert ".form-group input:focus" not in css
-    halo = 'input:is([type="checkbox"], [type="radio"]):focus-visible {\n    box-shadow: 0 0 0 8px var(--focus-halo);\n}'
+    halo = 'input:is([type="checkbox"], [type="radio"], [type="file"]):focus-visible {\n    box-shadow: 0 0 0 8px var(--focus-halo);\n}'
     assert halo in css
     # (0,2,1) beats .form-group input and the line-item and toolbar inputs,
     # (0,1,1); in dark, [data-theme] .form-group input is (0,2,1) and later
@@ -916,7 +924,7 @@ def test_every_field_takes_a_fields_look_and_focus_style():
     )
     dfocus = _rule(
         dark,
-        '[data-theme="dark"] .form-group input:not([type="checkbox"]):not([type="radio"]):focus,',
+        '[data-theme="dark"] .form-group input:not([type="checkbox"]):not([type="radio"]):not([type="file"]):focus,',
     )
     assert f'[data-theme="dark"] {FIELD_FOCUSED}' in dfocus
     assert "background: #1a1e28;" in dfocus

@@ -37,10 +37,10 @@
    WebKit, with the Mac's keyboard navigation off as it ships, draws
    faintly on buttons and not at all on links: Tab walked A/R Aging's
    customers with nothing to show where it was (macOS gate NEW-43, 2.22.0).
-   Links, buttons, checkboxes, radios and whatever else the keyboard
-   reaches draw the skip link's ring, in gold (--focus-ring, each theme's
-   own), on :focus-visible only, so a mouse click on a button or a link
-   draws none. A field keeps its own focus style (the blue border and pale
+   Links, buttons, checkboxes, radios, a file's picker and whatever else
+   the keyboard reaches draw the skip link's ring, in gold (--focus-ring,
+   each theme's own), on :focus-visible only, so a mouse click on a button
+   or a link draws none. A field keeps its own focus style (the blue border and pale
    ground, below), so a dense form gets no ring on a click into a box.
    The ring is two colours (WCAG 1.4.11: 3:1 against what it meets). The
    gold alone fell under 3:1 wherever the ground is neither light nor dark:
@@ -68,7 +68,8 @@
        summary:focus-visible,
        [tabindex]:not([tabindex="-1"]):focus-visible,
        input[type="checkbox"]:focus-visible,
-       input[type="radio"]:focus-visible) {
+       input[type="radio"]:focus-visible,
+       input[type="file"]:focus-visible) {
     outline: 2px solid var(--focus-ring);
     outline-offset: 2px;
     box-shadow: 0 0 0 8px var(--focus-halo);
@@ -78,7 +79,7 @@
    scrolling dialog's edge (New Customer's Create Customer) their outer
    side was cut off. */
 :where(a, button, summary, [tabindex]:not([tabindex="-1"]),
-       input[type="checkbox"], input[type="radio"]) {
+       input[type="checkbox"], input[type="radio"], input[type="file"]) {
     scroll-margin: 8px;
 }
 /* What takes focus by script alone — the dialog itself (#modal, when its
@@ -937,8 +938,10 @@ a.card-link:focus-visible { box-shadow: 0 0 0 8px var(--focus-halo); }
 /* A checkbox and a radio are not fields: the border and ground here do not
    show on one, so with the outline gone it showed nothing at all (the P&L
    by Class chooser's classes, "Show classes with no activity"). They keep
-   the keyboard's ring (top of the sheet). */
-.form-group input:not([type="checkbox"]):not([type="radio"]):focus,
+   the keyboard's ring (top of the sheet), and so does a file's picker, a
+   button as the keyboard has it (the chart's import, an invoice's
+   attachment). */
+.form-group input:not([type="checkbox"]):not([type="radio"]):not([type="file"]):focus,
 .form-group select:focus,
 .form-group textarea:focus {
     outline: none;   /* a field's own focus style, not the keyboard's ring */
@@ -950,7 +953,7 @@ a.card-link:focus-visible { box-shadow: 0 0 0 8px var(--focus-halo); }
    every input is given above (and in the line-item tables and the
    toolbars): a white box below, in the dark theme, would otherwise be the
    ground 4-7px out */
-input:is([type="checkbox"], [type="radio"]):focus-visible {
+input:is([type="checkbox"], [type="radio"], [type="file"]):focus-visible {
     box-shadow: 0 0 0 8px var(--focus-halo);
 }
 
@@ -2870,7 +2873,7 @@ tbody tr.row--dim > td.amount { color: var(--text-muted); }
    colour and the blue border shows nothing: there a focused field draws the
    system's highlight as its ring. */
 @media (forced-colors: active) {
-    .form-group input:not([type="checkbox"]):not([type="radio"]):focus,
+    .form-group input:not([type="checkbox"]):not([type="radio"]):not([type="file"]):focus,
     .form-group select:focus,
     .form-group textarea:focus,
     :where(#page-content, #modal) :is(input:not([type="checkbox"], [type="radio"], [type="file"], [type="range"], [type="color"], [type="hidden"], [type="submit"], [type="button"], [type="reset"], [type="image"]), select, textarea):focus {

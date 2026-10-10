@@ -221,7 +221,7 @@
     box-shadow: inset 1px 1px 2px rgba(0,0,0,0.3);
 }
 
-[data-theme="dark"] .form-group input:not([type="checkbox"]):not([type="radio"]):focus,
+[data-theme="dark"] .form-group input:not([type="checkbox"]):not([type="radio"]):not([type="file"]):focus,
 [data-theme="dark"] .form-group select:focus,
 [data-theme="dark"] .form-group textarea:focus,
 [data-theme="dark"] :where(#page-content, #modal) :is(input:not([type="checkbox"], [type="radio"], [type="file"], [type="range"], [type="color"], [type="hidden"], [type="submit"], [type="button"], [type="reset"], [type="image"]), select, textarea):focus {
@@ -239,7 +239,7 @@
 }
 /* a checkbox or a radio keeps the keyboard's ring and its halo over the
    sunken shadow above (style.css) */
-[data-theme="dark"] input:is([type="checkbox"], [type="radio"]):focus-visible {
+[data-theme="dark"] input:is([type="checkbox"], [type="radio"], [type="file"]):focus-visible {
     box-shadow: 0 0 0 8px var(--focus-halo);
 }
 
