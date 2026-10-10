@@ -119,11 +119,16 @@
     // the address stays. Followed as a link, "#page-content" became the
     // address, which the router read as a page: "Page not found" (review
     // of NEW-43, 2.22.0). The content takes focus as a place (tabindex
-    // -1): no ring, and the next Tab is its first control.
+    // -1: no ring, and the next Tab is its first control) only while the
+    // skip link puts it there: standing, it made a mouse click on any blank
+    // part of a page focus the content, so the next Tab went to the page's
+    // first control and scrolled back to the top (2.22.0 review).
     const skip = document.querySelector('.skip-link');
     const main = document.getElementById('page-content');
     if (skip && main) skip.addEventListener('click', (e) => {
         e.preventDefault();
+        main.setAttribute('tabindex', '-1');
+        main.addEventListener('blur', () => main.removeAttribute('tabindex'), { once: true });
         main.focus();
     });
 

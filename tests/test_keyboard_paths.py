@@ -587,12 +587,20 @@ def test_the_skip_link_draws_the_ring_and_goes_to_the_content_in_place():
     assert "--qb-gold" not in skip
     html = (ROOT / "index.html").read_text(encoding="utf-8")
     assert '<a href="#page-content" class="skip-link">Skip to main content</a>' in html
-    assert '<div id="page-content" tabindex="-1"></div>' in html
+    # the content takes focus only while the skip link puts it there: a
+    # standing tabindex made any click on blank content focus it
+    assert '<div id="page-content"></div>' in html
+    assert 'id="page-content" tabindex' not in html
     boot = _src("bootstrap.js")
     wire = boot[boot.index("const skip = document.querySelector('.skip-link');") :]
-    wire = wire[: wire.index("});") + 3]
-    assert "e.preventDefault();" in wire and "main.focus();" in wire
+    wire = wire[: wire.index("main.focus();") + len("main.focus();")]
+    assert "e.preventDefault();" in wire
     assert "const main = document.getElementById('page-content');" in wire
+    assert "main.setAttribute('tabindex', '-1');" in wire
+    assert (
+        "main.addEventListener('blur', () => main.removeAttribute('tabindex'), { once: true });"
+        in wire
+    )
 
 
 def test_a_sidebar_link_draws_the_ring_inside_its_edge():

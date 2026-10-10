@@ -2153,11 +2153,61 @@ def test_the_skip_link_draws_the_ring_and_enter_goes_to_the_content_in_place(
         assert page.inner_text("#page-content") == words
         place = page.evaluate(OWN_RING)
         assert "none" in place["outline"] and place["shadow"] == "none", place
+        assert page.get_attribute("#page-content", "tabindex") == "-1"
         page.keyboard.press("Tab")
         assert page.evaluate(
             "() => document.activeElement !== document.getElementById('page-content')"
             " && !!document.activeElement.closest('#page-content')"
         )
+        # a place only while the skip link puts focus there
+        assert page.get_attribute("#page-content", "tabindex") is None
+    finally:
+        page.close()
+
+
+# A row of the chart, by its index: its cells and where the content is
+CHART_ROW = """(i) => { const row = document.querySelectorAll('#page-content tbody tr[data-account-row]')[i];
+    const td = row.children[2], r = td.getBoundingClientRect();
+    return { x: r.left + r.width / 2, y: r.top + r.height / 2,
+             scroll: document.getElementById('content').scrollTop }; }"""
+
+
+def test_a_click_on_blank_content_then_tab_goes_on_from_there(browser, company, books):
+    """With a standing tabindex on #page-content, a mouse click on any blank
+    part of a page focused the content, so the next Tab went to the page's
+    first control and scrolled back to the top (2.22.0 review). The content
+    is a place only while the skip link puts focus there: a click on a row's
+    plain cell, then Tab, goes to the next control after that point, with
+    the page where it was, as before the skip link's change."""
+    page, handled = _open_at(browser, company, "#/accounts")
+    try:
+        page.wait_for_selector("#page-content tbody tr[data-account-row]")
+        settle(page, handled)
+        rows = page.evaluate(
+            "() => document.querySelectorAll('#page-content tbody tr[data-account-row]').length"
+        )
+        i = rows * 2 // 3
+        page.evaluate(
+            """(i) => document.querySelectorAll('#page-content tbody tr[data-account-row]')[i]
+                .scrollIntoView({ block: 'center' })""",
+            i,
+        )
+        settle(page, handled)
+        at = page.evaluate(CHART_ROW, i)
+        assert at["scroll"] > 100, at  # mid-page
+        page.mouse.click(at["x"], at["y"])
+        assert page.evaluate("() => document.activeElement === document.body")
+        page.keyboard.press("Tab")
+        settle(page, handled)
+        landed = page.evaluate(
+            """(i) => { const row = document.querySelectorAll('#page-content tbody tr[data-account-row]')[i];
+                const a = document.activeElement;
+                return { inRow: row.contains(a), tag: a.tagName, text: a.textContent.trim(),
+                         scroll: document.getElementById('content').scrollTop }; }""",
+            i,
+        )
+        assert landed["inRow"] and landed["tag"] == "BUTTON", landed
+        assert abs(landed["scroll"] - at["scroll"]) < 2, (at, landed)
     finally:
         page.close()
 
