@@ -87,28 +87,20 @@ def test_the_alt_shortcuts_compare_the_keys_position_and_cmd_k_finds():
     keys = app[app.index("// Keyboard shortcuts.") :]
     keys = keys[: keys.index("// Close search dropdown")]
     assert "const alt = e.altKey && !e.ctrlKey && !e.metaKey && !e.shiftKey;" in keys
-    # inside a field the plain letter alone (a Mac's Option types a
-    # character, or a dead key, that must go through); outside, the key
+    # inside a field — an input, a textarea, a select, an editable region —
+    # no Alt letter is a shortcut, on any platform: a Mac's Option is
+    # typing there, and Windows sends the plain letter, which let Alt+N
+    # over a half-typed bill open New Invoice in its place (W-6); outside,
+    # the key's place is enough
     assert (
         "e.target.closest('input, textarea, select, [contenteditable]:not([contenteditable=\"false\"])')"
         in keys
     )
-    assert (
-        "const letter = (code, key) => alt && e.code === code && (!editing || String(e.key).toLowerCase() === key);"
-        in keys
-    )
-    for code, key in (
-        ("KeyN", "n"),
-        ("KeyP", "p"),
-        ("KeyQ", "q"),
-        ("KeyH", "h"),
-        ("KeyD", "d"),
-    ):
-        assert f"if (letter('{code}', '{key}'))" in keys, code
-    assert (
-        "const entry = letter('KeyN', 'n') || letter('KeyP', 'p') || letter('KeyQ', 'q');"
-        in keys
-    )
+    assert "const letter = (code) => alt && !editing && e.code === code;" in keys
+    assert "e.key).toLowerCase()" not in keys, "the character typed is not consulted"
+    for code in ("KeyN", "KeyP", "KeyQ", "KeyH", "KeyD"):
+        assert f"if (letter('{code}'))" in keys, code
+    assert "const entry = letter('KeyN') || letter('KeyP') || letter('KeyQ');" in keys
     assert "if (entry && App.isReadOnly())" in keys
     # ⌘⌥[ is not Back
     assert (
