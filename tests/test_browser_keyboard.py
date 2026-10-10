@@ -2475,6 +2475,80 @@ def test_a_field_outside_a_form_group_keeps_a_fields_own_focus_style(
             page.close()
 
 
+# The focused control on Settings against the save bar held to the window's
+# bottom: its ring and halo (8px) end above the bar, and it is what the
+# browser finds at its middle; the bar's own controls apart
+SAVEBAR_STOP = """() => { const a = document.activeElement, bar = document.getElementById('settings-savebar');
+    if (!a || !a.closest('#page-content')) return null;
+    const r = a.getBoundingClientRect(), b = bar.getBoundingClientRect();
+    const h = document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2);
+    return { at: a.id || a.name || (a.textContent || '').trim().slice(0, 30) || a.tagName,
+             own: bar.contains(a), size: r.width * r.height,
+             over: r.bottom + 8 - b.top, found: !!h && (h === a || a.contains(h)) }; }"""
+
+
+def test_tab_through_settings_never_lands_under_its_save_bar(browser, company, books):
+    """Settings' save bar is held to the window's bottom over what scrolls
+    under it, and Tab moved to 22 controls there, out of sight (review).
+    A control the keyboard puts under it is scrolled up clear of it: walked
+    by Tab from the page's first control to its last, at 1440 x 900, 1280 x
+    600 and 1024 x 640, no stop's ring and halo reach the bar (the invoice
+    notes box too, which the browser brings only its caret line into view
+    for) and every stop is what the browser finds at its middle; Tab still
+    reaches the bar's Save; and a mouse's press on a control the bar half
+    covers scrolls nothing."""
+    page, handled = _open(browser, company)
+    try:
+        _no_splash(page)
+        for width, height in ((1440, 900), (1280, 600), (1024, 640)):
+            page.set_viewport_size({"width": width, "height": height})
+            _visit(page, handled, "#/settings")
+            page.wait_for_selector("#settings-savebar")
+            settle(page, handled)
+            page.evaluate(
+                "() => _tabStops(document.getElementById('page-content'), null)[0].focus()"
+            )
+            stops, bad, saved = 0, [], False
+            for _ in range(400):
+                page.keyboard.press("Tab")
+                at = page.evaluate(SAVEBAR_STOP)
+                if at is None:
+                    break
+                stops += 1
+                if at["own"]:
+                    saved = saved or at["at"] == "settings-save-btn"
+                    continue
+                if at["size"] and (at["over"] > 0.5 or not at["found"]):
+                    bad.append((at["at"], round(at["over"], 1), at["found"]))
+            assert stops > 100 and saved, (width, stops, saved)
+            assert not bad, (width, len(bad), bad)
+        # a mouse's press on a button the bar half covers: no scroll, so
+        # the release lands on the button pressed
+        half = page.evaluate(
+            """() => { const bar = document.getElementById('settings-savebar'),
+                    content = document.getElementById('content');
+                const b = [...document.querySelectorAll('#settings-form button')]
+                    .find(el => !bar.contains(el) && !el.disabled && el.offsetHeight > 14);
+                content.scrollTop += b.getBoundingClientRect().top - (bar.getBoundingClientRect().top - 8);
+                const r = b.getBoundingClientRect();
+                b.dataset.half = '1';
+                return { x: r.left + r.width / 2, y: r.top + 4, top: content.scrollTop,
+                         covered: r.bottom > bar.getBoundingClientRect().top }; }"""
+        )
+        assert half["covered"], half
+        page.mouse.move(half["x"], half["y"])
+        page.mouse.down()
+        pressed = page.evaluate("""() => [document.activeElement.dataset.half === '1',
+                document.activeElement.matches(':focus-visible'),
+                document.getElementById('content').scrollTop]""")
+        page.mouse.move(half["x"], half["y"] - 300)
+        page.mouse.up()
+        assert pressed == [True, False, half["top"]], (half, pressed)
+    finally:
+        page.set_viewport_size({"width": 1500, "height": 980})
+        page.close()
+
+
 def test_the_skip_link_draws_the_ring_and_enter_goes_to_the_content_in_place(
     browser, company, books
 ):

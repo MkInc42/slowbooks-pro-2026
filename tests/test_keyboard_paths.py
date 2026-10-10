@@ -879,3 +879,23 @@ def test_a_field_outside_a_form_group_takes_a_fields_look_and_focus():
     src = _src("reports.js")
     assert '<input id="report-custom-start" class="field" type="date"' in src
     assert '<input id="report-custom-end" class="field" type="date"' in src
+
+
+def test_a_control_the_keyboard_puts_under_settings_save_bar_is_scrolled_clear():
+    """Settings' save bar is held to the window's bottom (sticky): a control
+    the keyboard puts under it is scrolled up clear of it, its ring and halo
+    too, by measure (a text box is brought into view only by its caret
+    line); not the bar's own Save, not a mouse's focus."""
+    src = _src("settings.js")
+    assert 'id="settings-savebar"' in src and "position:sticky; bottom:0;" in src
+    clear = src[src.index("document.addEventListener('focusin', (e) => {") :]
+    clear = clear[: clear.index("\n});")]
+    for line in (
+        "const a = e.target, bar = document.getElementById('settings-savebar');",
+        "if (!bar || !a.closest || bar.contains(a) || !a.closest('#settings-form')) return;",
+        "if (!a.matches(':focus-visible')) return;",
+        "if (!b.height || !content) return;",
+        "const over = a.getBoundingClientRect().bottom + 8 - b.top;",
+        "if (over > 0) content.scrollTop += Math.ceil(over);",
+    ):
+        assert line in clear, line
