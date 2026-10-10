@@ -2087,6 +2087,39 @@ def test_a_checkbox_draws_the_ring_by_keyboard_and_none_by_mouse(
         page.close()
 
 
+# The last row's last button of the page's table, and its container's overflow
+LAST_ROW_BUTTON = """() => [...document.querySelectorAll(
+    '#page-content .table-container tbody tr:last-child button')].pop()"""
+CONTAINER_OVERFLOW = """() => getComputedStyle(document.querySelector(
+    '#page-content .table-container')).overflow"""
+
+
+def test_a_tables_last_row_draws_its_whole_halo(browser, company, books):
+    """.table-container clips what overflows it, which cut the keyboard's
+    halo below the last row's buttons: the gate's ground there was the
+    container's edge and the page, 2.2:1 (review). While focus is in the
+    table nothing is clipped, and the last row's Void draws its ring and
+    halo whole, 3:1 as painted on all four sides, in both themes; at rest
+    the container clips as before."""
+    page, handled = _open(browser, company)
+    try:
+        _no_splash(page)
+        _visit(page, handled, "#/journal")
+        assert page.evaluate(CONTAINER_OVERFLOW) == "hidden"
+        page.evaluate(f"() => ({LAST_ROW_BUTTON})().focus()")
+        page.keyboard.press("Shift+Tab")
+        page.keyboard.press("Tab")
+        last = page.evaluate("""() => [document.activeElement.textContent.trim(),
+                document.activeElement === (""" + LAST_ROW_BUTTON + """)()]""")
+        assert last[1], last
+        assert page.evaluate(CONTAINER_OVERFLOW) == "visible"
+        _both_themes(page, ("the last row's " + last[0]), GOLD)
+        page.evaluate("() => document.activeElement.blur()")
+        assert page.evaluate(CONTAINER_OVERFLOW) == "hidden"
+    finally:
+        page.close()
+
+
 def test_the_skip_link_draws_the_ring_and_enter_goes_to_the_content_in_place(
     browser, company, books
 ):
