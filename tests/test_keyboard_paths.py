@@ -806,18 +806,26 @@ def test_tab_brings_a_grid_stop_out_from_under_the_frozen_parts():
     fit = fit[: fit.index("\n};")]
     assert "g.style.setProperty('--grid-frozen', `${corner.offsetWidth}px`);" in fit
     assert "g.style.setProperty('--grid-head', `${head.offsetHeight}px`);" in fit
-    assert "window.addEventListener('resize', () => ReportsPage._gridFit());" in src
     for view in ("profit_loss_by_class", "profit_loss_by_job"):
         opts = src[src.index(f"reportType: '{view}'") :]
         opts = opts[: opts.index("\n")]
         assert "afterRender:" in opts and "ReportsPage._gridFit()" in opts, view
-    reveal = src[src.index("document.addEventListener('focusin', (e) => {") :]
-    reveal = reveal[: reveal.index("\n});")]
+    reveal = src[src.index("ReportsPage._gridReveal = function (e) {") :]
+    reveal = reveal[: reveal.index("\n};")]
     assert "a.closest('#grid-scroll')" in reveal
     assert (
         "if (g && a !== g && a.matches(':focus-visible')) "
         "a.scrollIntoView({ block: 'nearest', inline: 'nearest' });" in reveal
     )
+    # wired once, when the app starts (not as the script loads, which the
+    # node probes of these scripts do without a document)
+    init = _src("app.js")
+    init = init[init.index("    init() {") :]
+    init = init[: init.index("\n    },")]
+    assert "ReportsPage._gridReveal(e);" in init
+    assert "window.addEventListener('resize', () => ReportsPage._gridFit());" in init
+    assert "document.addEventListener('focusin'" not in src
+    assert "window.addEventListener('resize'" not in src
 
 
 def test_a_click_that_opens_elsewhere_notes_nothing():
@@ -888,11 +896,16 @@ def test_a_control_the_keyboard_puts_under_settings_save_bar_is_scrolled_clear()
     line); not the bar's own Save, not a mouse's focus."""
     src = _src("settings.js")
     assert 'id="settings-savebar"' in src and "position:sticky; bottom:0;" in src
-    clear = src[src.index("document.addEventListener('focusin', (e) => {") :]
-    clear = clear[: clear.index("\n});")]
+    clear = src[src.index("SettingsPage._clearSaveBar = function (e) {") :]
+    clear = clear[: clear.index("\n};")]
+    init = _src("app.js")
+    init = init[init.index("    init() {") :]
+    init = init[: init.index("\n    },")]
+    assert "SettingsPage._clearSaveBar(e);" in init
+    assert "document.addEventListener('focusin'" not in src
     for line in (
         "const a = e.target, bar = document.getElementById('settings-savebar');",
-        "if (!bar || !a.closest || bar.contains(a) || !a.closest('#settings-form')) return;",
+        "if (!bar || !a || !a.closest || bar.contains(a) || !a.closest('#settings-form')) return;",
         "if (!a.matches(':focus-visible')) return;",
         "if (!b.height || !content) return;",
         "const over = a.getBoundingClientRect().bottom + 8 - b.top;",

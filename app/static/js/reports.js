@@ -1650,16 +1650,16 @@ ReportsPage._gridFit = function () {
     g.style.setProperty('--grid-frozen', `${corner.offsetWidth}px`);
     g.style.setProperty('--grid-head', `${head.offsetHeight}px`);
 };
-window.addEventListener('resize', () => ReportsPage._gridFit());
 // And Chromium's focus leaves a link it finds partly in view where it is:
 // the Roofing heading and its column's cells, a pixel past the grid's
 // right edge, rings and all, counted as in view. The keyboard's stop is
 // brought in whole, its ring and halo with it (its scroll-margin); not a
-// mouse's, which must stay under the pointer that pressed it.
-document.addEventListener('focusin', (e) => {
-    const a = e.target, g = a.closest && a.closest('#grid-scroll');
+// mouse's, which must stay under the pointer that pressed it. (App.init
+// hands every focusin here, and every resize to _gridFit.)
+ReportsPage._gridReveal = function (e) {
+    const a = e.target, g = a && a.closest && a.closest('#grid-scroll');
     if (g && a !== g && a.matches(':focus-visible')) a.scrollIntoView({ block: 'nearest', inline: 'nearest' });
-});
+};
 
 // Column i of the open grid: scrolled into view (the frozen Account
 // column allowed for), highlighted, named in the picker and said aloud.

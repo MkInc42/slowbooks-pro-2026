@@ -1379,6 +1379,17 @@ const App = {
         App.labelBack();
         App.addressShown();
 
+        // A control the keyboard moves to is kept in sight: in the P&L
+        // grids, brought in whole and clear of the frozen header row and
+        // Account column (ReportsPage._gridReveal; the column's width and
+        // the row's height measured again when the window changes); on
+        // Settings, scrolled clear of the save bar (SettingsPage._clearSaveBar)
+        document.addEventListener('focusin', (e) => {
+            ReportsPage._gridReveal(e);
+            SettingsPage._clearSaveBar(e);
+        });
+        window.addEventListener('resize', () => ReportsPage._gridFit());
+
         // Load saved theme
         App.loadTheme();
 

@@ -1644,15 +1644,16 @@ const SettingsPage = {
 // caret line into view, and the invoice notes' first line was in view,
 // the rest of the box under the bar. Not the bar's own Save, and not a
 // mouse's focus, which must stay under the pointer that pressed it.
-document.addEventListener('focusin', (e) => {
+// (App.init hands every focusin here.)
+SettingsPage._clearSaveBar = function (e) {
     const a = e.target, bar = document.getElementById('settings-savebar');
-    if (!bar || !a.closest || bar.contains(a) || !a.closest('#settings-form')) return;
+    if (!bar || !a || !a.closest || bar.contains(a) || !a.closest('#settings-form')) return;
     if (!a.matches(':focus-visible')) return;
     const b = bar.getBoundingClientRect(), content = document.getElementById('content');
     if (!b.height || !content) return;
     const over = a.getBoundingClientRect().bottom + 8 - b.top;
     if (over > 0) content.scrollTop += Math.ceil(over);
-});
+};
 
 
 // --- Class tracking management (Settings > Classes) ---------------------
