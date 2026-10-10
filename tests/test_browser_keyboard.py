@@ -2112,11 +2112,12 @@ CONTAINER_OVERFLOW = """() => getComputedStyle(document.querySelector(
 def test_a_tables_last_row_draws_its_whole_halo(browser, company, books):
     """.table-container clips what overflows it, which cut the keyboard's
     halo below the last row's buttons: the gate's ground there was the
-    container's edge and the page, 2.2:1 (review). The last row has room
-    for it inside, and the container clips as it always did: the last
-    row's Void draws its ring and halo whole, 3:1 as painted on all four
-    sides, in both themes — at 1280, 1024, 900 and 390px wide, where at
-    390 the container is scrolled to it, focused in the part it clips."""
+    container's edge and the page, 2.2:1 (review). The container has room
+    for it inside, below its table, and clips up and down as it always did
+    (sideways it scrolls a table wider than itself): the last row's Void
+    draws its ring and halo whole, 3:1 as painted on all four sides, in
+    both themes — at 1280, 1024, 900 and 390px wide, where at 390 the
+    container is scrolled to it."""
     page, handled = _open(browser, company)
     try:
         _no_splash(page)
@@ -2129,7 +2130,7 @@ def test_a_tables_last_row_draws_its_whole_halo(browser, company, books):
             last = page.evaluate("""() => [document.activeElement.textContent.trim(),
                     document.activeElement === (""" + LAST_ROW_BUTTON + """)()]""")
             assert last[1], (width, last)
-            assert page.evaluate(CONTAINER_OVERFLOW) == "hidden"
+            assert page.evaluate(CONTAINER_OVERFLOW) == "auto hidden"
             inside = page.evaluate(
                 """() => { const a = document.activeElement.getBoundingClientRect(),
                     c = document.activeElement.closest('.table-container').getBoundingClientRect();
@@ -2161,9 +2162,10 @@ def test_focus_in_a_wide_table_spills_nothing(browser, company, books):
     """Letting a table's overflow out while focus was inside it spilled a
     wide table past its container (Jobs, Settings, Fixed Assets at 1024; at
     900, the desktop window's least; at 390), by a mouse's focus too. The
-    container clips as it did: at 1280, 1024, 900 and 390px wide, a control
-    in the table focused by the mouse or by the keyboard leaves the page's
-    width and the container's box as they were."""
+    container keeps its box (sideways it scrolls a table wider than
+    itself): at 1280, 1024, 900 and 390px wide, a control in the table
+    focused by the mouse or by the keyboard leaves the page's width and the
+    container's box as they were."""
     page, handled = _open(browser, company)
     try:
         _no_splash(page)
@@ -2172,7 +2174,7 @@ def test_focus_in_a_wide_table_spills_nothing(browser, company, books):
             for route in ("#/jobs", "#/settings", "#/fixed-assets"):
                 _visit(page, handled, route)
                 rest = page.evaluate(SPILL)
-                assert rest["overflow"] == "hidden", (width, route, rest)
+                assert rest["overflow"] == "auto hidden", (width, route, rest)
                 # a mouse's focus: the button pressed, not released
                 box = page.evaluate(
                     f"""() => {{ const r = ({FIRST_IN_TABLE})().getBoundingClientRect();
@@ -2195,7 +2197,7 @@ def test_focus_in_a_wide_table_spills_nothing(browser, company, books):
                         now,
                     )
                     assert now["box"] == rest["box"], (width, route, what, rest, now)
-                    assert now["overflow"] == "hidden", (width, route, what, now)
+                    assert now["overflow"] == "auto hidden", (width, route, what, now)
                 page.evaluate("() => document.activeElement.blur()")
     finally:
         page.set_viewport_size({"width": 1500, "height": 980})
@@ -3770,4 +3772,100 @@ def test_a_one_row_tables_words_sit_in_the_middle_of_their_row(browser, company,
                 assert abs(t["off"]) <= 1, (route, t)
         assert any(t["rows"] == 1 for _, t in seen), seen
     finally:
+        page.close()
+
+
+# Every plain table container on the page: how far its table overflows it
+# sideways, and whether it scrolls
+WIDE = """() => [...document.querySelectorAll('#page-content .table-container')]
+    .filter(c => c.offsetParent && !c.classList.contains('table-container--scroll'))
+    .map((c, i) => { c.dataset.wideProbe = String(i);
+        const was = c.scrollLeft;
+        c.scrollLeft = c.scrollWidth;
+        const moves = c.scrollLeft > 0;
+        c.scrollLeft = was;
+        return { i, over: c.scrollWidth - c.clientWidth, scroll: getComputedStyle(c).overflowX, moves }; })"""
+# The last row's stops of container `i`, numbered
+LAST_STOPS = """(i) => { const c = document.querySelector(`[data-wide-probe="${i}"]`),
+        rows = c.querySelectorAll(':scope > table > tbody > tr'), last = rows[rows.length - 1];
+    return [...last.querySelectorAll('a[href], button, input, select, textarea')]
+        .filter(e => !e.disabled && e.tabIndex >= 0 && e.getClientRects().length && e.type !== 'hidden')
+        .map((e, k) => { e.dataset.lastStop = `${i}-${k}`; return `${i}-${k}`; }); }"""
+# The focused stop against what its container shows: how far its ring and
+# halo (8px; a field's own border, 0) end inside on each side
+STOP_INSIDE = """() => { const a = document.activeElement, c = a.closest('.table-container'),
+        r = a.getBoundingClientRect(), cr = c.getBoundingClientRect(),
+        out = a.matches('input, select, textarea') ? 0 : 8,
+        left = cr.left + c.clientLeft, top = cr.top + c.clientTop;
+    return { tag: a.tagName.toLowerCase(), text: (a.textContent || a.value || a.name || '').trim().slice(0, 20),
+             field: out === 0, scrollLeft: c.scrollLeft,
+             reach: [r.left - out - left, r.top - out - top,
+                     left + c.clientWidth - (r.right + out), top + c.clientHeight - (r.bottom + out)] }; }"""
+# A table too wide for its container at a width, where the test books
+# make it so (the Journal's and the customers' at 390 too)
+WIDE_TABLES = [
+    (1440, "#/budgets"),
+    (1024, "#/fixed-assets"),
+    (1024, "#/jobs"),
+    (900, "#/items"),
+    (900, "#/hr/time-entries"),
+    (900, "#/hr/pto"),
+    (900, "#/fixed-assets"),
+    (390, "#/journal"),
+    (390, "#/customers"),
+]
+
+
+def test_a_table_wider_than_its_container_scrolls_and_tab_shows_its_stops_whole(
+    browser, company, books
+):
+    """A table wider than its container was clipped, its last column cut
+    off even at 900px, the desktop app's least (Items' History, Benefits'
+    Retire, Fixed Assets' Dispose at 1024): out of reach for a mouse, and
+    Tab left a stop partly in view, its ring cut (final review). The
+    container scrolls it sideways now, and Tab brings a stop in whole. At
+    1440 and 1280, on every page, no container that fits shows a scrollbar
+    or overflows by a pixel of rounding; where a table is wider (Budgets at
+    1440; Fixed Assets and Jobs at 1024; Items, Time Entries, Time Off and
+    Fixed Assets at 900; the Journal and the customers at 390) its
+    container scrolls sideways, and each of its last row's stops, reached
+    by Tab, ends with its ring and halo (a field, its border) inside what
+    the container shows, the ring painted on all four sides."""
+    page, handled = _open(browser, company)
+    try:
+        _no_splash(page)
+        paths = page.evaluate(
+            "() => Object.keys(App.routes).filter(k => !k.includes('/:'))"
+        )
+        pages = [f"#{p}" for p in paths if p not in REDIRECTS]
+        for width in (1440, 1280):
+            page.set_viewport_size({"width": width, "height": 800})
+            for route in pages:
+                _visit(page, handled, route)
+                for c in page.evaluate(WIDE):
+                    assert c["scroll"] == "auto", (width, route, c)
+                    # fits, so no scrollbar (none shows unless the table is
+                    # wider), or plainly wider: never a pixel of rounding
+                    assert c["over"] <= 0 or c["over"] >= 8, (width, route, c)
+                    assert c["moves"] == (c["over"] > 0), (width, route, c)
+        for width, route in WIDE_TABLES:
+            page.set_viewport_size({"width": width, "height": 800})
+            _visit(page, handled, route)
+            wide = [c for c in page.evaluate(WIDE) if c["over"] > 0]
+            assert wide, (width, route)
+            c = wide[0]
+            assert c["moves"], (width, route, c)  # it scrolls, for a mouse too
+            stops = page.evaluate(LAST_STOPS, c["i"])
+            assert stops, (width, route)
+            for stop in stops:
+                _keyed(page, f"document.querySelector('[data-last-stop=\"{stop}\"]')")
+                page.evaluate(SETTLED)
+                at = page.evaluate(STOP_INSIDE)
+                assert min(at["reach"]) >= -0.5, (width, route, at)
+                if not at["field"]:
+                    sides = _painted(page)
+                    cut = [s for s in SIDES if not sides[s] or sides[s]["px"] < 2]
+                    assert not cut, (width, route, at, cut)
+    finally:
+        page.set_viewport_size({"width": 1500, "height": 980})
         page.close()

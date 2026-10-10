@@ -238,6 +238,17 @@ const App = {
     // pointer put it.
     _input: null,
     keyboardFocus() { return App._input !== 'pointer'; },
+    // A table wider than its container scrolls sideways in it, and
+    // Chromium's focus leaves a stop partly in view where it is (32px of
+    // it counts as in view): the Dispose button half cut at the edge. The
+    // keyboard's stop is brought in whole, its ring and halo with it (its
+    // scroll-margin); a pointer's focus stays where the pointer put it.
+    // The P&L grid has its own (ReportsPage._gridReveal).
+    revealInTable(e) {
+        const a = e.target, c = a && a.closest && a.closest('.table-container');
+        if (!c || a === c || c.id === 'grid-scroll' || !App.keyboardFocus()) return;
+        if (c.scrollWidth > c.clientWidth) a.scrollIntoView({ block: 'nearest', inline: 'nearest' });
+    },
     canGoBack() { return !!(history.state && history.state.from); },
     goBack() { if (App.backAllowed()) history.back(); },
     // ⌘[ on a Mac (the key, or where the layout puts "["; ⌘⌥[ is not it),
@@ -1398,6 +1409,7 @@ const App = {
         document.addEventListener('pointerdown', () => { App._input = 'pointer'; }, true);
         document.addEventListener('focusin', (e) => {
             ReportsPage._gridReveal(e);
+            App.revealInTable(e);
             SettingsPage._clearSaveBar(e);
         });
         window.addEventListener('resize', () => ReportsPage._gridFit());

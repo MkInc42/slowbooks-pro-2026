@@ -525,7 +525,8 @@ def test_the_ring_has_a_halo_of_the_themes_own_ground():
     # last row's cells it set a one-row table's words high in their row;
     # letting the overflow out while focused spilled a wide table past
     # its side)
-    assert "overflow: hidden;" in _rule(css, ".table-container {")
+    container = _rule(css, ".table-container {")
+    assert "overflow-x: auto;" in container and "overflow-y: hidden;" in container
     assert ":focus-within {\n    overflow" not in css
     below = _rule(css, ".table-container:not(.table-container--scroll) {")
     assert "padding-bottom: 8px;" in below
@@ -1073,3 +1074,27 @@ def test_what_keeps_the_keyboards_place_in_sight_asks_what_moved_focus():
         body = src[src.index(f".{fn} = function (e) {{") :]
         body = body[: body.index("\n};")]
         assert "App.keyboardFocus()" in body and ":focus-visible" not in body, name
+
+
+def test_a_table_wider_than_its_container_scrolls_and_tab_brings_a_stop_in_whole():
+    """A plain table container scrolls a table wider than itself sideways
+    (it clipped it) and clips up and down as it did; a stop the keyboard
+    moves to in one is brought in whole, ring and halo with it (Chromium
+    leaves one partly in view where it is), a pointer's focus left alone;
+    the P&L grid has its own."""
+    css = (ROOT / "app/static/css/style.css").read_text(encoding="utf-8")
+    container = _rule(css, ".table-container {")
+    assert "overflow-x: auto;" in container and "overflow-y: hidden;" in container
+    assert "overflow: hidden" not in container
+    app = _src("app.js")
+    reveal = app[app.index("    revealInTable(e) {") :]
+    reveal = reveal[: reveal.index("\n    },")]
+    for line in (
+        "const a = e.target, c = a && a.closest && a.closest('.table-container');",
+        "if (!c || a === c || c.id === 'grid-scroll' || !App.keyboardFocus()) return;",
+        "if (c.scrollWidth > c.clientWidth) a.scrollIntoView({ block: 'nearest', inline: 'nearest' });",
+    ):
+        assert line in reveal, line
+    init = app[app.index("    init() {") :]
+    init = init[: init.index("\n    },")]
+    assert "App.revealInTable(e);" in init

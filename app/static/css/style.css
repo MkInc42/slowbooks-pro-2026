@@ -737,18 +737,21 @@ body {
     background: var(--panel-bg);
     border: 1px solid var(--panel-border);
     border-radius: 0;
-    overflow: hidden;
+    overflow-x: auto;
+    overflow-y: hidden;
 }
-/* It clips what overflows it (there since the first release), which cut
-   the keyboard's halo below a last row's buttons and links: Adjust,
-   History, View, Void met the page beyond at 2.2:1. The container has the
-   room inside, below its table: 8px, the halo's reach (given to the last
-   row's cells, it set a one-row table's words high in their row). Letting
-   the overflow out while focus was inside spilled a wide table past its
-   side (Jobs, Settings, Fixed Assets at 1024 and 900), and clipping only
-   its side (overflow-x: clip) left a focused control in the clipped part
-   hidden, where hidden scrolls the container to it (the journal's Void at
-   390px): the clip stays as it was. */
+/* A table wider than its box scrolls sideways in it: the box clipped it,
+   its last column cut off even at 900px, the desktop app's least (Items'
+   History, Benefits' Retire, Fixed Assets' Dispose at 1024), out of reach
+   for a mouse too; where the table fits nothing changes. Tab brings a stop
+   in whole (App.revealInTable). Up and down the box clips what overflows
+   it (there since the first release), which cut the keyboard's halo below
+   a last row's buttons and links (Adjust, History, View, Void met the page
+   beyond at 2.2:1): the room for it is inside, below the table, 8px, the
+   halo's reach (on the last row's cells it set a one-row table's words
+   high in their row). Letting the overflow out while focus was inside
+   spilled a wide table past its side (Jobs, Settings, Fixed Assets at 1024
+   and 900). */
 .table-container:not(.table-container--scroll) {
     padding-bottom: 8px;
 }
