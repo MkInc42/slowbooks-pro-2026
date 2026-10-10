@@ -2193,6 +2193,125 @@ def test_focus_in_a_wide_table_spills_nothing(browser, company, books):
         page.close()
 
 
+# The focused stop in the grid: whether the browser finds it at its left,
+# middle and right (not the frozen Account column or header row painted
+# over it), and how far inside what the grid shows its ring and halo (8px
+# out) end on each side: right of the Account column, below the header row
+# (a heading: below the grid's top), inside the grid's edges
+GRID_STOP = """() => { const a = document.activeElement, g = document.getElementById('grid-scroll');
+    if (!g || a === g || !g.contains(a)) return null;
+    const r = a.getBoundingClientRect(), port = g.getBoundingClientRect(),
+        frozen = g.querySelector('thead th:first-child').getBoundingClientRect().right,
+        head = a.closest('thead') ? port.top + g.clientTop : g.querySelector('thead').getBoundingClientRect().bottom,
+        y = r.top + r.height / 2, cell = a.closest('td, th');
+    return { at: `${cell.parentElement.rowIndex}:${cell.cellIndex} ${a.textContent.trim()}`,
+             scroll: [Math.round(g.scrollLeft), Math.round(g.scrollTop)],
+             found: [r.left + 1, r.left + r.width / 2, r.right - 1].map(x => {
+                 const h = document.elementFromPoint(x, y); return !!h && (h === a || a.contains(h)); }),
+             left: r.left - 8 - frozen, top: r.top - 8 - head,
+             right: port.left + g.clientLeft + g.clientWidth - (r.right + 8),
+             bottom: port.top + g.clientTop + g.clientHeight - (r.bottom + 8) }; }"""
+GRID_FIT = """() => { const g = document.getElementById('grid-scroll'), cs = getComputedStyle(g);
+    return { padding: [cs.scrollPaddingTop, cs.scrollPaddingLeft],
+             frozen: [g.querySelector('thead').offsetHeight + 'px',
+                      g.querySelector('thead th:first-child').offsetWidth + 'px'],
+             scrolls: [g.scrollWidth > g.clientWidth, g.scrollHeight > g.clientHeight] }; }"""
+LAST_IN_GRID = (
+    "() => [...document.querySelectorAll('#grid-scroll a[href]')].pop().focus()"
+)
+
+
+def _grid_walk(page, start, key, paint_all):
+    """Every stop of the grid from `start`, by `key`, until focus leaves
+    it, and what is wrong at each: not found where it is, its ring and halo
+    not inside what the grid shows, or (read from the pixels, at every stop
+    with `paint_all`, else where it is within 4px of an edge) its ring not
+    painted on all four sides."""
+    page.evaluate(start)
+    stops, bad = [], []
+    for _ in range(400):
+        page.keyboard.press(key)
+        page.evaluate(SETTLED)
+        at = page.evaluate(GRID_STOP)
+        if at is None:
+            break
+        stops.append(at["at"])
+        reach = {s: round(at[s], 1) for s in ("left", "top", "right", "bottom")}
+        if not all(at["found"]) or min(reach.values()) < -0.5:
+            bad.append((at["at"], at["scroll"], at["found"], reach))
+        elif paint_all or min(reach.values()) < 4:
+            sides = _painted(page)
+            cut = [s for s in SIDES if not sides[s] or sides[s]["px"] < 2]
+            if cut:
+                bad.append((at["at"], at["scroll"], "ring not painted", cut))
+    return stops, bad
+
+
+def test_tab_brings_every_grid_stop_out_from_under_the_frozen_parts(
+    browser, company, books, divisions
+):
+    """The P&L by Class grid scrolls under its frozen header row and
+    Account column, and a cell Tab moved to was scrolled only into the
+    grid: 13 of 85 stops forward sat under the Account column, and the
+    Roofing heading's ring was cut at the grid's right edge, Chromium
+    taking a link a pixel past it for one in view (review). The grid's
+    scroll padding is the header row's height and the column's width
+    (measured, and again when the window changes), a keyboard stop is
+    brought in whole with its scroll-margin, and the headings and the last
+    row have the ring and halo's room inside the grid's edges. Walked by
+    Tab and by Shift+Tab at 1440 x 900, at 1024 x 360 (where the grid
+    scrolls both ways) and at 390 x 800 (a phone's narrower Account
+    column): every stop is what the browser finds at its left, middle and
+    right, its ring and halo end inside what the grid shows on every side,
+    and its ring is painted on all four (every stop at 1440; elsewhere
+    those within 4px of an edge). A mouse's press on a heading the grid's
+    edge cuts scrolls nothing: the link stays under the pointer."""
+    page, handled = _open_at(browser, company, BY_CLASS_URL)
+    try:
+        page.wait_for_selector("#report-content .pivot-grid")
+        for width, height in ((1440, 900), (1024, 360), (390, 800)):
+            page.set_viewport_size({"width": width, "height": height})
+            page.wait_for_timeout(100)
+            fit = page.evaluate(GRID_FIT)
+            assert fit["padding"] == fit["frozen"], (width, fit)
+            assert fit["scrolls"] == [True, height == 360], (width, fit)
+            forward, bad = _grid_walk(
+                page,
+                "() => document.getElementById('grid-scroll').focus()",
+                "Tab",
+                paint_all=width == 1440,
+            )
+            assert len(forward) > 80 and not bad, (width, len(forward), bad)
+            back, bad = _grid_walk(
+                page, LAST_IN_GRID, "Shift+Tab", paint_all=width == 1440
+            )
+            # from the last link back: every stop but the last
+            assert back == forward[-2::-1] and not bad, (width, len(back), bad)
+        # a mouse's focus stays where the pointer pressed: the grid at its
+        # left, a heading cut by its right edge pressed, nothing scrolls
+        page.set_viewport_size({"width": 1440, "height": 900})
+        page.wait_for_timeout(100)
+        cut = page.evaluate(
+            """() => { const g = document.getElementById('grid-scroll');
+                g.scrollLeft = 0; g.scrollTop = 0; document.activeElement.blur();
+                const edge = g.getBoundingClientRect().left + g.clientLeft + g.clientWidth;
+                const a = [...g.querySelectorAll('thead a')].find(a => {
+                    const r = a.getBoundingClientRect(); return r.left < edge - 20 && r.right + 8 > edge; });
+                const r = a.getBoundingClientRect();
+                return { name: a.textContent.trim(), x: r.left + 10, y: r.top + r.height / 2 }; }"""
+        )
+        page.mouse.move(cut["x"], cut["y"])
+        page.mouse.down()
+        pressed = page.evaluate("""() => [document.activeElement.textContent.trim(),
+                document.activeElement.matches(':focus-visible'),
+                document.getElementById('grid-scroll').scrollLeft]""")
+        page.mouse.move(cut["x"], cut["y"] + 200)
+        page.mouse.up()
+        assert pressed == [cut["name"], False, 0], (cut, pressed)
+    finally:
+        page.close()
+
+
 def test_the_skip_link_draws_the_ring_and_enter_goes_to_the_content_in_place(
     browser, company, books
 ):

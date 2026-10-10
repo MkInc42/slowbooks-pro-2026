@@ -1097,6 +1097,11 @@ a:hover { text-decoration: underline; }
     overflow: auto;
     max-height: min(68vh, 720px);
     overscroll-behavior: contain;
+    /* a cell Tab moves to is scrolled out from under the frozen header row
+       and Account column (their height and width, ReportsPage._gridFit),
+       and its own scroll-margin (above) keeps its ring and halo, 8px,
+       clear of them and of the grid's edges */
+    scroll-padding: var(--grid-head, 0px) 0 0 var(--grid-frozen, 0px);
 }
 /* the grid's own ring, not the keyboard's gold ring and halo; on its edge,
    not inside it, where the frozen header row and Account column painted
@@ -1109,6 +1114,12 @@ a:hover { text-decoration: underline; }
 .pivot-grid th, .pivot-grid td { white-space: nowrap; }
 .pivot-grid td.amount, .pivot-grid th.amount { min-width: 96px; }
 .pivot-grid thead th { position: sticky; top: 0; z-index: 2; }
+/* The keyboard's ring and halo reach 8px out from a link, and no scroll
+   gives them room where the grid ends: above a heading, held to the
+   grid's top, and below the last row (a plain table's last row has the
+   same, .table-container above) */
+.pivot-grid thead th { padding-top: 8px; }
+.pivot-grid > tbody:last-child > tr:last-child > :is(td, th) { padding-bottom: 8px; }
 .pivot-grid tbody th {
     font-weight: inherit;
     text-align: left;

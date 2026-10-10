@@ -768,3 +768,37 @@ def test_a_pages_report_links_note_themselves():
     row = row[: row.index("\n    },")]
     assert "onclick=\"window.open('/api/reports/customer-statement/${id}/pdf" in row
     assert row.count("_leaveFrom") == 1
+
+
+def test_tab_brings_a_grid_stop_out_from_under_the_frozen_parts():
+    """The P&L by Class / by Job grid: its scroll padding is the frozen
+    header row's height and Account column's width, measured whenever it
+    is drawn and the window changes; a keyboard stop in it is brought in
+    whole (Chromium leaves one partly in view where it is), a mouse's not;
+    and its headings and last row have the ring and halo's room inside."""
+    css = (ROOT / "app/static/css/style.css").read_text(encoding="utf-8")
+    assert (
+        "scroll-padding: var(--grid-head, 0px) 0 0 var(--grid-frozen, 0px);"
+        in _rule(css, ".grid-scroll {")
+    )
+    assert "padding-top: 8px;" in _rule(css, ".pivot-grid thead th {", last=True)
+    assert "padding-bottom: 8px;" in _rule(
+        css, ".pivot-grid > tbody:last-child > tr:last-child > :is(td, th) {"
+    )
+    src = _src("reports.js")
+    fit = src[src.index("ReportsPage._gridFit = function () {") :]
+    fit = fit[: fit.index("\n};")]
+    assert "g.style.setProperty('--grid-frozen', `${corner.offsetWidth}px`);" in fit
+    assert "g.style.setProperty('--grid-head', `${head.offsetHeight}px`);" in fit
+    assert "window.addEventListener('resize', () => ReportsPage._gridFit());" in src
+    for view in ("profit_loss_by_class", "profit_loss_by_job"):
+        opts = src[src.index(f"reportType: '{view}'") :]
+        opts = opts[: opts.index("\n")]
+        assert "afterRender:" in opts and "ReportsPage._gridFit()" in opts, view
+    reveal = src[src.index("document.addEventListener('focusin', (e) => {") :]
+    reveal = reveal[: reveal.index("\n});")]
+    assert "a.closest('#grid-scroll')" in reveal
+    assert (
+        "if (g && a !== g && a.matches(':focus-visible')) "
+        "a.scrollIntoView({ block: 'nearest', inline: 'nearest' });" in reveal
+    )

@@ -1651,6 +1651,31 @@ ReportsPage._pivotGrid = function (spec) {
         </div>`;
 };
 
+// The grid scrolls under its frozen header row and Account column: a cell
+// Tab moved to was scrolled only into the grid, not out from under them
+// (13 of 85 stops forward on P&L by Class sat under the Account column).
+// Its scroll padding (style.css .grid-scroll) is the header row's height
+// and the Account column's width, measured (layout sizes, not the
+// dialog's transform) once the grid is drawn and when the window changes.
+ReportsPage._gridFit = function () {
+    const g = document.getElementById('grid-scroll');
+    const corner = g && g.querySelector('thead th:first-child');
+    const head = g && g.querySelector('thead');
+    if (!corner || !head) return;
+    g.style.setProperty('--grid-frozen', `${corner.offsetWidth}px`);
+    g.style.setProperty('--grid-head', `${head.offsetHeight}px`);
+};
+window.addEventListener('resize', () => ReportsPage._gridFit());
+// And Chromium's focus leaves a link it finds partly in view where it is:
+// the Roofing heading and its column's cells, a pixel past the grid's
+// right edge, rings and all, counted as in view. The keyboard's stop is
+// brought in whole, its ring and halo with it (its scroll-margin); not a
+// mouse's, which must stay under the pointer that pressed it.
+document.addEventListener('focusin', (e) => {
+    const a = e.target, g = a.closest && a.closest('#grid-scroll');
+    if (g && a !== g && a.matches(':focus-visible')) a.scrollIntoView({ block: 'nearest', inline: 'nearest' });
+});
+
 // Column i of the open grid: scrolled into view (the frozen Account
 // column allowed for), highlighted, named in the picker and said aloud.
 // Land on a column by its class's (job's) id: the class page's link to
@@ -1886,7 +1911,7 @@ ReportsPage.profitLossByClass = async function (prefill) {
                 head: (c) => `ReportsPage.profitLossOfClass(${args(c.class_id, c.class_name, dates)}, null, this)`,
                 sum: (c) => `ReportsPage.profitLossOfClass(${args(c.class_id, c.class_name, dates)}, null, this)`,
             })}`;
-    }, "Dates", false, { reportType: 'profit_loss_by_class', view: 'profit-loss-by-class', params, prefill, toolbar, wide: true, afterRender: (_c, first) => { if (first && prefill && prefill.jump) ReportsPage.gridJumpTo(prefill.jump); } });
+    }, "Dates", false, { reportType: 'profit_loss_by_class', view: 'profit-loss-by-class', params, prefill, toolbar, wide: true, afterRender: (_c, first) => { ReportsPage._gridFit(); if (first && prefill && prefill.jump) ReportsPage.gridJumpTo(prefill.jump); } });
 };
 
 // P&L by Job (R13, #242): the same grid with a column per job and "No job"
@@ -1937,7 +1962,7 @@ ReportsPage.profitLossByJob = async function (prefill) {
                 drill: (a, c) => `ReportsPage.openDrillDown(${args(a.account_id, a.account_name, range.start, range.end, null, null, 'profit-loss-by-job', { job_id: jobKey(c), job_name: c.job_name })})`,
                 head: (c) => c.job_id ? `ReportsPage._leaveFrom(this);App.navigate(${JSON.stringify(jobUrl(c))})` : null,
             })}`;
-    }, "Dates", false, { reportType: 'profit_loss_by_job', view: 'profit-loss-by-job', params, prefill, toolbar, wide: true });
+    }, "Dates", false, { reportType: 'profit_loss_by_job', view: 'profit-loss-by-job', params, prefill, toolbar, wide: true, afterRender: () => ReportsPage._gridFit() });
 };
 
 // One class's own P&L (#213): the P&L by Class column, account by account,
