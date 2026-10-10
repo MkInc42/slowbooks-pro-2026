@@ -1216,9 +1216,32 @@ LOOKS = """() => { const b = document.getElementById('back-btn'), cs = getComput
     return { text: b.textContent.trim(), disabled: b.disabled, color: cs.color,
              background: cs.backgroundColor, opacity: cs.opacity,
              border: [cs.borderTopWidth, cs.borderTopStyle, cs.borderTopColor].join(' ') }; }"""
-# the brand's gold, each theme's own (--qb-gold)
-GOLD = {"light": "rgb(204, 153, 51)", "dark": "rgb(224, 168, 64)"}
+# The keyboard's ring (--focus-ring): a deeper gold than the brand's in
+# light, #a37a29, and the brand's own in dark, #e0a840; the lit Back's
+# border, the button's edge against the bar: deeper still in light, #8f6a1e.
+RING_GOLD = {"light": "rgb(163, 122, 41)", "dark": "rgb(224, 168, 64)"}
+BORDER = {"light": "rgb(143, 106, 30)", "dark": "rgb(224, 168, 64)"}
+GOLD = RING_GOLD  # the ring, where the tests read it
 NONE = "rgba(0, 0, 0, 0)"  # a transparent border or ground, as computed
+# The bar's ground: its gradient's stops, each scored (the sweep's rule)
+BAR_STOPS = """() => getComputedStyle(document.getElementById('topbar')).backgroundImage
+    .match(/rgba?\\([^)]*\\)/g) || []"""
+# The ground under the focused control: the nearest opaque background
+GROUND = """() => { let e = document.activeElement;
+    while (e && e !== document.documentElement) {
+        const c = getComputedStyle(e).backgroundColor, m = c.match(/[\\d.]+/g);
+        if (m && (m.length < 4 || +m[3] >= 0.999)) return c;
+        e = e.parentElement; }
+    return getComputedStyle(document.body).backgroundColor; }"""
+
+
+def _edge_clears(page, border, what):
+    """The border's colour against every stop of the bar it sits on: 3:1
+    (WCAG 1.4.11, a component's boundary)."""
+    stops = page.evaluate(BAR_STOPS)
+    assert len(stops) >= 2, stops
+    ratios = {stop: contrast(border, stop) for stop in stops}
+    assert min(ratios.values()) >= 3.0, (what, ratios)
 
 
 def test_back_is_a_bordered_gold_button_that_is_never_grey_while_it_works(
@@ -1243,7 +1266,7 @@ def test_back_is_a_bordered_gold_button_that_is_never_grey_while_it_works(
             _theme(page, theme)
             lit = page.evaluate(LOOKS)
             assert lit["text"] == "← Back" and not lit["disabled"]
-            assert lit["border"] == f"2px solid {GOLD[theme]}", (theme, lit)
+            assert lit["border"] == f"2px solid {BORDER[theme]}", (theme, lit)
             assert lit["opacity"] == "1" and lit["background"] != NONE
             assert contrast(lit["color"], lit["background"]) >= 4.5, (theme, lit)
             # not the bar's grey: the navy on a pale gold tint, or the gold
@@ -1251,6 +1274,10 @@ def test_back_is_a_bordered_gold_button_that_is_never_grey_while_it_works(
                 lit["color"]
                 == {"light": "rgb(0, 51, 102)", "dark": GOLD["dark"]}[theme]
             ), (theme, lit)
+            # the border is the button's edge against the bar: 3:1 on every
+            # stop of the bar's gradient (WCAG 1.4.11), lit and under the
+            # pointer
+            _edge_clears(page, BORDER[theme], (theme, "lit"))
             page.hover("#back-btn")
             hovered = page.evaluate(LOOKS)
             assert hovered["border"] not in (
@@ -1260,6 +1287,7 @@ def test_back_is_a_bordered_gold_button_that_is_never_grey_while_it_works(
             ), (theme, hovered)
             assert hovered["border"].startswith("2px solid ")
             assert contrast(hovered["color"], hovered["background"]) >= 4.5, hovered
+            _edge_clears(page, hovered["border"].split(" ", 2)[2], (theme, "hover"))
             page.mouse.move(0, 0)
         _theme(page, "light")
         # over a plain form it sits under the overlay, as before
@@ -1327,6 +1355,12 @@ def test_tab_shows_where_it_is_on_a_report_row_and_a_mouse_click_draws_no_ring(
             on = page.evaluate(RING)
             assert on["outline"] == f"2px solid {GOLD[theme]}", (theme, on)
             assert on["offset"] == "2px", (theme, on)
+            # the ring against what it sits on: the row's ground, and white
+            # (the page's) in light — 3:1 (WCAG 1.4.11)
+            ground = page.evaluate(GROUND)
+            assert contrast(GOLD[theme], ground) >= 3.0, (theme, ground)
+            if theme == "light":
+                assert contrast(GOLD[theme], "rgb(255, 255, 255)") >= 3.0
         # a button before the table the same: Apply Late Fees, Email All
         # Overdue, Send Collection Letters
         button = _tab_until(

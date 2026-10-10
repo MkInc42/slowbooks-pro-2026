@@ -99,7 +99,10 @@ summary:focus-visible,
     --qb-green:       #2b8055;
     --qb-green-dark:  #2d7d56;
     --qb-gold:        #cc9933;
-    --focus-ring:     var(--qb-gold);   /* the keyboard's ring (NEW-43) */
+    /* The keyboard's ring (NEW-43): a deeper gold than the brand's, so it
+       clears 3:1 against what it sits on (WCAG 1.4.11): 3.9:1 on white,
+       3.2:1 on the navy sidebar. #cc9933 was 2.57:1 on white. */
+    --focus-ring:     #a37a29;
     --qb-red:         #cc3333;
     --qb-orange:      #b2592d;
 
@@ -252,10 +255,13 @@ body {
    there is somewhere to go. It was a bare grey glyph that got its border on
    hover alone, so with a card open it read as an arrow pointing at the
    brand, unusable until the pointer passed over it (macOS gate, 2.22.0
-   round 2): never grey while it works, the brand's gold for the border, as
-   the skip link's ring has it, and the navy for its words (11.4:1 on the
-   pale gold tint). Dimmed, with no border, while there is nowhere to go, as
-   a browser's is; an inactive control is exempt from contrast (WCAG 1.4.3).
+   round 2): never grey while it works, a gold border, and the navy for its
+   words (11.4:1 on the pale gold tint). The border is the button's edge
+   against the bar (WCAG 1.4.11, 3:1): a deep gold, 3.2:1 against the bar's
+   darker stop (#c8d0dc) and 4.9:1 on white — the brand's #cc9933 is 1.9:1
+   there, and the ring's #a37a29 2.5:1. Dimmed, with no border, while there
+   is nowhere to go, as a browser's is; an inactive control is exempt from
+   contrast (WCAG 1.4.3).
    It stands above a dialog's overlay (200), under toasts (300): a report,
    a customer's page and a drill-down are dialogs, and that is where Back
    is wanted; the rest of the bar stays under the overlay. The dialog
@@ -268,13 +274,14 @@ body {
     padding: 3px 10px;
     color: var(--qb-navy);
     background: #fdf3dc;
-    border: 2px solid var(--qb-gold);
+    border: 2px solid #8f6a1e;
 }
-/* The pointer over it: a deeper gold, not the other buttons' grey border */
+/* The pointer over it: deeper still (4.4:1 on the bar's darker stop), not
+   the other buttons' grey border */
 .tb-back:not(:disabled):hover {
     color: var(--qb-navy);
     background: #fbe9bf;
-    border-color: #b8862b;
+    border-color: #75561a;
 }
 .tb-back:not(:disabled):active {
     background: #f3dfa8;

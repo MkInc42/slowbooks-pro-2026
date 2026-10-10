@@ -381,13 +381,14 @@ def test_back_is_a_bordered_gold_button_in_both_themes():
     assert re.search(r'<button[^>]*id="back-btn"[^>]*>&larr; Back</button>', html)
     css = (ROOT / "app/static/css/style.css").read_text(encoding="utf-8")
     lit = css[css.index(".tb-back {") : css.index(".tb-back.tb-back--under {")]
-    assert "border: 2px solid var(--qb-gold);" in lit
+    # a deep gold border: 3:1 against the bar's darker stop (WCAG 1.4.11)
+    assert "border: 2px solid #8f6a1e;" in lit
     assert "color: var(--qb-navy);" in lit and "background: #fdf3dc;" in lit
     assert "font-size: 15px" not in lit  # words, not a glyph
     # the pointer over it keeps a gold border: the grey hover border of the
     # other buttons (.tb-btn:hover) does not win
     assert ".tb-back:not(:disabled):hover {" in lit
-    assert "border-color: #b8862b;" in lit
+    assert "border-color: #75561a;" in lit
     # nowhere to go: muted, borderless, in its place
     off = css[css.index(".tb-back:disabled {") :]
     off = off[: off.index("}")]
@@ -422,8 +423,9 @@ def test_focus_is_visible_on_every_control_by_keyboard_only():
     # the ring sits first, so a control's own ring still wins on order
     assert start < css.index(":root {")
     assert ".grid-scroll:focus-visible { outline: 2px solid var(--qb-navy);" in css
-    # the token, each theme's own gold; no rule drops the outline any more
-    assert "--focus-ring:     var(--qb-gold);" in css
+    # the token: a deeper gold than the brand's in light (3.9:1 on white,
+    # WCAG 1.4.11), the brand's own in dark; no rule drops the outline any more
+    assert "--focus-ring:     #a37a29;" in css
     assert "outline: none" not in css
     dark = (ROOT / "app/static/css/dark.css").read_text(encoding="utf-8")
     assert "--focus-ring:     var(--qb-gold);" in dark

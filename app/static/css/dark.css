@@ -33,7 +33,7 @@
     --qb-green:       #4caf7a;
     --qb-green-dark:  #3d9065;
     --qb-gold:        #e0a840;
-    --focus-ring:     var(--qb-gold);   /* the keyboard's ring: 6.4:1 on the panel (NEW-43) */
+    --focus-ring:     var(--qb-gold);   /* the keyboard's ring (NEW-43): 7.6:1 on the panel, 6.4:1 on the bar */
     /* red text (overdue counts and days, negative figures, errors) was
        4.33:1 on the panel, 5.05 now; the void and overdue badges take the
        same red, 4.86 on their ground */
@@ -97,8 +97,9 @@
 [data-theme="dark"] .topbar-brand span { color: var(--qb-gold); }
 [data-theme="dark"] .tb-btn { color: var(--text-secondary); }
 [data-theme="dark"] .tb-btn:hover { background: rgba(255,255,255,0.08); border-color: #4a4e58; color: #e0e4ec; }
-/* Back (NEW-42): gold words and border on a dark gold-tinted ground
-   (6.7:1) while there is somewhere to go; muted and borderless otherwise */
+/* Back (NEW-42): gold words on a dark gold-tinted ground (6.7:1) and a gold
+   border (6.4:1 against the bar's darker stop) while there is somewhere to
+   go; muted and borderless otherwise */
 [data-theme="dark"] .tb-back { color: var(--qb-gold); background: #2f2a1c; border-color: var(--qb-gold); }
 [data-theme="dark"] .tb-back:not(:disabled):hover { color: #f0c060; background: #3d3523; border-color: #f0c060; }
 [data-theme="dark"] .tb-back:not(:disabled):active { background: #4a4030; }
