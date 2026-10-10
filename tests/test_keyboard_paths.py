@@ -1124,3 +1124,38 @@ def test_a_scrolling_table_container_has_the_keyboards_room_too():
     for line in ("overflow-x: auto;", "padding-right: 8px;", "padding-bottom: 8px;"):
         assert line in scroll, line
     assert "padding-left" not in scroll
+
+
+def test_a_wide_table_with_no_control_takes_tab_itself():
+    """A table container wider than itself with no control in it takes
+    Tab itself, a named region the arrow keys scroll; one that fits or
+    holds a control is left (or put back) as it was; the P&L grid is a
+    region of its own. Marked whenever the page or a dialog changes and
+    when the window does."""
+    app = _src("app.js")
+    mark = app[app.index("    markScrollRegions() {") :]
+    mark = mark[: mark.index("\n    },")]
+    for line in (
+        "const wide = c.scrollWidth > c.clientWidth;",
+        "const empty = !c.querySelector('a[href], button, input, select, textarea, summary, [tabindex]');",
+        "c.setAttribute('tabindex', '0');",
+        "c.setAttribute('role', 'region');",
+        "c.setAttribute('aria-label', App._regionName(c));",
+        "['data-scroll-region', 'tabindex', 'role', 'aria-label'].forEach(a => c.removeAttribute(a));",
+        "if (c.id === 'grid-scroll') continue;",
+    ):
+        assert line in mark, line
+    name = app[app.index("    _regionName(c) {") :]
+    name = name[: name.index("\n    },")]
+    assert "c.querySelector('caption')" in name and "'modal-title'" in name
+    init = app[app.index("    init() {") :]
+    init = init[: init.index("\n    },")]
+    assert (
+        "requestAnimationFrame(() => { marking = false; App.markScrollRegions(); });"
+        in init
+    )
+    assert (
+        "new MutationObserver(mark).observe(document.body, { childList: true, subtree: true });"
+        in init
+    )
+    assert "window.addEventListener('resize', mark);" in init

@@ -4104,3 +4104,65 @@ def test_a_key_after_a_click_is_the_keyboards(browser, company, books, divisions
         assert room["input"] == "keyboard" and room["right"] >= -0.5, (cut, room)
     finally:
         page.close()
+
+
+SCROLL_REGION = "#modal .table-container"
+
+
+def test_a_wide_table_with_no_control_is_a_region_the_keyboard_scrolls(
+    browser, company, books
+):
+    """A table wider than its box with no control inside it — Benefits'
+    Rates, 106px wider — scrolled for a mouse but not for the keyboard,
+    since a dialog's Tab walks controls only (WCAG 2.1.1; final review).
+    Such a box takes Tab itself, a region named by its heading or its
+    dialog's title: on the Rates dialog it is a region named "Rates — …"
+    as the browser computes it, Tab reaches it and it draws the keyboard's
+    ring as painted in both themes, and → scrolls it. A table that fits,
+    or one that holds a control (Fixed Assets' at 1024, its Dispose
+    buttons), takes no Tab of its own."""
+    page, handled = _open(browser, company)
+    try:
+        _no_splash(page)
+        page.set_viewport_size({"width": 1440, "height": 900})
+        _visit(page, handled, "#/hr/benefits")
+        page.evaluate(
+            f"async () => {{ await BenefitsPage.showRates({books['benefit_code']}); }}"
+        )
+        page.wait_for_function(MODAL_SHOWN)
+        page.wait_for_selector(f"{SCROLL_REGION}[data-scroll-region]")
+        settle(page, handled)
+        title = page.evaluate(
+            "() => document.getElementById('modal-title').textContent.trim()"
+        )
+        ax = _ax(page, SCROLL_REGION)
+        assert ax["role"] == "region" and ax["name"] == title, (ax, title)
+        assert title.startswith("Rates")
+        _keyed(page, f"document.querySelector({SCROLL_REGION!r})")
+        assert page.evaluate("() => document.activeElement.matches(':focus-visible')")
+        _both_themes(page, "the Rates table", GOLD)
+        before = page.evaluate(
+            f"() => document.querySelector({SCROLL_REGION!r}).scrollLeft"
+        )
+        page.keyboard.press("ArrowRight")
+        page.wait_for_function(
+            f"(b) => document.querySelector({SCROLL_REGION!r}).scrollLeft > b",
+            arg=before,
+        )
+        page.evaluate("() => closeModal()")
+        # one that holds a control, and one that fits: nothing of their own
+        for width, route in ((1024, "#/fixed-assets"), (1440, "#/customers")):
+            page.set_viewport_size({"width": width, "height": 800})
+            _visit(page, handled, route)
+            page.wait_for_timeout(100)
+            marks = page.evaluate(
+                """() => [...document.querySelectorAll('#page-content .table-container')]
+                    .filter(c => c.offsetParent).map(c => [c.scrollWidth > c.clientWidth,
+                        c.hasAttribute('tabindex'), c.getAttribute('role')])"""
+            )
+            assert marks and all(m[1:] == [False, None] for m in marks), (route, marks)
+            if route == "#/fixed-assets":
+                assert any(m[0] for m in marks), marks  # it does overflow
+    finally:
+        page.set_viewport_size({"width": 1500, "height": 980})
+        page.close()

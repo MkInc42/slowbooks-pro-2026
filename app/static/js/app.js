@@ -251,6 +251,44 @@ const App = {
         if (!c || a === c || c.id === 'grid-scroll' || !App.keyboardFocus()) return;
         if (c.scrollWidth > c.clientWidth) a.scrollIntoView({ block: 'nearest', inline: 'nearest' });
     },
+
+    // A table wider than its container with no control in it (Benefits'
+    // rates) scrolled for a mouse but not for the keyboard: Tab walks
+    // controls only (WCAG 2.1.1). Such a container takes Tab itself, a
+    // region named by the table's caption or heading (else its dialog's or
+    // page's), which the arrow keys scroll and the keyboard's ring marks;
+    // one that fits, or holds a control, is left as it is. Run whenever
+    // the page or a dialog changes and when the window does (App.init).
+    markScrollRegions() {
+        for (const c of document.querySelectorAll('#page-content .table-container, #modal .table-container')) {
+            if (c.id === 'grid-scroll') continue;  // the P&L grid is a region of its own
+            const wide = c.scrollWidth > c.clientWidth;
+            const empty = !c.querySelector('a[href], button, input, select, textarea, summary, [tabindex]');
+            if (wide && empty) {
+                if (!c.hasAttribute('data-scroll-region')) {
+                    c.setAttribute('data-scroll-region', '');
+                    c.setAttribute('tabindex', '0');
+                    c.setAttribute('role', 'region');
+                }
+                c.setAttribute('aria-label', App._regionName(c));
+            } else if (c.hasAttribute('data-scroll-region')) {
+                ['data-scroll-region', 'tabindex', 'role', 'aria-label'].forEach(a => c.removeAttribute(a));
+            }
+        }
+    },
+    _regionName(c) {
+        const said = (el) => (el && el.textContent || '').replace(/\s+/g, ' ').trim();
+        const caption = said(c.querySelector('caption'));
+        if (caption) return caption;
+        for (let el = c; el && !['page-content', 'modal-body'].includes(el.id); el = el.parentElement) {
+            for (let p = el.previousElementSibling; p; p = p.previousElementSibling) {
+                const h = p.matches('h1, h2, h3, h4') ? p : [...p.querySelectorAll('h1, h2, h3, h4')].pop();
+                if (said(h)) return said(h);
+            }
+        }
+        const title = c.closest('#modal') && said(document.getElementById('modal-title'));
+        return title || said(document.querySelector('#page-content .page-header h2')) || 'Table';
+    },
     canGoBack() { return !!(history.state && history.state.from); },
     goBack() { if (App.backAllowed()) history.back(); },
     // ⌘[ on a Mac (the key, or where the layout puts "["; ⌘⌥[ is not it),
@@ -1414,6 +1452,16 @@ const App = {
             App.revealInTable(e);
             SettingsPage._clearSaveBar(e);
         });
+        // a scroll box with no control in it, marked a region whenever the
+        // page or a dialog changes, or the window (App.markScrollRegions)
+        let marking = false;
+        const mark = () => {
+            if (marking) return;
+            marking = true;
+            requestAnimationFrame(() => { marking = false; App.markScrollRegions(); });
+        };
+        if (typeof MutationObserver === 'function') new MutationObserver(mark).observe(document.body, { childList: true, subtree: true });
+        window.addEventListener('resize', mark);
         window.addEventListener('resize', () => ReportsPage._gridFit());
 
         // Load saved theme
