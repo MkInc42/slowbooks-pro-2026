@@ -854,6 +854,18 @@ td.amount, th.amount {
     gap: 10px;
     margin-bottom: 16px;
 }
+/* A report's card on the Report Center is a link to the report
+   (ReportsPage._card) that looks as the card did: no link colour or
+   underline, a hand over it. Its focus draws the keyboard's ring and halo
+   in place of the card's own shadow (a.: over the dark theme's .card). */
+.report-card {
+    display: block;
+    color: inherit;
+    text-decoration: none;
+    cursor: pointer;
+}
+.report-card:hover { text-decoration: none; }
+a.report-card:focus-visible { box-shadow: 0 0 0 8px var(--focus-halo); }
 
 /* ========================================================================
  * FORMS — Modal forms styled like QB2003 data entry windows

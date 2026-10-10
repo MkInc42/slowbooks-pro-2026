@@ -164,20 +164,26 @@ def test_every_report_the_report_center_offers_has_a_view_name():
         re.fullmatch(r"[a-z0-9]+(-[a-z0-9]+)*", n) for n in names
     ), names
     assert len(names) == len(set(names))
-    # every card on the Report Center (business and nonprofit) opens a
-    # method the registry names, so the view has an address
-    cards = set(
-        re.findall(
-            r'class="card" style="cursor:pointer" onclick="(ReportsPage\.\w+|BudgetsPage\.showVariance)\(\)"',
-            src,
-        )
+    # every card on the Report Center (business and nonprofit) is a link
+    # to a view the registry names (ReportsPage._card), so the keyboard
+    # reaches it and its report has an address; and no card is a click
+    # alone any more
+    cards = re.findall(r"\bcard\('([a-z0-9-]+)', ", src)
+    assert len(cards) >= 24 and len(cards) == len(set(cards)), cards
+    for view in cards:
+        assert view in names, f"the card for {view} has no view"
+    assert 'class="card" style="cursor:pointer" onclick=' not in src
+    card = src[src.index("    _card(view, title, text) {") :]
+    card = card[: card.index("\n    },")]
+    assert (
+        '<a class="card report-card" href="${ReportsPage.viewUrl(view, {})}"'
+        ' data-row-key="report:${view}"' in card
     )
-    assert cards, "the Report Center's cards"
-    for opener in cards:
-        method = opener.split(".")[1]
-        assert re.search(
-            rf"\b{re.escape(method)}\(", block
-        ), f"{opener} has no view name"
+    assert 'aria-label="${escapeHtml(title)}" aria-describedby="${id}-text"' in card
+    assert (
+        'onclick="ReportsPage._leaveFrom(this)" onkeydown="ReportsPage._cardKey(event)"'
+        in card
+    )
     # the drill-down and a class's own P&L, opened from inside a report
     for inner in ("openDrillDown(", "profitLossOfClass("):
         assert inner in block, inner

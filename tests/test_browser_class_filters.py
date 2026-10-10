@@ -101,7 +101,9 @@ def test_the_ledger_shows_the_class_column_and_its_pickers_filter_it(
         length = _history(page)
 
         # the class picker, by its name: the ledger is that class's alone
-        page.get_by_label("Class").select_option(str(site["id"]))
+        # (its name exactly: the Report Center's cards under the dialog
+        # are links named "P&L by Class" and "P&L Unclassified")
+        page.get_by_label("Class", exact=True).select_option(str(site["id"]))
         settle(page, handled)
         page.wait_for_function(
             "() => document.getElementById('gl-class-note') !== null"

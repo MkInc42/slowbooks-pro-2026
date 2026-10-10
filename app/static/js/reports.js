@@ -328,89 +328,57 @@ const ReportsPage = {
             }
         } catch (e) { /* render anyway */ }
 
+        const card = ReportsPage._card;
         return `
             <div class="page-header"><h2>Reports</h2></div>
             ${savedHtml}
             <div class="card-grid">
-                ${Terms.isNonprofit() ? ReportsPage._nonprofitCards() : `
-                <div class="card" style="cursor:pointer" onclick="ReportsPage.profitLoss()">
-                    <div class="card-header">${T('Profit & Loss')}</div>
-                    <p style="font-size:13px; color:var(--gray-500);">${Terms.text('Income vs expenses for a period')}</p>
-                </div>`}
-                <div class="card" style="cursor:pointer" onclick="ReportsPage.profitLossByClass()">
-                    <div class="card-header">${T('P&L by Class')}</div>
-                    <p style="font-size:13px; color:var(--gray-500);">${Terms.text('Income vs expenses split by class')}</p>
-                </div>
-                <div class="card" style="cursor:pointer" onclick="ReportsPage.profitLossUnclassified()">
-                    <div class="card-header">${T('P&L')} Unclassified</div>
-                    <p style="font-size:13px; color:var(--gray-500);">${Terms.text('Income and expenses with no class yet — the end-of-month cleanup list')}</p>
-                </div>
-                <div class="card" style="cursor:pointer" onclick="ReportsPage.jobBudgetVsActual()">
-                    <div class="card-header">${T('Job Budget vs Actual')}</div>
-                    <p style="font-size:13px; color:var(--gray-500);">${Terms.text('Budget, committed, actual, projected, variance per job')}</p>
-                </div>
-                <div class="card" style="cursor:pointer" onclick="ReportsPage.jobProfitability()">
-                    <div class="card-header">${T('Job Profitability')}</div>
-                    <p style="font-size:13px; color:var(--gray-500);">${Terms.text('Income, costs and margin per job')}</p>
-                </div>
-                <div class="card" style="cursor:pointer" onclick="ReportsPage.profitLossByJob()">
-                    <div class="card-header">${T('P&L')} by ${T('Job')}</div>
-                    <p style="font-size:13px; color:var(--gray-500);">${Terms.text('Every account down the side, a column per job')}</p>
-                </div>
-                <div class="card" style="cursor:pointer" onclick="ReportsPage.financialStatementsPdf()">
-                    <div class="card-header">Financial Statements Pack (PDF)</div>
-                    <p style="font-size:13px; color:var(--gray-500);">${Terms.text('Profit & Loss + Balance Sheet + Trial Balance, one audit-ready PDF')}</p>
-                </div>
-                <div class="card" style="cursor:pointer" onclick="ReportsPage.fixedAssetReconciliation()">
-                    <div class="card-header">Fixed Asset Reconciliation</div>
-                    <p style="font-size:13px; color:var(--gray-500);">Register totals vs GL by asset type</p>
-                </div>
-                ${Terms.isNonprofit() ? '' : `
-                <div class="card" style="cursor:pointer" onclick="ReportsPage.balanceSheet()">
-                    <div class="card-header">${T('Balance Sheet')}</div>
-                    <p style="font-size:13px; color:var(--gray-500);">${Terms.text('Assets, liabilities, and equity')}</p>
-                </div>`}
-                <div class="card" style="cursor:pointer" onclick="ReportsPage.arAging()">
-                    <div class="card-header">${T('A/R Aging')}</div>
-                    <p style="font-size:13px; color:var(--gray-500);">Outstanding receivables by age</p>
-                </div>
-                <div class="card" style="cursor:pointer" onclick="ReportsPage.apAging()">
-                    <div class="card-header">A/P Aging</div>
-                    <p style="font-size:13px; color:var(--gray-500);">Outstanding payables by age</p>
-                </div>
-                <div class="card" style="cursor:pointer" onclick="ReportsPage.salesTax()">
-                    <div class="card-header">Sales Tax</div>
-                    <p style="font-size:13px; color:var(--gray-500);">Tax collected by invoice</p>
-                </div>
-                <div class="card" style="cursor:pointer" onclick="ReportsPage.generalLedger()">
-                    <div class="card-header">General Ledger</div>
-                    <p style="font-size:13px; color:var(--gray-500);">All journal entries by account</p>
-                </div>
-                <div class="card" style="cursor:pointer" onclick="ReportsPage.incomeByCustomer()">
-                    <div class="card-header">${T('Income by Customer')}</div>
-                    <p style="font-size:13px; color:var(--gray-500);">${Terms.isNonprofit() ? 'Contribution totals per donor' : 'Sales totals per customer'}</p>
-                </div>
-                <div class="card" style="cursor:pointer" onclick="ReportsPage.customerStatementPicker()">
-                    <div class="card-header">${T('Customer Statement')}</div>
-                    <p style="font-size:13px; color:var(--gray-500);">${Terms.text('Invoice/payment history PDF')}</p>
-                </div>
-                <div class="card" style="cursor:pointer" onclick="ReportsPage.trialBalance()">
-                    <div class="card-header">Trial Balance</div>
-                    <p style="font-size:13px; color:var(--gray-500);">Debits and credits by account</p>
-                </div>
-                <div class="card" style="cursor:pointer" onclick="ReportsPage.cashFlow()">
-                    <div class="card-header">Cash Flow</div>
-                    <p style="font-size:13px; color:var(--gray-500);">Operating, investing, financing</p>
-                </div>
-                <div class="card" style="cursor:pointer" onclick="ReportsPage.report1099()">
-                    <div class="card-header">1099 Summary</div>
-                    <p style="font-size:13px; color:var(--gray-500);">Vendor payments for 1099 filing</p>
-                </div>
-                <div class="card" style="cursor:pointer" onclick="BudgetsPage.showVariance()">
-                    <div class="card-header">Budget vs Actual</div>
-                    <p style="font-size:13px; color:var(--gray-500);">Monthly budget variance analysis</p>
-                </div>
+                ${Terms.isNonprofit() ? ReportsPage._nonprofitCards() : card('profit-loss', T('Profit & Loss'), Terms.text('Income vs expenses for a period'))}
+                ${card('profit-loss-by-class', T('P&L by Class'), Terms.text('Income vs expenses split by class'))}
+                ${card('profit-loss-unclassified', `${T('P&L')} Unclassified`, Terms.text('Income and expenses with no class yet — the end-of-month cleanup list'))}
+                ${card('job-budget-vs-actual', T('Job Budget vs Actual'), Terms.text('Budget, committed, actual, projected, variance per job'))}
+                ${card('job-profitability', T('Job Profitability'), Terms.text('Income, costs and margin per job'))}
+                ${card('profit-loss-by-job', `${T('P&L')} by ${T('Job')}`, Terms.text('Every account down the side, a column per job'))}
+                ${card('financial-statements', 'Financial Statements Pack (PDF)', Terms.text('Profit & Loss + Balance Sheet + Trial Balance, one audit-ready PDF'))}
+                ${card('fixed-asset-reconciliation', 'Fixed Asset Reconciliation', 'Register totals vs GL by asset type')}
+                ${Terms.isNonprofit() ? '' : card('balance-sheet', T('Balance Sheet'), Terms.text('Assets, liabilities, and equity'))}
+                ${card('ar-aging', T('A/R Aging'), 'Outstanding receivables by age')}
+                ${card('ap-aging', 'A/P Aging', 'Outstanding payables by age')}
+                ${card('sales-tax', 'Sales Tax', 'Tax collected by invoice')}
+                ${card('general-ledger', 'General Ledger', 'All journal entries by account')}
+                ${card('income-by-customer', T('Income by Customer'), Terms.isNonprofit() ? 'Contribution totals per donor' : 'Sales totals per customer')}
+                ${card('customer-statement', T('Customer Statement'), Terms.text('Invoice/payment history PDF'))}
+                ${card('trial-balance', 'Trial Balance', 'Debits and credits by account')}
+                ${card('cash-flow', 'Cash Flow', 'Operating, investing, financing')}
+                ${card('1099-summary', '1099 Summary', 'Vendor payments for 1099 filing')}
+                ${card('budget-vs-actual', 'Budget vs Actual', 'Monthly budget variance analysis')}
             </div>`;
+    },
+
+    // A report's card on the Report Center. The cards were a <div> with a
+    // click alone: neither the keyboard nor a screen reader could open a
+    // report from here (review). Each is a link to its report's own address
+    // (its view, with the view's own default period), so Tab reaches it
+    // and Enter opens it, Space too, as on a button; named by its title as
+    // written (the heading's capitals are the stylesheet's, and reached the
+    // name), the line under it its description; and its key, noted on its
+    // click (ReportsPage._leaveFrom), puts focus back on it when Back
+    // returns here. It looks as the card did (.report-card).
+    _card(view, title, text) {
+        const id = `report-card-${view}`;
+        return `<a class="card report-card" href="${ReportsPage.viewUrl(view, {})}" data-row-key="report:${view}"
+                    aria-label="${escapeHtml(title)}" aria-describedby="${id}-text"
+                    onclick="ReportsPage._leaveFrom(this)" onkeydown="ReportsPage._cardKey(event)">
+                    <div class="card-header">${title}</div>
+                    <p id="${id}-text" style="font-size:13px; color:var(--gray-500);">${text}</p>
+                </a>`;
+    },
+
+    // Space on a card opens it, as Enter does (a link takes Enter alone).
+    _cardKey(e) {
+        if (e.key !== ' ' || e.altKey || e.ctrlKey || e.metaKey) return;
+        e.preventDefault();
+        if (!e.repeat) e.currentTarget.click();
     },
 
     // ----- Saved Reports (Phase 11) -----
@@ -2282,31 +2250,14 @@ ReportsPage.jobBudgetVsActual = async function (prefill) {
 // P&L / balance sheet (the server computes both from the same lines).
 // ---------------------------------------------------------------------------
 ReportsPage._nonprofitCards = function () {
+    const card = ReportsPage._card;
     return `
-        <div class="card" style="cursor:pointer" onclick="ReportsPage.statementOfActivities()">
-            <div class="card-header">Statement of Activities</div>
-            <p style="font-size:13px; color:var(--gray-500);">Revenue, releases and expenses, with and without donor restrictions</p>
-        </div>
-        <div class="card" style="cursor:pointer" onclick="ReportsPage.statementOfFinancialPosition()">
-            <div class="card-header">Statement of Financial Position</div>
-            <p style="font-size:13px; color:var(--gray-500);">Assets, liabilities, and net assets by restriction</p>
-        </div>
-        <div class="card" style="cursor:pointer" onclick="ReportsPage.fundBalances()">
-            <div class="card-header">Fund Balances</div>
-            <p style="font-size:13px; color:var(--gray-500);">Each restricted fund: beginning, contributions, spent, released, ending</p>
-        </div>
-        <div class="card" style="cursor:pointer" onclick="ReportsPage.functionalExpenses()">
-            <div class="card-header">Statement of Functional Expenses</div>
-            <p style="font-size:13px; color:var(--gray-500);">Program / management / fundraising by expense account (Form 990 Part IX)</p>
-        </div>
-        <div class="card" style="cursor:pointer" onclick="ReportsPage.pledges()">
-            <div class="card-header">Pledge Report</div>
-            <p style="font-size:13px; color:var(--gray-500);">Promised, received, written off and outstanding by donor and campaign</p>
-        </div>
-        <div class="card" style="cursor:pointer" onclick="ReportsPage.givingStatements()">
-            <div class="card-header">Year-End Giving Statements</div>
-            <p style="font-size:13px; color:var(--gray-500);">One statement per donor for the tax year — print the stack or email them all</p>
-        </div>`;
+        ${card('statement-of-activities', 'Statement of Activities', 'Revenue, releases and expenses, with and without donor restrictions')}
+        ${card('statement-of-financial-position', 'Statement of Financial Position', 'Assets, liabilities, and net assets by restriction')}
+        ${card('fund-balances', 'Fund Balances', 'Each restricted fund: beginning, contributions, spent, released, ending')}
+        ${card('functional-expenses', 'Statement of Functional Expenses', 'Program / management / fundraising by expense account (Form 990 Part IX)')}
+        ${card('pledges', 'Pledge Report', 'Promised, received, written off and outstanding by donor and campaign')}
+        ${card('giving-statements', 'Year-End Giving Statements', 'One statement per donor for the tax year — print the stack or email them all')}`;
 };
 
 ReportsPage.givingStatements = function (prefill) {

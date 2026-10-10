@@ -79,7 +79,10 @@ or Alt+D.*
   while an app page is behind (muted and borderless otherwise, so the two
   states cannot be mistaken). The desktop app's window has no Back of its
   own, and some hops (a report's row to a customer's page, a class's page
-  to its P&L) have no "Back to …" button; this covers them all.
+  to its P&L) have no "Back to …" button; this covers them all. The
+  Report Center's cards are links: Tab reaches each, Enter (or Space)
+  opens its report, and Back returns to the Report Center with focus on
+  the card.
 
 - **Notifications** ("Invoice saved") announce through a polite live region.
 - **Every data table declares its column headers** (`scope="col"`).

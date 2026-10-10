@@ -899,3 +899,25 @@ def test_a_control_the_keyboard_puts_under_settings_save_bar_is_scrolled_clear()
         "if (over > 0) content.scrollTop += Math.ceil(over);",
     ):
         assert line in clear, line
+
+
+def test_a_report_center_card_is_a_link_that_looks_as_the_card_did():
+    """The Report Center's cards are links to their reports
+    (ReportsPage._card, pinned in tests/test_report_views.py): no link
+    colour or underline, and the keyboard's halo in place of the card's own
+    shadow while focused, over the dark theme's .card too; Space opens one
+    as Enter does."""
+    css = (ROOT / "app/static/css/style.css").read_text(encoding="utf-8")
+    card = _rule(css, ".report-card {")
+    for line in ("display: block;", "color: inherit;", "text-decoration: none;"):
+        assert line in card, line
+    assert ".report-card:hover { text-decoration: none; }" in css
+    assert (
+        "a.report-card:focus-visible { box-shadow: 0 0 0 8px var(--focus-halo); }"
+        in css
+    )
+    src = _src("reports.js")
+    key = src[src.index("    _cardKey(e) {") :]
+    key = key[: key.index("\n    },")]
+    assert "if (e.key !== ' ' || e.altKey || e.ctrlKey || e.metaKey) return;" in key
+    assert "e.preventDefault();" in key and "e.currentTarget.click();" in key

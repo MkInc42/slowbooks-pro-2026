@@ -456,7 +456,7 @@ def test_back_goes_back_within_the_app_while_there_is_somewhere_to_go(
         # a report pushed from the Report Center: Back closes it and returns
         _sidebar(page, handled, "#/reports")
         page.evaluate(
-            """() => document.querySelector('#page-content .card[onclick="ReportsPage.profitLoss()"]').click()"""
+            """() => document.querySelector('#page-content a.report-card[data-row-key="report:profit-loss"]').click()"""
         )
         page.wait_for_selector("#report-content table")
         settle(page, handled)
@@ -933,7 +933,7 @@ def test_back_is_inert_over_a_form_but_live_over_an_addressed_dialog(
         # overlay and takes the report back to the Report Center
         _sidebar(page, handled, "#/reports")
         page.evaluate(
-            """() => document.querySelector('#page-content .card[onclick="ReportsPage.profitLoss()"]').click()"""
+            """() => document.querySelector('#page-content a.report-card[data-row-key="report:profit-loss"]').click()"""
         )
         page.wait_for_selector("#report-content table")
         settle(page, handled)
@@ -3099,5 +3099,170 @@ def test_a_click_that_opens_elsewhere_notes_nothing_and_steals_nothing(
         page.wait_for_selector(report)
         settle(page, handled)
         assert page.evaluate(ACTIVE_KEY) != "report:ar-aging"
+    finally:
+        page.close()
+
+
+CARDS = "[...document.querySelectorAll('#page-content a.report-card')]"
+CARD_LIST = f"""() => {CARDS}.map(a => ({{ key: a.dataset.rowKey, href: a.getAttribute('href'),
+    title: a.querySelector('.card-header').textContent.trim(),
+    text: a.querySelector('p').textContent.trim() }}))"""
+FOCUS_KEY = "() => document.activeElement && document.activeElement.dataset.rowKey"
+# A card whose report puts another view's address in place of its own: the
+# Unclassified P&L is the default class's P&L
+OPENS_AT = {"report:profit-loss-unclassified": "#/reports/profit-loss-class"}
+
+
+def _ax(page, selector):
+    """The role, name and description the browser itself gives the element
+    (Chromium's accessibility tree, over CDP)."""
+    cdp = page.context.new_cdp_session(page)
+    try:
+        doc = cdp.send("DOM.getDocument", {"depth": 1})
+        node = cdp.send(
+            "DOM.querySelector", {"nodeId": doc["root"]["nodeId"], "selector": selector}
+        )
+        obj = cdp.send("DOM.resolveNode", {"nodeId": node["nodeId"]})
+        tree = cdp.send(
+            "Accessibility.getPartialAXTree",
+            {"objectId": obj["object"]["objectId"], "fetchRelatives": False},
+        )
+        n = tree["nodes"][0]
+        return {
+            k: (n.get(k) or {}).get("value") for k in ("role", "name", "description")
+        }
+    finally:
+        cdp.detach()
+
+
+def _cards_by_keyboard(page, handled, cards, opened=None):
+    """Tab reaches every card in turn; Enter on each (those in `opened`, or
+    all) opens its report over the Report Center at its view's address (or
+    the one it puts in place of it, OPENS_AT), and Back returns there with
+    focus on the card."""
+    first = f'#page-content a[data-row-key="{cards[0]["key"]}"]'
+    page.focus(first)
+    page.keyboard.press("Shift+Tab")
+    walked = []
+    for _ in cards:
+        page.keyboard.press("Tab")
+        walked.append(page.evaluate(FOCUS_KEY))
+    assert walked == [c["key"] for c in cards], walked
+    assert page.evaluate("() => document.activeElement.matches(':focus-visible')")
+    for c in cards:
+        if opened is not None and c["key"] not in opened:
+            continue
+        sel = f'#page-content a[data-row-key="{c["key"]}"]'
+        page.focus(sel)
+        page.keyboard.press("Shift+Tab")
+        page.keyboard.press("Tab")
+        assert page.evaluate(FOCUS_KEY) == c["key"]
+        page.keyboard.press("Enter")
+        page.wait_for_function(MODAL_SHOWN)
+        page.wait_for_function(
+            "(h) => location.hash === h || location.hash.startsWith(h + '?')",
+            arg=OPENS_AT.get(c["key"], c["href"]),
+        )
+        settle(page, handled)
+        page.keyboard.press("Alt+ArrowLeft")
+        page.wait_for_function(AT, arg="#/reports")
+        page.wait_for_function(f"!({MODAL_SHOWN})()")
+        page.wait_for_function(f"(k) => ({FOCUS_KEY})() === k", arg=c["key"])
+        settle(page, handled)
+
+
+def test_every_report_center_card_is_reached_and_opened_by_the_keyboard(
+    browser, company, books
+):
+    """The Report Center's cards were a <div> with a click alone: the
+    keyboard could not reach a report from there, nor a screen reader
+    name one (review). Each is a link to its report's own address, named
+    by its title and described by the line under it: Tab reaches every
+    card in turn; Enter on each opens that report over the Report Center
+    at its view's address, and Back returns with focus on the card; Space
+    opens one too. It looks as the card did, and draws the ring and halo,
+    as painted, in both themes."""
+    page, handled = _open(browser, company)
+    try:
+        _no_splash(page)
+        _visit(page, handled, "#/reports")
+        cards = page.evaluate(CARD_LIST)
+        assert len(cards) == 19, cards
+        for c in cards:
+            view = c["key"].split(":", 1)[1]
+            assert c["href"] == f"#/reports/{view}", c
+            ax = _ax(page, f'#page-content a[data-row-key="{c["key"]}"]')
+            assert ax == {
+                "role": "link",
+                "name": c["title"],
+                "description": c["text"],
+            }, (
+                c,
+                ax,
+            )
+        # the look: as a <div class="card"> with the same words beside it
+        look = page.evaluate(
+            f"""() => {{ const a = {CARDS}[0], d = document.createElement('div');
+                d.className = 'card'; d.innerHTML = a.innerHTML.replace(/ id="[^"]*"/g, '');
+                a.after(d);
+                const style = (el) => {{ const cs = getComputedStyle(el);
+                    return [cs.color, cs.backgroundColor, cs.borderTopColor, cs.borderTopWidth,
+                            cs.paddingTop, cs.paddingLeft, cs.textDecorationLine, cs.fontSize,
+                            cs.boxShadow, el.getBoundingClientRect().height].join(' | '); }};
+                const parts = (el) => [el, el.querySelector('.card-header'), el.querySelector('p')].map(style);
+                const out = [parts(a), parts(d), getComputedStyle(a).cursor];
+                d.remove();
+                return out; }}"""
+        )
+        assert look[0] == look[1] and look[2] == "pointer", look
+        _cards_by_keyboard(page, handled, cards)
+        # Space opens a card too
+        sel = '#page-content a[data-row-key="report:general-ledger"]'
+        page.focus(sel)
+        page.keyboard.press("Shift+Tab")
+        page.keyboard.press("Tab")
+        page.keyboard.press(" ")
+        page.wait_for_function(MODAL_SHOWN)
+        page.wait_for_function(
+            "() => location.hash.startsWith('#/reports/general-ledger')"
+        )
+        settle(page, handled)
+        page.keyboard.press("Alt+ArrowLeft")
+        page.wait_for_function(
+            f"(k) => ({FOCUS_KEY})() === k", arg="report:general-ledger"
+        )
+        settle(page, handled)
+        # the ring and halo
+        page.keyboard.press("Shift+Tab")
+        page.keyboard.press("Tab")
+        _both_themes(page, "a Report Center card", GOLD)
+    finally:
+        page.close()
+
+
+def test_a_nonprofits_report_center_cards_are_reached_and_opened_by_the_keyboard(
+    browser, client, nonprofit  # noqa: F811  (the fixture, imported above)
+):
+    """A nonprofit's Report Center leads with its own statements: their
+    cards are links too, reached by Tab in turn, and Enter on the
+    Statement of Activities opens it, Back returning to its card."""
+    page, handled = _open(browser, client)
+    try:
+        _no_splash(page)
+        _visit(page, handled, "#/reports")
+        cards = page.evaluate(CARD_LIST)
+        keys = [c["key"] for c in cards]
+        assert keys[:6] == [
+            "report:statement-of-activities",
+            "report:statement-of-financial-position",
+            "report:fund-balances",
+            "report:functional-expenses",
+            "report:pledges",
+            "report:giving-statements",
+        ], keys
+        assert "report:profit-loss" not in keys and "report:balance-sheet" not in keys
+        _cards_by_keyboard(
+            page, handled, cards, opened={"report:statement-of-activities"}
+        )
     finally:
         page.close()
