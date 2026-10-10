@@ -1805,6 +1805,10 @@ def _ring_clears(page, what, ring):
     return report
 
 
+# the sidebar's halo is its own navy (style.css #sidebar --focus-halo)
+NAV_HALO = {"light": "rgb(0, 34, 68)", "dark": "rgb(8, 12, 20)"}
+
+
 def _both_themes(page, what, ring_for, halo=HALO):
     """The ring at the focused control, in light and then dark, and light
     again; and, unless `halo` is None, the halo painted against the gold
@@ -1905,6 +1909,35 @@ def test_the_ring_clears_3_to_1_on_every_ground_it_meets_as_painted(
         page.evaluate(FIRST)
         _tab_until(page, "() => document.activeElement.tagName === 'SUMMARY'")
         _both_themes(page, "summary", GOLD)
+    finally:
+        page.close()
+
+
+def test_a_sidebar_link_draws_the_ring_on_all_four_sides_as_painted(
+    browser, company, books
+):
+    """#sidebar scrolls (overflow-y), which cut the ring at +2px to its top
+    and bottom lines: a link spans the sidebar, and its sides fell outside
+    (review of NEW-43). The ring and its halo are drawn inside the link's
+    edge, the halo the sidebar's own navy: all four sides painted, the gold
+    3:1 against what meets it and against the ground beyond, in both themes
+    — on a link, on the open page's (its lighter ground; its gold marker
+    takes the halo's colour while it is focused), and on the link below it,
+    which meets that lighter ground (2.35:1 with the ring at -2px)."""
+    page, handled = _open(browser, company)
+    try:
+        _no_splash(page)
+        _sidebar(page, handled, "#/customers")
+        page.focus('#sidebar a[href="#/customers"]')
+        page.keyboard.press("Shift+Tab")
+        for href in ("#/", "#/customers", "#/jobs"):
+            at = page.evaluate("() => document.activeElement.getAttribute('href')")
+            assert at == href, (at, href)
+            assert page.evaluate(
+                "() => document.activeElement.closest('#sidebar') !== null"
+            )
+            _both_themes(page, ("sidebar", href), GOLD, NAV_HALO)
+            page.keyboard.press("Tab")
     finally:
         page.close()
 

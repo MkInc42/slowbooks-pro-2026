@@ -152,7 +152,8 @@
     /* The keyboard's ring (NEW-43): a deeper gold than the brand's, so it
        clears 3:1 against what it sits on (WCAG 1.4.11): 3.9:1 on white,
        3.2:1 on the navy sidebar. #cc9933 was 2.57:1 on white. Its halo,
-       on both its sides, is white: 3.9:1 against it on any ground. */
+       on both its sides, is white: 3.9:1 against it on any ground (the
+       sidebar's is its own navy, 4.1:1: #sidebar below). */
     --focus-ring:     #a37a29;
     --focus-halo:     #ffffff;
     --qb-red:         #cc3333;
@@ -409,6 +410,9 @@ body {
     border-right: 1px solid #001a33;
     display: flex;
     flex-direction: column;
+    /* the keyboard's ring meets the sidebar's own navy here, not white:
+       4.1:1 against the gold, and no white box on the navy */
+    --focus-halo: var(--qb-navy-dark);
 }
 
 .sidebar-header {
@@ -471,6 +475,20 @@ body {
     color: #ffffff;
     border-left-color: var(--qb-gold);
     font-weight: 700;
+}
+
+/* The sidebar scrolls (overflow-y), which clipped the ring at +2px to its
+   top and bottom lines: a link spans the sidebar, so its sides fell
+   outside. On a link here the ring and its halo are drawn inside its
+   edge (the ring 4px in, 4px of halo outside it and 2px inside, under the
+   words), so all four sides paint, and the gold meets the halo even where
+   the link above or below is the open page's lighter one (2.35:1 against
+   that). The left border, the open page's gold marker included, takes the
+   halo's colour while the link is focused: the ring is the gold there. */
+#sidebar .nav-link:focus-visible {
+    outline-offset: -6px;
+    box-shadow: inset 0 0 0 8px var(--focus-halo);
+    border-left-color: var(--focus-halo);
 }
 
 .nav-icon {

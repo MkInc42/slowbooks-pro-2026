@@ -576,6 +576,22 @@ def test_the_skip_link_draws_the_ring_and_goes_to_the_content_in_place():
     assert "const main = document.getElementById('page-content');" in wire
 
 
+def test_a_sidebar_link_draws_the_ring_inside_its_edge():
+    """#sidebar scrolls (overflow-y), which cut the ring at +2px to its top
+    and bottom lines. On a sidebar link the ring and its halo are inside;
+    the halo is the sidebar's own navy."""
+    css = (ROOT / "app/static/css/style.css").read_text(encoding="utf-8")
+    dark = (ROOT / "app/static/css/dark.css").read_text(encoding="utf-8")
+    link = _rule(css, "#sidebar .nav-link:focus-visible {")
+    # the ring 4px in, 4px of halo outside it and 2px inside
+    assert "outline-offset: -6px;" in link
+    assert "box-shadow: inset 0 0 0 8px var(--focus-halo);" in link
+    # the left border (the open page's marker too) takes the halo's colour
+    assert "border-left-color: var(--focus-halo);" in link
+    assert "--focus-halo: var(--qb-navy-dark);" in _rule(css, "#sidebar {")
+    assert "--focus-halo: #080c14;" in _rule(dark, '[data-theme="dark"] #sidebar {')
+
+
 # ── Round 3, NEW-44: a page's Notes box saves only a change ──────────────
 
 

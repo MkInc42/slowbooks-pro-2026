@@ -122,6 +122,7 @@
 /* Sidebar */
 [data-theme="dark"] #sidebar {
     background: linear-gradient(180deg, #0d1520 0%, #080c14 100%);
+    --focus-halo: #080c14;   /* the keyboard's ring meets the sidebar's own dark: 9.1:1 */
 }
 
 [data-theme="dark"] .sidebar-header h1 { color: #e0e4ec; }
