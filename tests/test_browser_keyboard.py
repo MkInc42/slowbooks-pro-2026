@@ -1334,9 +1334,10 @@ def test_tab_shows_where_it_is_on_a_report_row_and_a_mouse_click_draws_no_ring(
     """style.css had no focus style for links or buttons, and WebKit draws
     no ring on a link with the Mac's keyboard navigation off: the owner
     tabbed through A/R Aging and never saw the customer names take focus
-    (macOS gate, round 2). Now every control draws the skip link's ring,
-    2px of the brand's gold with an offset, in both themes — on keyboard
-    focus only."""
+    (macOS gate, round 2). Now every link and button draws the skip link's
+    ring, 2px of gold with an offset (a deeper gold than the brand's in
+    light: 3:1 against its ground), in both themes — on keyboard focus
+    only."""
     page, handled = _open_at(
         browser, company, "#/reports/ar-aging?as_of_date=2026-09-30"
     )
@@ -1571,5 +1572,52 @@ def test_back_from_a_drill_downs_document_refocuses_the_line(browser, company, b
             assert page.evaluate("() => document.activeElement.id") != (
                 "report-period-select"
             )
+    finally:
+        page.close()
+
+
+def test_the_dialog_itself_and_a_field_take_focus_without_the_ring(
+    browser, company, books
+):
+    """The ring is a control's. The dialog itself (tabindex −1), which
+    takes focus when its first control is Void (NEW-32), is a place and
+    draws none, whether the keyboard or a script put focus there; the next
+    Tab lands on a control with the ring. A field keeps its own focus
+    style, the blue border and pale ground, with no ring by keyboard and
+    none on a click into a box (review of NEW-43)."""
+    page, handled = _open(browser, company)
+    try:
+        _no_splash(page)
+        _visit(page, handled, "#/journal")
+        _open_dialog(
+            page, handled, f"JournalPage.view({books['journal']})", "#modal-body button"
+        )
+        assert page.evaluate(FOCUSED)["id"] == "modal"
+        opened = page.evaluate(RING)
+        assert opened["at"] == "modal" and "none" in opened["outline"], opened
+        control = _tab_until(
+            page, "() => ['A', 'BUTTON'].includes(document.activeElement.tagName)"
+        )
+        assert control["keyboard"], control
+        assert control["outline"] == f"2px solid {GOLD['light']}", control
+        # back on the dialog by script, after the keyboard: still none
+        page.evaluate("() => document.getElementById('modal').focus()")
+        again = page.evaluate(RING)
+        assert again["at"] == "modal" and "none" in again["outline"], again
+        page.evaluate("() => closeModal()")
+        # a field: the period select, by keyboard and then by mouse
+        _visit(page, handled, "#/reports/ar-aging?as_of_date=2026-09-30")
+        page.wait_for_function(MODAL_SHOWN)
+        settle(page, handled)
+        page.evaluate(FIRST)
+        page.keyboard.press("Shift+Tab")
+        page.keyboard.press("Tab")
+        field = page.evaluate(RING)
+        assert field["at"] == "report-period-select" and field["keyboard"], field
+        assert "none" in field["outline"], field
+        page.click("#report-period-select")
+        page.evaluate(SETTLED)
+        box = page.evaluate(RING)
+        assert box["at"] == "report-period-select" and "none" in box["outline"], box
     finally:
         page.close()

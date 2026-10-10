@@ -415,22 +415,33 @@ def test_focus_is_visible_on_every_control_by_keyboard_only():
     css = (ROOT / "app/static/css/style.css").read_text(encoding="utf-8")
     start = css.index("a:focus-visible,")
     ring = css[start : css.index("}", start)]
-    for sel in ("a", "button", "input", "select", "textarea", "summary", "[tabindex]"):
+    for sel in ("a", "button", "summary", '[tabindex]:not([tabindex="-1"])'):
         assert f"{sel}:focus-visible" in ring, sel
     assert "outline: 2px solid var(--focus-ring);" in ring
     assert "outline-offset: 2px;" in ring
     assert ":focus {" not in ring and ":focus," not in ring  # never a mouse click's
+    # a field keeps its own focus style (the blue border and pale ground):
+    # no ring on a click into a box of a dense form
+    for sel in ("input", "select", "textarea"):
+        assert f"{sel}:focus-visible" not in ring, sel
     # the ring sits first, so a control's own ring still wins on order
     assert start < css.index(":root {")
     assert ".grid-scroll:focus-visible { outline: 2px solid var(--qb-navy);" in css
     # the token: a deeper gold than the brand's in light (3.9:1 on white,
-    # WCAG 1.4.11), the brand's own in dark; no rule drops the outline any more
+    # WCAG 1.4.11), the brand's own in dark
     assert "--focus-ring:     #a37a29;" in css
-    assert "outline: none" not in css
+    # the outline is dropped in three places only: the two field rules (the
+    # exception above) and what takes focus by script alone — the dialog
+    # itself and the skip link's target, a place rather than a control
+    assert css.count("outline: none") == 3
+    assert ".form-group textarea:focus {\n    outline: none;" in css
+    assert ".tb-search:focus {\n    outline: none;" in css
+    assert '[tabindex="-1"]:focus {\n    outline: none;\n}' in css
     dark = (ROOT / "app/static/css/dark.css").read_text(encoding="utf-8")
     assert "--focus-ring:     var(--qb-gold);" in dark
     docs = (ROOT / "docs/accessibility.md").read_text(encoding="utf-8")
     assert "**The keyboard's place is visible**" in docs
+    assert "A field keeps its own focus style" in docs
 
 
 # ── Round 3, NEW-44: a page's Notes box saves only a change ──────────────
