@@ -3869,3 +3869,74 @@ def test_a_table_wider_than_its_container_scrolls_and_tab_shows_its_stops_whole(
     finally:
         page.set_viewport_size({"width": 1500, "height": 980})
         page.close()
+
+
+# _opensElsewhere on a click on the chart's first account link, with the
+# keys held and the button pressed given, on the platform given; the click
+# itself goes nowhere
+OPENS_ELSEWHERE = """([platform, init]) => {
+    Object.defineProperty(Navigator.prototype, 'platform', { get: () => platform, configurable: true });
+    const a = document.querySelector('#page-content a[data-row-key^="account:"]');
+    let got = null;
+    const look = (e) => { got = ReportsPage._opensElsewhere(e); e.preventDefault(); };
+    a.addEventListener('click', look);
+    a.addEventListener('auxclick', look);
+    a.dispatchEvent(new MouseEvent(init.button ? 'auxclick' : 'click',
+        Object.assign({ bubbles: true, cancelable: true }, init)));
+    a.removeEventListener('click', look);
+    a.removeEventListener('auxclick', look);
+    return got; }"""
+
+
+def test_the_new_tab_modifier_is_the_platforms_own(browser, company, books):
+    """A new tab is ⌘-click on a Mac and Ctrl-click elsewhere, where a
+    Windows or Super key click follows the link in place, and on a Mac a
+    Ctrl-click is the context menu's (final review: Meta counted as "opens
+    elsewhere" everywhere). On a Mac, ⌘, Shift, Option or the middle button
+    open the link elsewhere and Ctrl does not; on Windows and Linux, Ctrl,
+    Shift, Alt or the middle button do and the Windows key does not; a
+    plain click never does. In this browser (Linux), a Super-click on a
+    chart account follows the link in place, is noted, and Back puts focus
+    back on it."""
+    page, handled = _open(browser, company)
+    try:
+        _no_splash(page)
+        _visit(page, handled, "#/accounts")
+        for platform, opens in (
+            (
+                "MacIntel",
+                {"metaKey": True, "shiftKey": True, "altKey": True, "button": True},
+            ),
+            (
+                "Win32",
+                {"ctrlKey": True, "shiftKey": True, "altKey": True, "button": True},
+            ),
+            (
+                "Linux x86_64",
+                {"ctrlKey": True, "shiftKey": True, "altKey": True, "button": True},
+            ),
+        ):
+            for held in ("metaKey", "ctrlKey", "shiftKey", "altKey", "button", None):
+                init = (
+                    {"button": 1}
+                    if held == "button"
+                    else ({held: True} if held else {})
+                )
+                got = page.evaluate(OPENS_ELSEWHERE, [platform, init])
+                assert got is bool(opens.get(held)), (platform, held, got)
+        page.evaluate("""() => Object.defineProperty(Navigator.prototype, 'platform',
+                { get: () => 'Linux x86_64', configurable: true })""")
+        # a Super-click on Linux: the link is followed here, and noted
+        link = '#page-content a[data-row-key^="account:"]'
+        key = page.get_attribute(link, "data-row-key")
+        href = page.get_attribute(link, "href")
+        pages = len(page.context.pages)
+        page.click(link, modifiers=["Meta"])
+        page.wait_for_function("(h) => location.hash === h", arg=href)
+        settle(page, handled)
+        assert len(page.context.pages) == pages
+        page.keyboard.press("Alt+ArrowLeft")
+        page.wait_for_function(AT, arg="#/accounts")
+        page.wait_for_function(f"(k) => ({FOCUS_KEY})() === k", arg=key)
+    finally:
+        page.close()

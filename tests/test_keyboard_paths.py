@@ -843,8 +843,10 @@ def test_a_click_that_opens_elsewhere_notes_nothing():
     away = src[src.index("    _opensElsewhere(ev) {") :]
     away = away[: away.index("\n    },")]
     assert "ev.type !== 'click' && ev.type !== 'auxclick'" in away
+    # a new tab is ⌘-click on a Mac, Ctrl-click elsewhere
+    assert "const newTab = App.isMac() ? ev.metaKey : ev.ctrlKey;" in away
     assert (
-        "ev.ctrlKey || ev.metaKey || ev.shiftKey || ev.altKey || ev.button !== 0"
+        "if (!(newTab || ev.shiftKey || ev.altKey || ev.button !== 0)) return false;"
         in away
     )
     assert "ev.target.closest('a[href]')" in away

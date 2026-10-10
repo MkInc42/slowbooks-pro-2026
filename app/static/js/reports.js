@@ -127,10 +127,13 @@ const ReportsPage = {
     // or a button other than the main one, on a real link (not the
     // javascript: links whose own click does the hop) whose following no
     // click handler has stopped (the customer page's row links stop it and
-    // hop from the row).
+    // hop from the row). A new tab is ⌘-click on a Mac and Ctrl-click
+    // elsewhere: a Windows or Super key click follows the link here, and
+    // on a Mac a Ctrl-click is the context menu's.
     _opensElsewhere(ev) {
         if (!ev || (ev.type !== 'click' && ev.type !== 'auxclick')) return false;
-        if (!(ev.ctrlKey || ev.metaKey || ev.shiftKey || ev.altKey || ev.button !== 0)) return false;
+        const newTab = App.isMac() ? ev.metaKey : ev.ctrlKey;
+        if (!(newTab || ev.shiftKey || ev.altKey || ev.button !== 0)) return false;
         const a = ev.target && ev.target.closest ? ev.target.closest('a[href]') : null;
         return !!a && !/^\s*javascript:/i.test(a.getAttribute('href')) && !ev.defaultPrevented;
     },
