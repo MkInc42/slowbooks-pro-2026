@@ -2175,3 +2175,74 @@ def test_the_notes_box_saves_a_change_once_trimmed_and_in_order(
         assert len(page.evaluate(PUTS)) == 5 and len(sent) == 5
     finally:
         page.close()
+
+
+# A click that, as in WebKit, does not put focus on the link clicked:
+# the mouse goes down without moving focus; where focus was is noted.
+WEBKIT_CLICKS = """() => {
+    document.addEventListener('mousedown', e => e.preventDefault(), true);
+    document.addEventListener('click', () => { window.__focusAtClick =
+        document.activeElement && document.activeElement.dataset.rowKey; }, true); }"""
+
+
+def test_back_after_a_mouse_click_keys_on_the_link_not_on_focus(
+    browser, company, books
+):
+    """WebKit does not focus a link a mouse clicks, so the chart's account
+    links and the drill-down's lines, noting document.activeElement, noted
+    whatever had focus before: Back then went there (review of W-7). The
+    link passes itself (ReportsPage._leaveFrom(this)): with focus left on
+    another link, a click on an account name and on a line comes back to
+    the one clicked."""
+    page, handled = _open(browser, company)
+    try:
+        _no_splash(page)
+        _sidebar(page, handled, "#/accounts")
+        links = page.evaluate(
+            """() => [...document.querySelectorAll('#page-content a[data-row-key^="account:"]')]
+                .map(a => [a.dataset.rowKey, a.getAttribute('href'), a.textContent.trim()])"""
+        )
+        bank = next(x for x in links if x[1].startswith("#/banking/"))
+        other = next(x for x in links if x[0] != bank[0])
+        page.focus(f'#page-content a[data-row-key="{other[0]}"]')
+        page.evaluate(WEBKIT_CLICKS)
+        page.click(f'#page-content a[data-row-key="{bank[0]}"]')
+        page.wait_for_function("() => location.hash.startsWith('#/banking/')")
+        settle(page, handled)
+        assert page.evaluate("() => window.__focusAtClick") == other[0]
+        page.keyboard.press("Alt+ArrowLeft")
+        page.wait_for_function(AT, arg="#/accounts")
+        settle(page, handled)
+        assert page.evaluate(ROW_KEY) == bank[0]
+        assert page.evaluate(WORDS) == bank[2]
+        # a drill-down's line, the same
+        checking = _account(company, "1000")
+        _visit(
+            page,
+            handled,
+            f"#/reports/account-transactions?account_id={checking['id']}"
+            "&start_date=2026-01-01&end_date=2026-12-31&from=trial-balance",
+        )
+        page.wait_for_selector("#drilldown-body table")
+        settle(page, handled)
+        here = page.evaluate("location.hash")
+        lines = page.evaluate(
+            """() => [...document.querySelectorAll('#drilldown-body a[data-row-key^="line:"]')]
+                .map(a => [a.dataset.rowKey, a.getAttribute('href'), a.textContent.trim()])"""
+        )
+        assert len(lines) >= 3, lines
+        first, clicked = lines[0], lines[2]
+        page.focus(f'#drilldown-body a[data-row-key="{first[0]}"]')
+        page.click(f'#drilldown-body a[data-row-key="{clicked[0]}"]')
+        page.wait_for_function(AT, arg="#" + clicked[1].split("#", 1)[1])
+        page.wait_for_function("() => !document.getElementById('drilldown-body')")
+        settle(page, handled)
+        assert page.evaluate("() => window.__focusAtClick") == first[0]
+        page.keyboard.press("Alt+ArrowLeft")
+        page.wait_for_function(AT, arg=here)
+        page.wait_for_selector("#drilldown-body table")
+        settle(page, handled)
+        assert page.evaluate(ROW_KEY) == clicked[0]
+        assert page.evaluate(WORDS) == clicked[2]
+    finally:
+        page.close()

@@ -633,8 +633,9 @@ def test_a_pages_notes_box_saves_only_a_change():
 
 def test_back_refocuses_the_charts_account_link_and_the_drill_downs_line():
     app = _src("app.js")
+    # the link passes itself: a mouse click does not focus a link in WebKit
     assert (
-        'data-row-key="account:${Number(a.id)}" onclick="ReportsPage._leaveFrom()"'
+        'data-row-key="account:${Number(a.id)}" onclick="ReportsPage._leaveFrom(this)"'
         in app
     )
     nav = app[app.index("async navigate(hash) {") :]
@@ -645,10 +646,14 @@ def test_back_refocuses_the_charts_account_link_and_the_drill_downs_line():
     reports = _src("reports.js")
     assert (
         "data-row-key=\"line:${escapeHtml(String(e.line_id || e.transaction_id || ''))}\""
-        ' onclick="ReportsPage._leaveFrom()"' in reports
+        ' onclick="ReportsPage._leaveFrom(this)"' in reports
     )
-    leave = reports[reports.index("_leaveFrom() {") :]
+    leave = reports[reports.index("_leaveFrom(from) {") :]
     leave = leave[: leave.index("\n    },")]
+    assert (
+        "const el = (from && from.nodeType === 1) ? from : document.activeElement;"
+        in leave
+    )
     assert "const inDialog = !!el.closest('#modal-body');" in leave
     assert (
         "const n = inDialog ? [...document.querySelectorAll('#modal-body a[href], #modal-body button')].indexOf(el) : -1;"

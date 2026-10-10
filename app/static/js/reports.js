@@ -97,8 +97,12 @@ const ReportsPage = {
     // A page's own row carries a key too (the chart's account links,
     // App.renderAccounts: W-7); the place among the controls is a dialog's
     // alone. Nothing is kept in memory, so Back, Forward and a reload agree.
-    _leaveFrom() {
-        const el = document.activeElement;
+    // A link that hops passes itself (`from`): a click with the mouse does
+    // not put focus on a link in WebKit, so the focused element would be
+    // whatever had it before (W-7 review); else the focused element is the
+    // one left from.
+    _leaveFrom(from) {
+        const el = (from && from.nodeType === 1) ? from : document.activeElement;
         if (!el || !el.closest) return;
         const inDialog = !!el.closest('#modal-body');
         const n = inDialog ? [...document.querySelectorAll('#modal-body a[href], #modal-body button')].indexOf(el) : -1;
@@ -608,7 +612,7 @@ const ReportsPage = {
                 // so that Back from the document puts focus on this link,
                 // not on the period select (W-7).
                 const src = link
-                    ? `<a href="${escapeHtml(link)}" data-row-key="line:${escapeHtml(String(e.line_id || e.transaction_id || ''))}" onclick="ReportsPage._leaveFrom()" style="color:var(--text-link); text-decoration:none;">${escapeHtml(sourceWord(e.source_type || 'journal'))} #${num}</a>`
+                    ? `<a href="${escapeHtml(link)}" data-row-key="line:${escapeHtml(String(e.line_id || e.transaction_id || ''))}" onclick="ReportsPage._leaveFrom(this)" style="color:var(--text-link); text-decoration:none;">${escapeHtml(sourceWord(e.source_type || 'journal'))} #${num}</a>`
                     : (e.source_type ? escapeHtml(sourceWord(e.source_type)) : '');
                 const mark = e.reconciliation_id ? 'R' : (e.cleared ? '✓' : '');
                 return `<tr${e.voided ? ' class="row--void" style="color:var(--text-muted); text-decoration:line-through;"' : ''}>
