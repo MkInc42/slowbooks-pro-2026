@@ -1636,6 +1636,27 @@ const SettingsPage = {
     },
 };
 
+// The save bar is held to the window's bottom (sticky) over whatever
+// scrolls under it, and Tab moved to controls there, out of sight (22
+// stops at 1440 x 900: review). A control the keyboard puts under it is
+// scrolled up clear of it, its ring and halo (8px) too. Measured, not
+// scroll padding or margin: for a text box the browser brings only its
+// caret line into view, and the invoice notes' first line was in view,
+// the rest of the box under the bar. Not the bar's own Save, and not a
+// pointer's focus, which must stay under the pointer that pressed it: a
+// text box matches :focus-visible on a click too, and the page moved
+// under a click into the invoice notes (App.keyboardFocus). (App.init
+// hands every focusin here.)
+SettingsPage._clearSaveBar = function (e) {
+    const a = e.target, bar = document.getElementById('settings-savebar');
+    if (!bar || !a || !a.closest || bar.contains(a) || !a.closest('#settings-form')) return;
+    if (!App.keyboardFocus()) return;
+    const b = bar.getBoundingClientRect(), content = document.getElementById('content');
+    if (!b.height || !content) return;
+    const over = a.getBoundingClientRect().bottom + 8 - b.top;
+    if (over > 0) content.scrollTop += Math.ceil(over);
+};
+
 
 // --- Class tracking management (Settings > Classes) ---------------------
 SettingsPage.loadClasses = async function () {

@@ -112,10 +112,12 @@ const CustomersPage = {
         // address now, named by its words. The row's click does the opening,
         // for the link too (its own navigation is left to it, so the hop is
         // the one history entry App.navigate pushes); the link left is noted
-        // on this page's entry (ReportsPage._leaveFrom), so Back returns here
-        // with the focus on it (App.withDocument).
+        // on this page's entry (ReportsPage._leaveFrom, given the row: its
+        // link is the one noted, after a mouse click too, which in WebKit
+        // puts focus nowhere), so Back returns here with the focus on it
+        // (App.withDocument).
         const rowLink = (href, key, text) => `<a href="${href}" data-row-key="${key}" style="color:var(--text-link); text-decoration:none;" onclick="event.preventDefault()">${escapeHtml(text)}</a>`;
-        const hop = (href) => `ReportsPage._leaveFrom();closeModal({ keepAddress: true });App.navigate('${href}')`;
+        const hop = (href) => `ReportsPage._leaveFrom(this);closeModal({ keepAddress: true });App.navigate('${href}')`;
         const invRows = invoices.slice(0, 10).map(i =>
             `<tr style="cursor:pointer" onclick="${hop(`#/invoices/${i.id}`)}">
                 <td>${rowLink(`#/invoices/${i.id}`, `invoice:${i.id}`, i.invoice_number || `#${i.id}`)}</td>
@@ -202,7 +204,7 @@ const CustomersPage = {
                     <span>Notes</span>
                     <span id="cust-note-status-${id}" style="font-size:10px;color:var(--text-muted);text-transform:none;letter-spacing:0;font-weight:normal"></span>
                 </h4>
-                <textarea id="cust-notes-${id}" rows="3" data-write style="width:100%;font-size:13px;font-family:inherit"
+                <textarea id="cust-notes-${id}" rows="3" data-write aria-label="Notes" style="width:100%;font-size:13px;font-family:inherit"
                     placeholder="Internal notes about this customer — visible to everyone with admin access."
                     onblur="CustomersPage._saveNotes(${id}, this.value)">${escapeHtml(customer.notes || '')}</textarea>
             </div>
@@ -263,9 +265,16 @@ const CustomersPage = {
     // Job Profitability is filtered to the customer's jobs and says so. The
     // statement PDF is the picker's, as of today; a nonprofit's is the
     // giving statement above. Reads: a read-only sign-in keeps them.
+    // Each report is a real link to its address (the keyboard and a screen
+    // reader find it as one); its click notes it on this page's entry
+    // (ReportsPage._leaveFrom, the link itself: after a mouse click too,
+    // which in WebKit focuses nothing), so Back from the report returns here
+    // with focus on it (App.withDocument); they noted nothing, so Back put
+    // focus where the page puts it on opening. The statement is a download,
+    // not a view: there is nothing to come back to, and it notes nothing.
     _reportsRow(id) {
         const link = (view, params, text) =>
-            `<a class="btn btn-sm btn-secondary" href="${ReportsPage.viewUrl(view, params)}">${text}</a>`;
+            `<a class="btn btn-sm btn-secondary" href="${ReportsPage.viewUrl(view, params)}" data-row-key="report:${view}" onclick="ReportsPage._leaveFrom(this)">${text}</a>`;
         const period = { customer_id: id, period: 'this_year_to_date' };
         return `<div role="group" aria-label="Reports for this ${T('customer')}" style="margin-top:8px;display:flex;flex-wrap:wrap;gap:4px;justify-content:flex-end">
             <span style="font-size:11px;color:var(--text-muted);text-transform:uppercase;letter-spacing:.05em;align-self:center">Reports</span>
@@ -276,18 +285,56 @@ const CustomersPage = {
         </div>`;
     },
 
-    async _saveNotes(id, value) {
+    // The box saves when it is left — but only a change, and once. It saved
+    // on every blur, so a Tab through the page wrote the company file and an
+    // audit entry each time, and turned a note never written (null) into ""
+    // (macOS gate NEW-44). What is on file is the save on its way, if one is
+    // (_notesSaving: leaving the box again before it is back sends nothing
+    // more), else the box's defaultValue: what it was loaded with, none and
+    // empty alike, and then what was saved. Words are compared trimmed — a
+    // space added at the end is no change, and a note of spaces is no note,
+    // saved as empty — and a note is saved as typed. One save at a time: a
+    // change made while one is on its way goes after it.
+    _notesSaving: {},
+
+    // The word beside the box, one at a time: showing one stops the
+    // clearing an earlier "✓ saved" set going, which wiped a "⚠ save
+    // failed" shown within its 1.5s (review).
+    _noteTimers: {},
+    _noteStatus(id, text, clearAfter = 0) {
+        clearTimeout(CustomersPage._noteTimers[id]);
+        delete CustomersPage._noteTimers[id];
         const status = document.getElementById(`cust-note-status-${id}`);
-        if (status) status.textContent = 'saving…';
-        try {
+        if (!status) return;
+        status.textContent = text;
+        if (clearAfter) CustomersPage._noteTimers[id] = setTimeout(() => {
+            delete CustomersPage._noteTimers[id];
+            status.textContent = '';
+        }, clearAfter);
+    },
+
+    async _saveNotes(id, value) {
+        const box = document.getElementById(`cust-notes-${id}`);
+        const pending = CustomersPage._notesSaving[id];
+        const onFile = pending ? pending.value : box ? box.defaultValue : null;
+        if (onFile !== null && value.trim() === onFile.trim()) return;
+        if (!value.trim()) value = '';
+        CustomersPage._noteStatus(id, 'saving…');
+        const save = { value };
+        save.done = (async () => {
+            if (pending) await pending.done.catch(() => {});
             await API.put(`/customers/${id}`, { notes: value });
-            if (status) {
-                status.textContent = '✓ saved';
-                setTimeout(() => { if (status) status.textContent = ''; }, 1500);
-            }
+        })();
+        CustomersPage._notesSaving[id] = save;
+        try {
+            await save.done;
+            if (box) box.defaultValue = value;
+            CustomersPage._noteStatus(id, '✓ saved', 1500);
         } catch (err) {
-            if (status) status.textContent = '⚠ save failed';
+            CustomersPage._noteStatus(id, '⚠ save failed');
             toast(err.message, 'error');
+        } finally {
+            if (CustomersPage._notesSaving[id] === save) delete CustomersPage._notesSaving[id];
         }
     },
 

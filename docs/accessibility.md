@@ -53,16 +53,40 @@ or Alt+D.*
   inside, Escape closes them, and focus returns to the control that opened
   them. Tab reaches every control, buttons and links included, on every
   browser and whatever the Mac's "keyboard navigation" setting: the dialog
-  moves focus itself, in the order the browser would (v2.22.0). Escape in
+  moves focus itself, in the order the browser would (v2.22.0). On a page,
+  outside a dialog, the Mac's setting applies: with Keyboard navigation off,
+  as macOS ships, plain Tab moves between text fields and lists only, and
+  Option+Tab — or Keyboard navigation turned on in System Settings →
+  Keyboard — reaches links and buttons too. Escape in
   a date field leaves the field (after closing its calendar); the next
   Escape closes the dialog, so an unsaved form is not lost to one key
   (v2.22.0). No dialog opens with focus on Void or Delete: one whose first
   control is destructive takes focus itself, and reads its title (v2.22.0).
-- **Back, within the app** (v2.22.0): the toolbar's ← button goes back
-  through the app's history, and is enabled only while an app page is
-  behind. The desktop app's window has no Back of its own, and some hops (a
-  report's row to a customer's page, a class's page to its P&L) have no
-  "Back to …" button; this covers them all.
+- **The keyboard's place is visible** (v2.22.0): every link, button,
+  checkbox and radio, and whatever else the keyboard reaches, draws a gold
+  ring when it takes focus from the keyboard, in both themes, so Tab can be
+  followed through a report's rows as well as its buttons. The gold has a
+  halo of the theme's own ground on both its sides (white in the light
+  theme, the page's dark in the dark), so it stands 3:1 against what it
+  meets wherever it is — the toolbar's grey, a dialog's blue title bar, the
+  lines and the table header around a link in running text — measured as
+  the browser paints it (`tests/test_browser_keyboard.py`); on
+  the toolbar the light theme's gold is a deeper one, which clears the
+  bar's grey by itself too.
+  A mouse click on a button or a link draws none.
+  A field keeps its own focus style (the blue border and pale ground), and
+  a dialog that takes focus itself is not outlined. The skip link, Tab's
+  first stop, moves focus to the page's content and leaves the page where
+  it is.
+- **Back, within the app** (v2.22.0): the toolbar's bordered gold
+  **← Back** button goes back through the app's history, and is lit only
+  while an app page is behind (muted and borderless otherwise, so the two
+  states cannot be mistaken). The desktop app's window has no Back of its
+  own, and some hops (a report's row to a customer's page, a class's page
+  to its P&L) have no "Back to …" button; this covers them all. The
+  Report Center's cards are links: Tab reaches each, Enter (or Space)
+  opens its report, and Back returns to the Report Center with focus on
+  the card.
 
 - **Notifications** ("Invoice saved") announce through a polite live region.
 - **Every data table declares its column headers** (`scope="col"`).

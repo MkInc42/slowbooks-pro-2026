@@ -78,8 +78,9 @@ const VendorsPage = {
         // -- Bills + payments — last 10 each, newest first, click-through --
         // a row opens the document at its own address, the page's address
         // kept behind it so Back returns here with focus on the link
-        // (NEW-38's rule, the vendor's side; NEW-23 review)
-        const hop = (href) => `ReportsPage._leaveFrom();closeModal({ keepAddress: true });App.navigate('${href}')`;
+        // (NEW-38's rule, the vendor's side; NEW-23 review); the row is
+        // passed, so the link noted is the row clicked, not the focused one
+        const hop = (href) => `ReportsPage._leaveFrom(this);closeModal({ keepAddress: true });App.navigate('${href}')`;
         const rowLink = (href, key, text) => `<a href="${href}" data-row-key="${key}" style="color:var(--text-link); text-decoration:none;" onclick="event.preventDefault()">${escapeHtml(text)}</a>`;
         const billRows = bills.slice(0, 10).map(b =>
             `<tr style="cursor:pointer" onclick="${hop(`#/bills/${b.id}`)}">
@@ -203,10 +204,12 @@ const VendorsPage = {
     // row highlighted; the 1099 Summary for this year, likewise, when the
     // vendor is a 1099 vendor; the default expense or COGS account's
     // register (the drill-down, this year to date). Reads: a read-only
-    // sign-in keeps them.
+    // sign-in keeps them. Each is a real link whose click notes it on this
+    // page's entry, the link itself, so Back from the report returns here
+    // with focus on it, after a mouse click too (CustomersPage._reportsRow).
     _reportsRow(vendor, acct) {
         const link = (view, params, text) =>
-            `<a class="btn btn-sm btn-secondary" href="${ReportsPage.viewUrl(view, params)}">${escapeHtml(text)}</a>`;
+            `<a class="btn btn-sm btn-secondary" href="${ReportsPage.viewUrl(view, params)}" data-row-key="report:${view}" onclick="ReportsPage._leaveFrom(this)">${escapeHtml(text)}</a>`;
         return `<div role="group" aria-label="Reports for this vendor" style="margin-top:8px;display:flex;flex-wrap:wrap;gap:4px;justify-content:flex-end">
             <span style="font-size:11px;color:var(--text-muted);text-transform:uppercase;letter-spacing:.05em;align-self:center">Reports</span>
             ${link('ap-aging', { vendor_id: vendor.id, period: 'this_year_to_date' }, 'A/P Aging')}
@@ -215,18 +218,51 @@ const VendorsPage = {
         </div>`;
     },
 
-    async _saveNotes(id, value) {
+    // Only a change is saved, once, as the customer page's notes are
+    // (CustomersPage._saveNotes): leaving the box as it was loaded, or as a
+    // save still on its way is writing it, writes nothing (macOS gate
+    // NEW-44); words are compared trimmed and saved as typed, a note of
+    // spaces as empty; one save at a time.
+    _notesSaving: {},
+
+    // The word beside the box, one at a time: showing one stops the
+    // clearing an earlier "✓ saved" set going, which wiped a "⚠ save
+    // failed" shown within its 1.5s (review).
+    _noteTimers: {},
+    _noteStatus(id, text, clearAfter = 0) {
+        clearTimeout(VendorsPage._noteTimers[id]);
+        delete VendorsPage._noteTimers[id];
         const status = document.getElementById(`vend-note-status-${id}`);
-        if (status) status.textContent = 'saving…';
-        try {
+        if (!status) return;
+        status.textContent = text;
+        if (clearAfter) VendorsPage._noteTimers[id] = setTimeout(() => {
+            delete VendorsPage._noteTimers[id];
+            status.textContent = '';
+        }, clearAfter);
+    },
+
+    async _saveNotes(id, value) {
+        const box = document.getElementById(`vend-notes-${id}`);
+        const pending = VendorsPage._notesSaving[id];
+        const onFile = pending ? pending.value : box ? box.defaultValue : null;
+        if (onFile !== null && value.trim() === onFile.trim()) return;
+        if (!value.trim()) value = '';
+        VendorsPage._noteStatus(id, 'saving…');
+        const save = { value };
+        save.done = (async () => {
+            if (pending) await pending.done.catch(() => {});
             await API.put(`/vendors/${id}`, { notes: value });
-            if (status) {
-                status.textContent = '✓ saved';
-                setTimeout(() => { if (status) status.textContent = ''; }, 1500);
-            }
+        })();
+        VendorsPage._notesSaving[id] = save;
+        try {
+            await save.done;
+            if (box) box.defaultValue = value;
+            VendorsPage._noteStatus(id, '✓ saved', 1500);
         } catch (err) {
-            if (status) status.textContent = '⚠ save failed';
+            VendorsPage._noteStatus(id, '⚠ save failed');
             toast(err.message, 'error');
+        } finally {
+            if (VendorsPage._notesSaving[id] === save) delete VendorsPage._notesSaving[id];
         }
     },
 
@@ -456,7 +492,7 @@ const VendorQuickAdd = {
                 <option value="">Select...</option><option value="${this.NEW}">+ New Vendor</option>${opts}</select>
             <div id="${id}-new" style="display:none; margin-top:8px; padding:8px; border:1px solid var(--gray-300); border-radius:4px; background:var(--primary-light);">
                 <div style="font-weight:700; font-size:11px; margin-bottom:6px;">Quick Add Vendor</div>
-                <input id="${id}-new-name" placeholder="Name *" aria-label="Vendor name" aria-required="true" style="width:100%; margin-bottom:4px; padding:4px 8px; border:1px solid var(--gray-300); border-radius:4px;">
+                <input id="${id}-new-name" placeholder="Name *" aria-label="Vendor name" aria-required="true" style="width:100%; margin-bottom:4px;">
                 <div style="display:flex; gap:6px;">
                     <button type="button" class="btn btn-sm btn-primary" onclick="VendorQuickAdd.save('${id}')">Save</button>
                     <button type="button" class="btn btn-sm btn-secondary" onclick="VendorQuickAdd.cancel('${id}')">Cancel</button>

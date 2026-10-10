@@ -94,22 +94,59 @@ const ReportsPage = {
     // The row a hop leaves from, noted on the view's own history entry
     // (history.state.focus) so that Back puts the keyboard back on it (R9):
     // the row's data-row-key, else its place among the dialog's controls.
-    // Nothing is kept in memory, so Back, Forward and a reload agree.
-    _leaveFrom() {
-        const el = document.activeElement;
-        if (!el || !el.closest || !el.closest('#modal-body')) return;
-        const n = [...document.querySelectorAll('#modal-body a[href], #modal-body button')].indexOf(el);
+    // A page's own row carries a key too (the chart's account links,
+    // App.renderAccounts: W-7); the place among the controls is a dialog's
+    // alone. Nothing is kept in memory, so Back, Forward and a reload agree.
+    // The row left is the element clicked, not the focused one: a click with
+    // the mouse does not put focus on a link in WebKit, so focus named
+    // whatever had it before (W-7 review). A link or a row that hops passes
+    // itself (`from`, its `this`); a hop reached from a click without it
+    // (openDrillDown's links) is the element whose click is being handled,
+    // the same `this`; anything else (a key, a script) the focused one. A
+    // row passed is left from by its keyed link. A click that has the
+    // browser open its link somewhere else (Ctrl, ⌘, Shift or Alt held, or
+    // not the main button: a new tab or window, a download) leaves nothing
+    // here: this page stays, and the note would have pulled focus onto
+    // the link at the page's next draw (review).
+    _leaveFrom(from) {
+        const ev = window.event;
+        if (ReportsPage._opensElsewhere(ev)) return;
+        let el = (from && from.nodeType === 1) ? from
+            : (ev && ev.type === 'click' && ev.currentTarget && ev.currentTarget.nodeType === 1) ? ev.currentTarget
+            : document.activeElement;
+        if (el && el.tagName === 'TR') el = el.querySelector('[data-row-key]') || el;
+        if (!el || !el.closest) return;
+        const inDialog = !!el.closest('#modal-body');
+        const n = inDialog ? [...document.querySelectorAll('#modal-body a[href], #modal-body button')].indexOf(el) : -1;
         const key = el.getAttribute('data-row-key') || (n >= 0 ? `n:${n}` : null);
-        if (!key) return;  // a select, a date: not a row left from
+        if (!key) return;  // a select, a date, a page's unkeyed control: not a row left from
         history.replaceState({ ...(history.state || {}), focus: key }, '', location.hash || '#/');
+    },
+
+    // The click's link is followed by the browser, not here: a modifier
+    // or a button other than the main one, on a real link (not the
+    // javascript: links whose own click does the hop) whose following no
+    // click handler has stopped (the customer page's row links stop it and
+    // hop from the row). A new tab is ⌘-click on a Mac and Ctrl-click
+    // elsewhere: a Windows or Super key click follows the link here, and
+    // on a Mac a Ctrl-click is the context menu's.
+    _opensElsewhere(ev) {
+        if (!ev || (ev.type !== 'click' && ev.type !== 'auxclick')) return false;
+        const newTab = App.isMac() ? ev.metaKey : ev.ctrlKey;
+        if (!(newTab || ev.shiftKey || ev.altKey || ev.button !== 0)) return false;
+        const a = ev.target && ev.target.closest ? ev.target.closest('a[href]') : null;
+        return !!a && !/^\s*javascript:/i.test(a.getAttribute('href')) && !ev.defaultPrevented;
     },
 
     // Focus back on the row the view was left from, once; a later render
     // of the same view (a period change) leaves focus where the user has
-    // it. True when it did.
+    // it. True when it did. A page's render asks too (App.navigate, with
+    // #page-content): a key that is a place among a dialog's controls is
+    // not its to use, and is left for the dialog that opens over it.
     _refocusRow(root) {
         const key = history.state && history.state.focus;
         if (!key || !root) return false;
+        if (key.startsWith('n:') && !root.closest('#modal-body')) return false;
         const el = key.startsWith('n:')
             ? document.querySelectorAll('#modal-body a[href], #modal-body button')[parseInt(key.slice(2), 10)]
             : root.querySelector(`[data-row-key="${CSS.escape(key)}"]`);
@@ -159,12 +196,14 @@ const ReportsPage = {
     // it left from.
     // (App.navigate closes the report itself, keeping its address on the
     // entry left behind, so Back returns to it.)
-    openCustomer(id) {
-        ReportsPage._leaveFrom();
+    // `from` is the row's link (its onclick's `this`), so the row noted is
+    // the one clicked (ReportsPage._leaveFrom).
+    openCustomer(id, from) {
+        ReportsPage._leaveFrom(from);
         App.navigate(`#/customers/${id}`);
     },
-    openVendor(id) {
-        ReportsPage._leaveFrom();
+    openVendor(id, from) {
+        ReportsPage._leaveFrom(from);
         App.navigate(`#/vendors/${id}`);
     },
 
@@ -292,89 +331,57 @@ const ReportsPage = {
             }
         } catch (e) { /* render anyway */ }
 
+        const card = ReportsPage._card;
         return `
             <div class="page-header"><h2>Reports</h2></div>
             ${savedHtml}
             <div class="card-grid">
-                ${Terms.isNonprofit() ? ReportsPage._nonprofitCards() : `
-                <div class="card" style="cursor:pointer" onclick="ReportsPage.profitLoss()">
-                    <div class="card-header">${T('Profit & Loss')}</div>
-                    <p style="font-size:13px; color:var(--gray-500);">${Terms.text('Income vs expenses for a period')}</p>
-                </div>`}
-                <div class="card" style="cursor:pointer" onclick="ReportsPage.profitLossByClass()">
-                    <div class="card-header">${T('P&L by Class')}</div>
-                    <p style="font-size:13px; color:var(--gray-500);">${Terms.text('Income vs expenses split by class')}</p>
-                </div>
-                <div class="card" style="cursor:pointer" onclick="ReportsPage.profitLossUnclassified()">
-                    <div class="card-header">${T('P&L')} Unclassified</div>
-                    <p style="font-size:13px; color:var(--gray-500);">${Terms.text('Income and expenses with no class yet — the end-of-month cleanup list')}</p>
-                </div>
-                <div class="card" style="cursor:pointer" onclick="ReportsPage.jobBudgetVsActual()">
-                    <div class="card-header">${T('Job Budget vs Actual')}</div>
-                    <p style="font-size:13px; color:var(--gray-500);">${Terms.text('Budget, committed, actual, projected, variance per job')}</p>
-                </div>
-                <div class="card" style="cursor:pointer" onclick="ReportsPage.jobProfitability()">
-                    <div class="card-header">${T('Job Profitability')}</div>
-                    <p style="font-size:13px; color:var(--gray-500);">${Terms.text('Income, costs and margin per job')}</p>
-                </div>
-                <div class="card" style="cursor:pointer" onclick="ReportsPage.profitLossByJob()">
-                    <div class="card-header">${T('P&L')} by ${T('Job')}</div>
-                    <p style="font-size:13px; color:var(--gray-500);">${Terms.text('Every account down the side, a column per job')}</p>
-                </div>
-                <div class="card" style="cursor:pointer" onclick="ReportsPage.financialStatementsPdf()">
-                    <div class="card-header">Financial Statements Pack (PDF)</div>
-                    <p style="font-size:13px; color:var(--gray-500);">${Terms.text('Profit & Loss + Balance Sheet + Trial Balance, one audit-ready PDF')}</p>
-                </div>
-                <div class="card" style="cursor:pointer" onclick="ReportsPage.fixedAssetReconciliation()">
-                    <div class="card-header">Fixed Asset Reconciliation</div>
-                    <p style="font-size:13px; color:var(--gray-500);">Register totals vs GL by asset type</p>
-                </div>
-                ${Terms.isNonprofit() ? '' : `
-                <div class="card" style="cursor:pointer" onclick="ReportsPage.balanceSheet()">
-                    <div class="card-header">${T('Balance Sheet')}</div>
-                    <p style="font-size:13px; color:var(--gray-500);">${Terms.text('Assets, liabilities, and equity')}</p>
-                </div>`}
-                <div class="card" style="cursor:pointer" onclick="ReportsPage.arAging()">
-                    <div class="card-header">${T('A/R Aging')}</div>
-                    <p style="font-size:13px; color:var(--gray-500);">Outstanding receivables by age</p>
-                </div>
-                <div class="card" style="cursor:pointer" onclick="ReportsPage.apAging()">
-                    <div class="card-header">A/P Aging</div>
-                    <p style="font-size:13px; color:var(--gray-500);">Outstanding payables by age</p>
-                </div>
-                <div class="card" style="cursor:pointer" onclick="ReportsPage.salesTax()">
-                    <div class="card-header">Sales Tax</div>
-                    <p style="font-size:13px; color:var(--gray-500);">Tax collected by invoice</p>
-                </div>
-                <div class="card" style="cursor:pointer" onclick="ReportsPage.generalLedger()">
-                    <div class="card-header">General Ledger</div>
-                    <p style="font-size:13px; color:var(--gray-500);">All journal entries by account</p>
-                </div>
-                <div class="card" style="cursor:pointer" onclick="ReportsPage.incomeByCustomer()">
-                    <div class="card-header">${T('Income by Customer')}</div>
-                    <p style="font-size:13px; color:var(--gray-500);">${Terms.isNonprofit() ? 'Contribution totals per donor' : 'Sales totals per customer'}</p>
-                </div>
-                <div class="card" style="cursor:pointer" onclick="ReportsPage.customerStatementPicker()">
-                    <div class="card-header">${T('Customer Statement')}</div>
-                    <p style="font-size:13px; color:var(--gray-500);">${Terms.text('Invoice/payment history PDF')}</p>
-                </div>
-                <div class="card" style="cursor:pointer" onclick="ReportsPage.trialBalance()">
-                    <div class="card-header">Trial Balance</div>
-                    <p style="font-size:13px; color:var(--gray-500);">Debits and credits by account</p>
-                </div>
-                <div class="card" style="cursor:pointer" onclick="ReportsPage.cashFlow()">
-                    <div class="card-header">Cash Flow</div>
-                    <p style="font-size:13px; color:var(--gray-500);">Operating, investing, financing</p>
-                </div>
-                <div class="card" style="cursor:pointer" onclick="ReportsPage.report1099()">
-                    <div class="card-header">1099 Summary</div>
-                    <p style="font-size:13px; color:var(--gray-500);">Vendor payments for 1099 filing</p>
-                </div>
-                <div class="card" style="cursor:pointer" onclick="BudgetsPage.showVariance()">
-                    <div class="card-header">Budget vs Actual</div>
-                    <p style="font-size:13px; color:var(--gray-500);">Monthly budget variance analysis</p>
-                </div>
+                ${Terms.isNonprofit() ? ReportsPage._nonprofitCards() : card('profit-loss', T('Profit & Loss'), Terms.text('Income vs expenses for a period'))}
+                ${card('profit-loss-by-class', T('P&L by Class'), Terms.text('Income vs expenses split by class'))}
+                ${card('profit-loss-unclassified', `${T('P&L')} Unclassified`, Terms.text('Income and expenses with no class yet — the end-of-month cleanup list'))}
+                ${card('job-budget-vs-actual', T('Job Budget vs Actual'), Terms.text('Budget, committed, actual, projected, variance per job'))}
+                ${card('job-profitability', T('Job Profitability'), Terms.text('Income, costs and margin per job'))}
+                ${card('profit-loss-by-job', `${T('P&L')} by ${T('Job')}`, Terms.text('Every account down the side, a column per job'))}
+                ${card('financial-statements', 'Financial Statements Pack (PDF)', Terms.text('Profit & Loss + Balance Sheet + Trial Balance, one audit-ready PDF'))}
+                ${card('fixed-asset-reconciliation', 'Fixed Asset Reconciliation', 'Register totals vs GL by asset type')}
+                ${Terms.isNonprofit() ? '' : card('balance-sheet', T('Balance Sheet'), Terms.text('Assets, liabilities, and equity'))}
+                ${card('ar-aging', T('A/R Aging'), 'Outstanding receivables by age')}
+                ${card('ap-aging', 'A/P Aging', 'Outstanding payables by age')}
+                ${card('sales-tax', 'Sales Tax', 'Tax collected by invoice')}
+                ${card('general-ledger', 'General Ledger', 'All journal entries by account')}
+                ${card('income-by-customer', T('Income by Customer'), Terms.isNonprofit() ? 'Contribution totals per donor' : 'Sales totals per customer')}
+                ${card('customer-statement', T('Customer Statement'), Terms.text('Invoice/payment history PDF'))}
+                ${card('trial-balance', 'Trial Balance', 'Debits and credits by account')}
+                ${card('cash-flow', 'Cash Flow', 'Operating, investing, financing')}
+                ${card('1099-summary', '1099 Summary', 'Vendor payments for 1099 filing')}
+                ${card('budget-vs-actual', 'Budget vs Actual', 'Monthly budget variance analysis')}
             </div>`;
+    },
+
+    // A report's card on the Report Center. The cards were a <div> with a
+    // click alone: neither the keyboard nor a screen reader could open a
+    // report from here (review). Each is a link to its report's own address
+    // (its view, with the view's own default period), so Tab reaches it
+    // and Enter opens it, Space too, as on a button; named by its title as
+    // written (the heading's capitals are the stylesheet's, and reached the
+    // name), the line under it its description; and its key, noted on its
+    // click (ReportsPage._leaveFrom), puts focus back on it when Back
+    // returns here. It looks as the card did (.card-link).
+    _card(view, title, text) {
+        const id = `report-card-${view}`;
+        return `<a class="card card-link" href="${ReportsPage.viewUrl(view, {})}" data-row-key="report:${view}"
+                    aria-label="${escapeHtml(title)}" aria-describedby="${id}-text"
+                    onclick="ReportsPage._leaveFrom(this)" onkeydown="ReportsPage._cardKey(event)">
+                    <div class="card-header">${title}</div>
+                    <p id="${id}-text" style="font-size:13px; color:var(--gray-500);">${text}</p>
+                </a>`;
+    },
+
+    // Space on a card opens it, as Enter does (a link takes Enter alone).
+    _cardKey(e) {
+        if (e.key !== ' ' || e.altKey || e.ctrlKey || e.metaKey) return;
+        e.preventDefault();
+        if (!e.repeat) e.currentTarget.click();
     },
 
     // ----- Saved Reports (Phase 11) -----
@@ -598,8 +605,11 @@ const ReportsPage = {
                 // expenses both read "expense #6" (NEW-40).
                 const m = link ? /\/(\d+)$/.exec(link) : null;
                 const num = m ? m[1] : e.transaction_id;
+                // The line's key is noted on the way out (ReportsPage._leaveFrom)
+                // so that Back from the document puts focus on this link,
+                // not on the period select (W-7).
                 const src = link
-                    ? `<a href="${escapeHtml(link)}" style="color:var(--text-link); text-decoration:none;">${escapeHtml(sourceWord(e.source_type || 'journal'))} #${num}</a>`
+                    ? `<a href="${escapeHtml(link)}" data-row-key="line:${escapeHtml(String(e.line_id || e.transaction_id || ''))}" onclick="ReportsPage._leaveFrom(this)" style="color:var(--text-link); text-decoration:none;">${escapeHtml(sourceWord(e.source_type || 'journal'))} #${num}</a>`
                     : (e.source_type ? escapeHtml(sourceWord(e.source_type)) : '');
                 const mark = e.reconciliation_id ? 'R' : (e.cleared ? '✓' : '');
                 return `<tr${e.voided ? ' class="row--void" style="color:var(--text-muted); text-decoration:line-through;"' : ''}>
@@ -1238,7 +1248,7 @@ const ReportsPage = {
             // A customer's name opens the customer's page (R9)
             let rows = data.items.map(i =>
                 `<tr>
-                    <td>${i.customer_id ? ReportsPage._rowLink(`ReportsPage.openCustomer(${i.customer_id})`, i.customer_name, `customer:${i.customer_id}`) : escapeHtml(i.customer_name)}</td>
+                    <td>${i.customer_id ? ReportsPage._rowLink(`ReportsPage.openCustomer(${i.customer_id}, this)`, i.customer_name, `customer:${i.customer_id}`) : escapeHtml(i.customer_name)}</td>
                     <td class="amount">${i.invoice_count}</td>
                     <td class="amount">${formatCurrency(i.total_sales)}</td>
                     <td class="amount">${formatCurrency(i.total_tax || 0)}</td>
@@ -1314,7 +1324,7 @@ const ReportsPage = {
                 </tr>`;
             // A customer's name opens the customer's page (R9)
             const name = (i) => i.customer_id
-                ? ReportsPage._rowLink(`ReportsPage.openCustomer(${i.customer_id})`, i.customer_name, `customer:${i.customer_id}`)
+                ? ReportsPage._rowLink(`ReportsPage.openCustomer(${i.customer_id}, this)`, i.customer_name, `customer:${i.customer_id}`)
                 : escapeHtml(i.customer_name);
             let rows = data.items.map(i => agingRow(i, name(i))).join("");
             const t = data.totals;
@@ -1347,7 +1357,7 @@ const ReportsPage = {
             // A vendor's name opens the vendor's page (R9)
             let rows = data.items.map(i =>
                 `<tr>
-                    <td>${i.vendor_id ? ReportsPage._rowLink(`ReportsPage.openVendor(${i.vendor_id})`, i.vendor_name, `vendor:${i.vendor_id}`) : escapeHtml(i.vendor_name)}</td>
+                    <td>${i.vendor_id ? ReportsPage._rowLink(`ReportsPage.openVendor(${i.vendor_id}, this)`, i.vendor_name, `vendor:${i.vendor_id}`) : escapeHtml(i.vendor_name)}</td>
                     <td class="amount">${formatCurrency(i.current)}</td>
                     <td class="amount">${formatCurrency(i.over_30)}</td>
                     <td class="amount">${formatCurrency(i.over_60)}</td>
@@ -1490,7 +1500,7 @@ const ReportsPage = {
             // A vendor's name opens the vendor's page (R9)
             let rows = data.items.map(i =>
                 `<tr${i.above_threshold ? ' style="background:var(--primary-light);"' : ''}>
-                    <td>${i.vendor_id ? ReportsPage._rowLink(`ReportsPage.openVendor(${i.vendor_id})`, i.vendor_name, `vendor:${i.vendor_id}`) : escapeHtml(i.vendor_name)}</td>
+                    <td>${i.vendor_id ? ReportsPage._rowLink(`ReportsPage.openVendor(${i.vendor_id}, this)`, i.vendor_name, `vendor:${i.vendor_id}`) : escapeHtml(i.vendor_name)}</td>
                     <td>${escapeHtml(i.tax_id)}</td>
                     <td>${escapeHtml(i.vendor_1099_type)}</td>
                     <td class="amount">${formatCurrency(i.total_paid)}</td>
@@ -1628,6 +1638,31 @@ ReportsPage._pivotGrid = function (spec) {
                 </tbody>
             </table>
         </div>`;
+};
+
+// The grid scrolls under its frozen header row and Account column: a cell
+// Tab moved to was scrolled only into the grid, not out from under them
+// (13 of 85 stops forward on P&L by Class sat under the Account column).
+// Its scroll padding (style.css .grid-scroll) is the header row's height
+// and the Account column's width, measured (layout sizes, not the
+// dialog's transform) once the grid is drawn and when the window changes.
+ReportsPage._gridFit = function () {
+    const g = document.getElementById('grid-scroll');
+    const corner = g && g.querySelector('thead th:first-child');
+    const head = g && g.querySelector('thead');
+    if (!corner || !head) return;
+    g.style.setProperty('--grid-frozen', `${corner.offsetWidth}px`);
+    g.style.setProperty('--grid-head', `${head.offsetHeight}px`);
+};
+// And Chromium's focus leaves a link it finds partly in view where it is:
+// the Roofing heading and its column's cells, a pixel past the grid's
+// right edge, rings and all, counted as in view. The keyboard's stop is
+// brought in whole, its ring and halo with it (its scroll-margin); not a
+// mouse's, which must stay under the pointer that pressed it. (App.init
+// hands every focusin here, and every resize to _gridFit.)
+ReportsPage._gridReveal = function (e) {
+    const a = e.target, g = a && a.closest && a.closest('#grid-scroll');
+    if (g && a !== g && App.keyboardFocus()) a.scrollIntoView({ block: 'nearest', inline: 'nearest' });
 };
 
 // Column i of the open grid: scrolled into view (the frozen Account
@@ -1862,10 +1897,10 @@ ReportsPage.profitLossByClass = async function (prefill) {
                 note: ReportsPage._filteredNote(data, columns, T('classes')),
                 totalLabel: data.filtered ? 'Total (shown)' : 'Total',
                 drill: (a, c) => `ReportsPage.openDrillDown(${args(a.account_id, a.account_name, range.start, range.end, c.class_id, c.class_name, 'profit-loss-by-class')})`,
-                head: (c) => `ReportsPage.profitLossOfClass(${args(c.class_id, c.class_name, dates)})`,
-                sum: (c) => `ReportsPage.profitLossOfClass(${args(c.class_id, c.class_name, dates)})`,
+                head: (c) => `ReportsPage.profitLossOfClass(${args(c.class_id, c.class_name, dates)}, null, this)`,
+                sum: (c) => `ReportsPage.profitLossOfClass(${args(c.class_id, c.class_name, dates)}, null, this)`,
             })}`;
-    }, "Dates", false, { reportType: 'profit_loss_by_class', view: 'profit-loss-by-class', params, prefill, toolbar, wide: true, afterRender: (_c, first) => { if (first && prefill && prefill.jump) ReportsPage.gridJumpTo(prefill.jump); } });
+    }, "Dates", false, { reportType: 'profit_loss_by_class', view: 'profit-loss-by-class', params, prefill, toolbar, wide: true, afterRender: (_c, first) => { ReportsPage._gridFit(); if (first && prefill && prefill.jump) ReportsPage.gridJumpTo(prefill.jump); } });
 };
 
 // P&L by Job (R13, #242): the same grid with a column per job and "No job"
@@ -1914,9 +1949,9 @@ ReportsPage.profitLossByJob = async function (prefill) {
                 note: ReportsPage._filteredNote(data, columns, T('jobs')),
                 totalLabel: data.filtered ? 'Total (shown)' : 'Total',
                 drill: (a, c) => `ReportsPage.openDrillDown(${args(a.account_id, a.account_name, range.start, range.end, null, null, 'profit-loss-by-job', { job_id: jobKey(c), job_name: c.job_name })})`,
-                head: (c) => c.job_id ? `App.navigate(${JSON.stringify(jobUrl(c))})` : null,
+                head: (c) => c.job_id ? `ReportsPage._leaveFrom(this);App.navigate(${JSON.stringify(jobUrl(c))})` : null,
             })}`;
-    }, "Dates", false, { reportType: 'profit_loss_by_job', view: 'profit-loss-by-job', params, prefill, toolbar, wide: true });
+    }, "Dates", false, { reportType: 'profit_loss_by_job', view: 'profit-loss-by-job', params, prefill, toolbar, wide: true, afterRender: () => ReportsPage._gridFit() });
 };
 
 // One class's own P&L (#213): the P&L by Class column, account by account,
@@ -1926,9 +1961,14 @@ ReportsPage.profitLossByJob = async function (prefill) {
 // #/reports/profit-loss-class?class_id=…&start_date=…&end_date=… (R7):
 // opened from it, the class's name comes from the server. `prefill` is the
 // query (period, start_date, end_date) the view starts on.
-ReportsPage.profitLossOfClass = async function (classId, className, prefill, from = null) {
+ReportsPage.profitLossOfClass = async function (classId, className, prefill, from = null, row = null) {
     classId = parseInt(classId, 10);
     if (!classId) { toast(`No ${T('class')} on this column`, 'error'); return; }
+    // The grid's heading or a fund's row that opened it (`row`, its link's
+    // `this`) is noted now, while it is the row clicked: the view's own
+    // push comes after the class list is fetched, when the click is over
+    // and, in WebKit, focus was never on the link (W-7 review).
+    if (row) ReportsPage._leaveFrom(row);
     prefill = prefill || {};
     // `from` names the view that opened it when it is not the by-class grid
     // (Fund Balances, #239): the "Back to …" button returns there.
@@ -2130,15 +2170,18 @@ ReportsPage.jobProfitability = async function (prefill) {
         // "No job" is no document: its row opens P&L by Job on its column,
         // the accounts behind the untagged activity (#245).
         const dates = { period: _period, start_date: data.start_date, end_date: data.end_date };
-        const jobCall = (j) => j.job_id
-            ? `ReportsPage._leaveFrom();App.navigate(${JSON.stringify(`#/jobs/${j.job_id}?start_date=${data.start_date}&end_date=${data.end_date}&from=job-profitability`)})`
-            : `ReportsPage._leaveFrom();App.navigate(${JSON.stringify(ReportsPage.viewUrl('profit-loss-by-job', { ...dates, job_ids: '0' }))})`;
+        // The row left is the one clicked: the job's link passes itself, the
+        // row its job's link (the customer's is the row's other link), so
+        // Back puts focus there after a mouse click too (W-7 review).
+        const jobCall = (j, from) => j.job_id
+            ? `ReportsPage._leaveFrom(${from});App.navigate(${JSON.stringify(`#/jobs/${j.job_id}?start_date=${data.start_date}&end_date=${data.end_date}&from=job-profitability`)})`
+            : `ReportsPage._leaveFrom(${from});App.navigate(${JSON.stringify(ReportsPage.viewUrl('profit-loss-by-job', { ...dates, job_ids: '0' }))})`;
         const customerCell = (j) => j.customer_id
-            ? ReportsPage._rowLink(`event.stopPropagation(); ReportsPage.openCustomer(${j.customer_id})`, j.customer_name || '', `customer:${j.customer_id}`)
+            ? ReportsPage._rowLink(`event.stopPropagation(); ReportsPage.openCustomer(${j.customer_id}, this)`, j.customer_name || '', `customer:${j.customer_id}`)
             : escapeHtml(j.customer_name || '');
-        const rows = data.jobs.map(j => `<tr style="cursor:pointer" onclick="${escapeHtml(jobCall(j))}">
+        const rows = data.jobs.map(j => `<tr style="cursor:pointer" onclick="${escapeHtml(jobCall(j, "this.querySelector('[data-row-key^=job]')"))}">
             <td>${customerCell(j)}</td>
-            <td>${ReportsPage._rowLink(`event.stopPropagation(); ${jobCall(j)}`, j.job_name, `job:${j.job_id || 0}`)}</td>
+            <td>${ReportsPage._rowLink(`event.stopPropagation(); ${jobCall(j, 'this')}`, j.job_name, `job:${j.job_id || 0}`)}</td>
             <td class="amount">${j.contract_amount !== null && j.contract_amount !== undefined ? formatCurrency(j.contract_amount) : ''}</td>
             <td class="amount">${formatCurrency(j.income)}</td>
             <td class="amount">${formatCurrency(j.total_costs)}</td>
@@ -2211,31 +2254,14 @@ ReportsPage.jobBudgetVsActual = async function (prefill) {
 // P&L / balance sheet (the server computes both from the same lines).
 // ---------------------------------------------------------------------------
 ReportsPage._nonprofitCards = function () {
+    const card = ReportsPage._card;
     return `
-        <div class="card" style="cursor:pointer" onclick="ReportsPage.statementOfActivities()">
-            <div class="card-header">Statement of Activities</div>
-            <p style="font-size:13px; color:var(--gray-500);">Revenue, releases and expenses, with and without donor restrictions</p>
-        </div>
-        <div class="card" style="cursor:pointer" onclick="ReportsPage.statementOfFinancialPosition()">
-            <div class="card-header">Statement of Financial Position</div>
-            <p style="font-size:13px; color:var(--gray-500);">Assets, liabilities, and net assets by restriction</p>
-        </div>
-        <div class="card" style="cursor:pointer" onclick="ReportsPage.fundBalances()">
-            <div class="card-header">Fund Balances</div>
-            <p style="font-size:13px; color:var(--gray-500);">Each restricted fund: beginning, contributions, spent, released, ending</p>
-        </div>
-        <div class="card" style="cursor:pointer" onclick="ReportsPage.functionalExpenses()">
-            <div class="card-header">Statement of Functional Expenses</div>
-            <p style="font-size:13px; color:var(--gray-500);">Program / management / fundraising by expense account (Form 990 Part IX)</p>
-        </div>
-        <div class="card" style="cursor:pointer" onclick="ReportsPage.pledges()">
-            <div class="card-header">Pledge Report</div>
-            <p style="font-size:13px; color:var(--gray-500);">Promised, received, written off and outstanding by donor and campaign</p>
-        </div>
-        <div class="card" style="cursor:pointer" onclick="ReportsPage.givingStatements()">
-            <div class="card-header">Year-End Giving Statements</div>
-            <p style="font-size:13px; color:var(--gray-500);">One statement per donor for the tax year — print the stack or email them all</p>
-        </div>`;
+        ${card('statement-of-activities', 'Statement of Activities', 'Revenue, releases and expenses, with and without donor restrictions')}
+        ${card('statement-of-financial-position', 'Statement of Financial Position', 'Assets, liabilities, and net assets by restriction')}
+        ${card('fund-balances', 'Fund Balances', 'Each restricted fund: beginning, contributions, spent, released, ending')}
+        ${card('functional-expenses', 'Statement of Functional Expenses', 'Program / management / fundraising by expense account (Form 990 Part IX)')}
+        ${card('pledges', 'Pledge Report', 'Promised, received, written off and outstanding by donor and campaign')}
+        ${card('giving-statements', 'Year-End Giving Statements', 'One statement per donor for the tax year — print the stack or email them all')}`;
 };
 
 ReportsPage.givingStatements = function (prefill) {
@@ -2366,7 +2392,7 @@ ReportsPage.fundBalances = async function (prefill) {
         // A fund's name opens the fund's own P&L for the report's dates (R9),
         // with "Back to Fund Balances"; the Unassigned row has no class
         const name = (f) => f.class_id
-            ? ReportsPage._rowLink(`ReportsPage.profitLossOfClass(${f.class_id},${JSON.stringify(f.class_name)},${JSON.stringify({ start_date: range.start, end_date: range.end })},'fund-balances')`, f.class_name, `class:${f.class_id}`)
+            ? ReportsPage._rowLink(`ReportsPage.profitLossOfClass(${f.class_id},${JSON.stringify(f.class_name)},${JSON.stringify({ start_date: range.start, end_date: range.end })},'fund-balances', this)`, f.class_name, `class:${f.class_id}`)
             : escapeHtml(f.class_name);
         const row = (f, style = '') => `<tr style="${style}"><td>${name(f)}${f.donor_name ? `<div style="font-size:10px;color:var(--gray-500)">${escapeHtml(f.donor_name)}</div>` : ''}</td>${keys.map(k => `<td class="amount">${formatCurrency(f[k])}</td>`).join('')}</tr>`;
         const rows = d.funds.map(f => row(f)).join('') + (d.unassigned ? row(d.unassigned, 'font-style:italic') : '');

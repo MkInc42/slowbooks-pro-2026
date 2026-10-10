@@ -16,10 +16,77 @@
     text-decoration: none;
     font-weight: 600;
 }
+/* Shown, it draws the keyboard's ring and halo (below), 8px in from the
+   corner: at the corner itself the ring's top and left lines fell off the
+   window, and it kept the brand's paler gold, 1.95:1 against the toolbar
+   it lands on (review of NEW-43, 2.22.0). It lands on the toolbar but is
+   not inside it, so it takes the toolbar's own deeper gold (#topbar,
+   below): the theme's #a37a29 is 2.51:1 against the bar's darker stop.
+   Light only: dark.css puts the dark theme's gold back. */
 .skip-link:focus {
-    top: 0;
-    outline: 2px solid var(--qb-gold, #f7c948);
+    top: 8px;
+    left: 8px;
+    --focus-ring: #8f6a1e;
+    outline: 2px solid var(--focus-ring);
     outline-offset: 2px;
+    box-shadow: 0 0 0 8px var(--focus-halo);
+}
+
+/* Focus is visible on every control (WCAG 2.4.7). Links and buttons had
+   no focus style of their own and relied on the browser's ring, which
+   WebKit, with the Mac's keyboard navigation off as it ships, draws
+   faintly on buttons and not at all on links: Tab walked A/R Aging's
+   customers with nothing to show where it was (macOS gate NEW-43, 2.22.0).
+   Links, buttons, checkboxes, radios, a file's picker and whatever else
+   the keyboard reaches draw the skip link's ring, in gold (--focus-ring,
+   each theme's own), on :focus-visible only, so a mouse click on a button
+   or a link draws none. A field keeps its own focus style (the blue border and pale
+   ground, below), so a dense form gets no ring on a click into a box.
+   The ring is two colours (WCAG 1.4.11: 3:1 against what it meets). The
+   gold alone fell under 3:1 wherever the ground is neither light nor dark:
+   the toolbar's grey gradient (2.54:1), a dialog's blue title bar (1.73),
+   a table's header row, the grey edge of a field beside it. So it has a
+   halo of the theme's own ground on both its sides (--focus-halo: white in
+   light, 3.9:1 against the gold; the page's dark in dark, 8.5), whatever
+   lies beyond: a box-shadow out to 8px, the ring drawn over it from 2px to
+   4px, so the halo is also what lies 1-4px past the ring, where the macOS
+   gate reads a ring's ground. A link in running text has it too: with 2px
+   past its ring, the gate read the line or the table header beyond (the
+   General Ledger's account names, 2.24:1, 1.02 in dark; Settings'
+   developer.intuit.com, 1.44; a permit's lookup link, 1.36), so while it
+   has focus its halo covers a little of the lines above and below it.
+   The control is lifted (position: relative, no offset, so nothing moves)
+   to paint after what follows it: a field just below a button painted
+   over its halo.
+   All in :where(), the rule counts for nothing against a selector of a
+   control's own: the grid's and the search results' own rings win (bare,
+   [tabindex]:not([tabindex="-1"]):focus-visible was (0,3,0) and beat
+   their (0,2,0)), and so does any rule that places an element (the skip
+   link stays absolute). */
+:where(a:focus-visible,
+       button:focus-visible,
+       summary:focus-visible,
+       [tabindex]:not([tabindex="-1"]):focus-visible,
+       input[type="checkbox"]:focus-visible,
+       input[type="radio"]:focus-visible,
+       input[type="file"]:focus-visible) {
+    outline: 2px solid var(--focus-ring);
+    outline-offset: 2px;
+    box-shadow: 0 0 0 8px var(--focus-halo);
+    position: relative;
+}
+/* Tab scrolls a control into view with room for its ring and halo: at a
+   scrolling dialog's edge (New Customer's Create Customer) their outer
+   side was cut off. */
+:where(a, button, summary, [tabindex]:not([tabindex="-1"]),
+       input[type="checkbox"], input[type="radio"], input[type="file"]) {
+    scroll-margin: 8px;
+}
+/* What takes focus by script alone — the dialog itself (#modal, when its
+   first control is Void or Delete) and the skip link's target — is a place,
+   not a control: never outlined. */
+[tabindex="-1"]:focus {
+    outline: none;
 }
 
 /* ============================================================================
@@ -78,6 +145,13 @@
     --qb-green:       #2b8055;
     --qb-green-dark:  #2d7d56;
     --qb-gold:        #cc9933;
+    /* The keyboard's ring (NEW-43): a deeper gold than the brand's, so it
+       clears 3:1 against what it sits on (WCAG 1.4.11): 3.9:1 on white,
+       3.2:1 on the navy sidebar. #cc9933 was 2.57:1 on white. Its halo,
+       on both its sides, is white: 3.9:1 against it on any ground (the
+       sidebar's is its own navy, 4.1:1: #sidebar below). */
+    --focus-ring:     #a37a29;
+    --focus-halo:     #ffffff;
     --qb-red:         #cc3333;
     --qb-orange:      #b2592d;
 
@@ -163,6 +237,12 @@ body {
     /* No z-index of its own: as a flex item that made the bar a stacking
        context, which kept its Back button under a dialog's overlay (200).
        The search dropdown carries its own z-index. */
+    /* The keyboard's ring on the bar is the Back border's deeper gold:
+       3.2:1 against the bar's darker stop, 4.2 against its lighter one and
+       4.9 against the white halo, so the gold clears the bar itself as well
+       as its halo (#a37a29 is 2.5 against the darker stop). Light only:
+       dark.css puts the dark theme's gold back. */
+    --focus-ring: #8f6a1e;
 }
 
 .topbar-company {
@@ -226,18 +306,40 @@ body {
     background: rgba(0,0,0,0.05);
 }
 
-/* Back (NEW-30): dimmed while there is nowhere to go, as a browser's is;
-   an inactive control is exempt from contrast (WCAG 1.4.3). It stands
-   above a dialog's overlay (200), under toasts (300): a report, a
-   customer's page and a drill-down are dialogs, and that is where Back
+/* Back (NEW-30, NEW-42): a bordered gold button reading "← Back" while
+   there is somewhere to go. It was a bare grey glyph that got its border on
+   hover alone, so with a card open it read as an arrow pointing at the
+   brand, unusable until the pointer passed over it (macOS gate, 2.22.0
+   round 2): never grey while it works, a gold border, and the navy for its
+   words (11.4:1 on the pale gold tint). The border is the button's edge
+   against the bar (WCAG 1.4.11, 3:1): a deep gold, 3.2:1 against the bar's
+   darker stop (#c8d0dc) and 4.9:1 on white — the brand's #cc9933 is 1.9:1
+   there, and the ring's #a37a29 2.5:1. Dimmed, with no border, while there
+   is nowhere to go, as a browser's is; an inactive control is exempt from
+   contrast (WCAG 1.4.3).
+   It stands above a dialog's overlay (200), under toasts (300): a report,
+   a customer's page and a drill-down are dialogs, and that is where Back
    is wanted; the rest of the bar stays under the overlay. The dialog
    itself starts below the bar (the overlay's 40px padding). */
 .tb-back {
     position: relative;
     z-index: 210;
-    font-size: 15px;
+    font-weight: 700;
     line-height: 1;
-    padding: 2px 9px;
+    padding: 3px 10px;
+    color: var(--qb-navy);
+    background: #fdf3dc;
+    border: 2px solid #8f6a1e;
+}
+/* The pointer over it: deeper still (4.4:1 on the bar's darker stop), not
+   the other buttons' grey border */
+.tb-back:not(:disabled):hover {
+    color: var(--qb-navy);
+    background: #fbe9bf;
+    border-color: #75561a;
+}
+.tb-back:not(:disabled):active {
+    background: #f3dfa8;
 }
 /* Under a form's overlay, not above it: a Back that discarded a half-typed
    form would be worse than none (app.js App.editingDialog). */
@@ -251,6 +353,14 @@ body {
 .tb-btn:disabled:hover {
     background: transparent;
     border-color: transparent;
+}
+/* Nowhere to go: muted and borderless, plainly not the lit button; still
+   named, still in its place, so nothing shifts when it lights. */
+.tb-back:disabled {
+    color: var(--text-muted);
+    background: transparent;
+    border-color: transparent;
+    opacity: 0.6;
 }
 
 /* Theme toggle — moon (light mode) and sun (dark mode) get a colored glow
@@ -302,6 +412,9 @@ body {
     border-right: 1px solid #001a33;
     display: flex;
     flex-direction: column;
+    /* the keyboard's ring meets the sidebar's own navy here, not white:
+       4.1:1 against the gold, and no white box on the navy */
+    --focus-halo: var(--qb-navy-dark);
 }
 
 .sidebar-header {
@@ -364,6 +477,20 @@ body {
     color: #ffffff;
     border-left-color: var(--qb-gold);
     font-weight: 700;
+}
+
+/* The sidebar scrolls (overflow-y), which clipped the ring at +2px to its
+   top and bottom lines: a link spans the sidebar, so its sides fell
+   outside. On a link here the ring and its halo are drawn inside its
+   edge (the ring 4px in, 4px of halo outside it and 2px inside, under the
+   words), so all four sides paint, and the gold meets the halo even where
+   the link above or below is the open page's lighter one (2.35:1 against
+   that). The left border, the open page's gold marker included, takes the
+   halo's colour while the link is focused: the ring is the gold there. */
+#sidebar .nav-link:focus-visible {
+    outline-offset: -6px;
+    box-shadow: inset 0 0 0 8px var(--focus-halo);
+    border-left-color: var(--focus-halo);
 }
 
 .nav-icon {
@@ -611,7 +738,23 @@ body {
     background: var(--panel-bg);
     border: 1px solid var(--panel-border);
     border-radius: 0;
-    overflow: hidden;
+    overflow-x: auto;
+    overflow-y: hidden;
+}
+/* A table wider than its box scrolls sideways in it: the box clipped it,
+   its last column cut off even at 900px, the desktop app's least (Items'
+   History, Benefits' Retire, Fixed Assets' Dispose at 1024), out of reach
+   for a mouse too; where the table fits nothing changes. Tab brings a stop
+   in whole (App.revealInTable). Up and down the box clips what overflows
+   it (there since the first release), which cut the keyboard's halo below
+   a last row's buttons and links (Adjust, History, View, Void met the page
+   beyond at 2.2:1): the room for it is inside, below the table, 8px, the
+   halo's reach (on the last row's cells it set a one-row table's words
+   high in their row). Letting the overflow out while focus was inside
+   spilled a wide table past its side (Jobs, Settings, Fixed Assets at 1024
+   and 900). */
+.table-container:not(.table-container--scroll) {
+    padding-bottom: 8px;
 }
 
 table {
@@ -716,6 +859,20 @@ td.amount, th.amount {
     gap: 10px;
     margin-bottom: 16px;
 }
+/* A card that opens something is a link to its address, looking as the
+   card did: no link colour or underline, a hand over it — the Report
+   Center's reports (ReportsPage._card), Banking's accounts and the
+   dashboard's bank cards (each to its register). Its focus draws the
+   keyboard's ring and halo in place of the card's own shadow (a.: over the
+   dark theme's .card). */
+.card-link {
+    display: block;
+    color: inherit;
+    text-decoration: none;
+    cursor: pointer;
+}
+.card-link:hover { text-decoration: none; }
+a.card-link:focus-visible { box-shadow: 0 0 0 8px var(--focus-halo); }
 
 /* ========================================================================
  * FORMS — Modal forms styled like QB2003 data entry windows
@@ -755,9 +912,18 @@ td.amount, th.amount {
     letter-spacing: 0.02em;
 }
 
+/* A field's look: a form's fields, and every other field on a page or in
+   a dialog — a list's search box and filters, a line item, a type-ahead
+   box, Budgets' cells, Settings' lists, the chart's filter, a report's
+   pickers and dates, a page's Notes box. Those kept the browser's own
+   look, white in the dark theme, and its ring on focus (review). Their
+   rule counts for nothing (:where), so a look of a field's own still
+   wins: a toolbar's or a line item's narrower padding, an AI panel's
+   rounded box. Their focus style is at the end of the sheet. */
 .form-group input,
 .form-group select,
-.form-group textarea {
+.form-group textarea,
+:where(#page-content, #modal) :where(input:not([type="checkbox"], [type="radio"], [type="file"], [type="range"], [type="color"], [type="hidden"], [type="submit"], [type="button"], [type="reset"], [type="image"]), select, textarea) {
     padding: 4px 6px;
     border: 1px solid var(--input-border);
     border-radius: 0;
@@ -769,13 +935,26 @@ td.amount, th.amount {
     box-shadow: inset 1px 1px 2px rgba(0,0,0,0.12);
 }
 
-.form-group input:focus,
+/* A checkbox and a radio are not fields: the border and ground here do not
+   show on one, so with the outline gone it showed nothing at all (the P&L
+   by Class chooser's classes, "Show classes with no activity"). They keep
+   the keyboard's ring (top of the sheet), and so does a file's picker, a
+   button as the keyboard has it (the chart's import, an invoice's
+   attachment). */
+.form-group input:not([type="checkbox"]):not([type="radio"]):not([type="file"]):focus,
 .form-group select:focus,
 .form-group textarea:focus {
-    outline: none;
+    outline: none;   /* a field's own focus style, not the keyboard's ring */
     border-color: var(--input-focus);
     background: #fffff8;
     box-shadow: inset 1px 1px 2px rgba(0,0,0,0.08);
+}
+/* and the ring's halo, out to 8px as every control's, over the sunken shadow
+   every input is given above (and in the line-item tables and the
+   toolbars): a white box below, in the dark theme, would otherwise be the
+   ground 4-7px out */
+input:is([type="checkbox"], [type="radio"], [type="file"]):focus-visible {
+    box-shadow: 0 0 0 8px var(--focus-halo);
 }
 
 .form-group textarea {
@@ -783,7 +962,8 @@ td.amount, th.amount {
     resize: vertical;
 }
 
-.form-group select {
+.form-group select,
+:where(#page-content, #modal) :where(select) {
     box-shadow: none;
     background: linear-gradient(180deg, #ffffff 0%, #f0f2f4 100%);
 }
@@ -943,8 +1123,17 @@ a:hover { text-decoration: underline; }
     overflow: auto;
     max-height: min(68vh, 720px);
     overscroll-behavior: contain;
+    /* a cell Tab moves to is scrolled out from under the frozen header row
+       and Account column (their height and width, ReportsPage._gridFit),
+       and its own scroll-margin (above) keeps its ring and halo, 8px,
+       clear of them and of the grid's edges */
+    scroll-padding: var(--grid-head, 0px) 0 0 var(--grid-frozen, 0px);
+    padding-bottom: 8px;
 }
-.grid-scroll:focus-visible { outline: 2px solid var(--qb-navy); outline-offset: -2px; }
+/* the grid's own ring, not the keyboard's gold ring and halo; on its edge,
+   not inside it, where the frozen header row and Account column painted
+   over half of it */
+.grid-scroll:focus-visible { outline: 2px solid var(--qb-navy); outline-offset: 0; box-shadow: none; }
 .pivot-grid {
     width: max-content;
     min-width: 100%;
@@ -952,6 +1141,11 @@ a:hover { text-decoration: underline; }
 .pivot-grid th, .pivot-grid td { white-space: nowrap; }
 .pivot-grid td.amount, .pivot-grid th.amount { min-width: 96px; }
 .pivot-grid thead th { position: sticky; top: 0; z-index: 2; }
+/* The keyboard's ring and halo reach 8px out from a link, and no scroll
+   gives them room where the grid ends: above a heading, held to the
+   grid's top, and below the last row (the grid's own padding, as a plain
+   table's container has, above) */
+.pivot-grid thead th { padding-top: 8px; }
 .pivot-grid tbody th {
     font-weight: inherit;
     text-align: left;
@@ -1021,9 +1215,15 @@ a:hover { text-decoration: underline; }
     max-height: 160px;
     overflow: auto;
     margin: 4px 0 8px;
+    /* the list scrolls: room inside it for a checkbox's ring and halo
+       (8px), which its edge cut off on the first row and column */
+    padding: 8px;
     font-size: 11px;
 }
 .grid-chooser__list label { display: flex; gap: 6px; align-items: center; font-weight: normal; }
+/* "Show classes with no activity": 6px between the box and its words, as
+   the chooser's classes have: the ring and its halo end before the words */
+#grid-empty { margin-right: 5px; }
 .grid-chooser__actions { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
 /* On a phone the wide dialog is the screen's width, the grid swipes
    sideways with the Account column frozen, and Prev / Next lead. */
@@ -1059,6 +1259,9 @@ a:hover { text-decoration: underline; }
     color: #ffffff;
     padding: 2px 4px;
     line-height: 1;
+    /* room above and below for the keyboard's ring and its halo (8px):
+       the dialog scrolls, which cut them at the title bar's top */
+    margin: 2px 0;
 }
 .modal-close:hover { color: #ffffff; background: rgba(255, 255, 255, 0.15); }
 
@@ -1471,7 +1674,7 @@ tr.clickable { cursor: pointer; }
 }
 
 .tb-search:focus {
-    outline: none;
+    outline: none;   /* a field's own focus style, not the keyboard's ring */
     border-color: var(--input-focus);
     box-shadow: inset 0 1px 2px rgba(0,0,0,0.08), 0 0 0 2px rgba(51,102,204,0.2);
 }
@@ -1511,9 +1714,12 @@ tr.clickable { cursor: pointer; }
     background: var(--primary-light, #e8f0f8);
 }
 
+/* its own ring, inside the result (the list scrolls), not the keyboard's
+   gold one and its halo */
 .search-item:focus-visible {
     outline: 2px solid var(--qb-blue, #2a6fb4);
     outline-offset: -2px;
+    box-shadow: none;
 }
 
 /* ========================================================================
@@ -2524,7 +2730,8 @@ tbody tr.row--dim > td strong,
 tbody tr.row--dim > td.amount { color: var(--text-muted); }
 
 .form-group input[disabled],
-.form-group select[disabled] {
+.form-group select[disabled],
+:where(#page-content, #modal) :where(input, select, textarea):disabled {
     background: #f1f3f6;
     color: var(--text-muted, #6b7090);
     cursor: not-allowed;
@@ -2645,4 +2852,31 @@ tbody tr.row--dim > td.amount { color: var(--text-muted); }
 }
 @media (forced-colors: active) {
     .cbx-opt[aria-selected="true"] { outline: 2px solid Highlight; outline-offset: -2px; }
+}
+
+/* ============================================================================
+ * A FIELD'S FOCUS, everywhere on a page and in a dialog
+ * The blue border and the pale ground, never the browser's ring or the
+ * keyboard's gold: the form's own, given to every field outside a form too
+ * (see the field's look, above). Last in the sheet and (0,2,1), so it is
+ * over every look of a field's own, an AI panel's coloured outline among
+ * them; a checkbox, a radio and the like are not fields and keep the
+ * keyboard's ring.
+ * ============================================================================ */
+:where(#page-content, #modal) :is(input:not([type="checkbox"], [type="radio"], [type="file"], [type="range"], [type="color"], [type="hidden"], [type="submit"], [type="button"], [type="reset"], [type="image"]), select, textarea):focus {
+    outline: none;
+    border-color: var(--input-focus);
+    background: #fffff8;
+    box-shadow: inset 1px 1px 2px rgba(0,0,0,0.08);
+}
+/* With the system's high-contrast colours on, a border takes the system's
+   colour and the blue border shows nothing: there a focused field draws the
+   system's highlight as its ring. */
+@media (forced-colors: active) {
+    .form-group input:not([type="checkbox"]):not([type="radio"]):not([type="file"]):focus,
+    .form-group select:focus,
+    .form-group textarea:focus,
+    :where(#page-content, #modal) :is(input:not([type="checkbox"], [type="radio"], [type="file"], [type="range"], [type="color"], [type="hidden"], [type="submit"], [type="button"], [type="reset"], [type="image"]), select, textarea):focus {
+        outline: 2px solid Highlight;
+    }
 }

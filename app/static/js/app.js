@@ -230,6 +230,25 @@ const App = {
         if (typeof n === 'number' && n < App._nShown) history.forward(); else history.back();
     },
     isMac() { return typeof navigator !== 'undefined' && /Mac|iP(hone|ad|od)/.test(navigator.platform || ''); },
+    // What moved focus last: the keyboard (Tab, an arrow) or a pointer
+    // (App.init keeps it). A text box matches :focus-visible on a click as
+    // well as on Tab, so what keeps the keyboard's place in sight — scrolls
+    // a control out from under Settings' save bar, a grid's frozen parts,
+    // a table's edge — asks this and leaves a pointer's focus where the
+    // pointer put it.
+    _input: null,
+    keyboardFocus() { return App._input !== 'pointer'; },
+    // A table wider than its container scrolls sideways in it, and
+    // Chromium's focus leaves a stop partly in view where it is (32px of
+    // it counts as in view): the Dispose button half cut at the edge. The
+    // keyboard's stop is brought in whole, its ring and halo with it (its
+    // scroll-margin); a pointer's focus stays where the pointer put it.
+    // The P&L grid has its own (ReportsPage._gridReveal).
+    revealInTable(e) {
+        const a = e.target, c = a && a.closest && a.closest('.table-container');
+        if (!c || a === c || c.id === 'grid-scroll' || !App.keyboardFocus()) return;
+        if (c.scrollWidth > c.clientWidth) a.scrollIntoView({ block: 'nearest', inline: 'nearest' });
+    },
     canGoBack() { return !!(history.state && history.state.from); },
     goBack() { if (App.backAllowed()) history.back(); },
     // ⌘[ on a Mac (the key, or where the layout puts "["; ⌘⌥[ is not it),
@@ -418,6 +437,10 @@ const App = {
             $('#page-content').innerHTML = html;
             App.setStatus(`${route.label} — Ready`);
             if (route.mount) App._pageCleanup = route.mount();
+            // Back to a page left by one of its own rows (the chart's
+            // account links to a register or a drill-down): the keyboard
+            // goes back on the row, as a report's rows have it (W-7)
+            if (history.state && history.state.focus) ReportsPage._refocusRow($('#page-content'));
         } catch (err) {
             if (adminOnly()) return showAdminOnly();
             // Server-side detail (err.message and stack) goes to console
@@ -807,7 +830,7 @@ const App = {
                 const haystack = escapeHtml(`${a.account_number || ''} ${a.name}`.toLowerCase());
                 html += `<tr${inactive ? ' class="row--dim"' : ''} data-account-row="${haystack}" data-account-type="${type}">
                     <td style="font-family:var(--font-mono);">${escapeHtml(a.account_number || '')}</td>
-                    <td><a href="${escapeHtml(App.accountRegisterHref(a))}" style="font-weight:700; color:var(--text-link); text-decoration:none;" title="Open the register">${escapeHtml(a.name)}</a>${a.is_control ? ` <span class="badge-control" title="${escapeHtml(a.control_purpose || 'the software finds this account by its number')}">control</span>` : ''}${inactive ? ' <span class="badge badge-draft">inactive</span>' : ''}</td>
+                    <td><a href="${escapeHtml(App.accountRegisterHref(a))}" data-row-key="account:${Number(a.id)}" onclick="ReportsPage._leaveFrom(this)" style="font-weight:700; color:var(--text-link); text-decoration:none;" title="Open the register">${escapeHtml(a.name)}</a>${a.is_control ? ` <span class="badge-control" title="${escapeHtml(a.control_purpose || 'the software finds this account by its number')}">control</span>` : ''}${inactive ? ' <span class="badge badge-draft">inactive</span>' : ''}</td>
                     <td>${a.account_type}</td>
                     <td class="amount">${formatCurrency(a.balance)}</td>
                     <td class="actions">
@@ -1374,6 +1397,22 @@ const App = {
         if (!history.state) history.replaceState({ from: null, n: 0 }, '', location.hash || '#/');
         App.labelBack();
         App.addressShown();
+
+        // A control the keyboard moves to is kept in sight: in the P&L
+        // grids, brought in whole and clear of the frozen header row and
+        // Account column (ReportsPage._gridReveal; the column's width and
+        // the row's height measured again when the window changes); on
+        // Settings, scrolled clear of the save bar (SettingsPage._clearSaveBar)
+        document.addEventListener('keydown', (e) => {
+            if (e.key === 'Tab' || String(e.key).startsWith('Arrow')) App._input = 'keyboard';
+        }, true);
+        document.addEventListener('pointerdown', () => { App._input = 'pointer'; }, true);
+        document.addEventListener('focusin', (e) => {
+            ReportsPage._gridReveal(e);
+            App.revealInTable(e);
+            SettingsPage._clearSaveBar(e);
+        });
+        window.addEventListener('resize', () => ReportsPage._gridFit());
 
         // Load saved theme
         App.loadTheme();

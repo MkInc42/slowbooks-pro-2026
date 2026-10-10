@@ -217,6 +217,8 @@ CHOKEPOINT_PATTERNS = [
     r"\btitle:\s*['\"][^'\"]*\b(Customers?|Invoices?|Sales Receipts?|Class(es)?|Jobs?)\b",
     # Report Center cards and modal titles
     r'<div class="card-header">[^<$]*\b(Customer|Profit & Loss|Balance Sheet|Class|Income|Jobs?)\b',
+    # a card's title, given to ReportsPage._card
+    r"\bcard\('[a-z0-9-]+', '[^']*\b(Customer|Profit & Loss|Balance Sheet|Class|Income|Jobs?)\b",
     r"openPeriodModal\(\s*[\"'][^\"']*\b(Customer|Profit & Loss|Balance Sheet|Class|Job)\b",
 ]
 

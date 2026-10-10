@@ -56,10 +56,13 @@ from tests.test_dialog_contrast import (  # noqa: E402,F401  (the dialogs)
     nonprofit,
 )
 from tests.test_theme_contrast import (  # noqa: E402,F401  (the fixtures)
+    REDIRECTS,
     _open,
+    _theme,
     _visit,
     browser_fixture,
     company_fixture,
+    contrast,
     settle,
 )
 
@@ -456,7 +459,7 @@ def test_back_goes_back_within_the_app_while_there_is_somewhere_to_go(
         # a report pushed from the Report Center: Back closes it and returns
         _sidebar(page, handled, "#/reports")
         page.evaluate(
-            """() => document.querySelector('#page-content .card[onclick="ReportsPage.profitLoss()"]').click()"""
+            """() => document.querySelector('#page-content a.card-link[data-row-key="report:profit-loss"]').click()"""
         )
         page.wait_for_selector("#report-content table")
         settle(page, handled)
@@ -1048,7 +1051,7 @@ def test_back_is_inert_over_a_form_but_live_over_an_addressed_dialog(
         # overlay and takes the report back to the Report Center
         _sidebar(page, handled, "#/reports")
         page.evaluate(
-            """() => document.querySelector('#page-content .card[onclick="ReportsPage.profitLoss()"]').click()"""
+            """() => document.querySelector('#page-content a.card-link[data-row-key="report:profit-loss"]').click()"""
         )
         page.wait_for_selector("#report-content table")
         settle(page, handled)
@@ -1319,5 +1322,2768 @@ def test_a_declined_leave_from_settings_stays_on_its_entry_and_back_goes_behind(
         settle(page, handled)
         assert len(confirms) == 3
         assert page.locator("#page-content .card-grid .card").count() > 5
+    finally:
+        page.close()
+
+
+# ── Round 3, NEW-42: Back is a bordered gold button that reads "← Back" ──
+
+# The button as drawn: its words, and the computed colour, ground, border
+# and opacity the sweep would read.
+LOOKS = """() => { const b = document.getElementById('back-btn'), cs = getComputedStyle(b);
+    return { text: b.textContent.trim(), disabled: b.disabled, color: cs.color,
+             background: cs.backgroundColor, opacity: cs.opacity,
+             border: [cs.borderTopWidth, cs.borderTopStyle, cs.borderTopColor].join(' ') }; }"""
+# The keyboard's ring (--focus-ring): a deeper gold than the brand's in
+# light, #a37a29, and the brand's own in dark, #e0a840; the lit Back's
+# border, the button's edge against the bar: deeper still in light, #8f6a1e.
+RING_GOLD = {"light": "rgb(163, 122, 41)", "dark": "rgb(224, 168, 64)"}
+BORDER = {"light": "rgb(143, 106, 30)", "dark": "rgb(224, 168, 64)"}
+GOLD = RING_GOLD  # the ring, where the tests read it
+NONE = "rgba(0, 0, 0, 0)"  # a transparent border or ground, as computed
+# The bar's ground: its gradient's stops, each scored (the sweep's rule)
+BAR_STOPS = """() => getComputedStyle(document.getElementById('topbar')).backgroundImage
+    .match(/rgba?\\([^)]*\\)/g) || []"""
+# The ground under the focused control: the nearest opaque background
+GROUND = """() => { let e = document.activeElement;
+    while (e && e !== document.documentElement) {
+        const c = getComputedStyle(e).backgroundColor, m = c.match(/[\\d.]+/g);
+        if (m && (m.length < 4 || +m[3] >= 0.999)) return c;
+        e = e.parentElement; }
+    return getComputedStyle(document.body).backgroundColor; }"""
+
+
+def _edge_clears(page, border, what):
+    """The border's colour against every stop of the bar it sits on: 3:1
+    (WCAG 1.4.11, a component's boundary)."""
+    stops = page.evaluate(BAR_STOPS)
+    assert len(stops) >= 2, stops
+    ratios = {stop: contrast(border, stop) for stop in stops}
+    assert min(ratios.values()) >= 3.0, (what, ratios)
+
+
+def test_back_is_a_bordered_gold_button_that_is_never_grey_while_it_works(
+    browser, company, books
+):
+    """The ← was a bare grey glyph that got its border on hover alone, and
+    disabled it was the same glyph dimmed; with a card open the owner read
+    it as unusable, an arrow pointing at the brand (macOS gate, round 2).
+    Lit, it is a bordered gold button reading "← Back" in both themes, its
+    words AA against its own ground and the border gold under the pointer
+    too; with nowhere to go it is muted and borderless, and still named."""
+    page, handled = _open(browser, company)
+    try:
+        _no_splash(page)
+        rest = page.evaluate(LOOKS)
+        assert rest["text"] == "← Back" and rest["disabled"]
+        assert rest["border"].endswith(NONE) and rest["background"] == NONE
+        assert float(rest["opacity"]) < 1
+        assert page.evaluate(BACK)["name"] == "Back"
+        _sidebar(page, handled, "#/customers")
+        for theme in ("light", "dark"):
+            _theme(page, theme)
+            lit = page.evaluate(LOOKS)
+            assert lit["text"] == "← Back" and not lit["disabled"]
+            assert lit["border"] == f"2px solid {BORDER[theme]}", (theme, lit)
+            assert lit["opacity"] == "1" and lit["background"] != NONE
+            assert contrast(lit["color"], lit["background"]) >= 4.5, (theme, lit)
+            # not the bar's grey: the navy on a pale gold tint, or the gold
+            assert (
+                lit["color"]
+                == {"light": "rgb(0, 51, 102)", "dark": GOLD["dark"]}[theme]
+            ), (theme, lit)
+            # the border is the button's edge against the bar: 3:1 on every
+            # stop of the bar's gradient (WCAG 1.4.11), lit and under the
+            # pointer
+            _edge_clears(page, BORDER[theme], (theme, "lit"))
+            page.hover("#back-btn")
+            hovered = page.evaluate(LOOKS)
+            assert hovered["border"] not in (
+                "1px solid rgb(176, 184, 200)",  # .tb-btn:hover, light
+                "2px solid rgb(176, 184, 200)",
+                "2px solid rgb(74, 78, 88)",  # .tb-btn:hover, dark
+            ), (theme, hovered)
+            assert hovered["border"].startswith("2px solid ")
+            assert contrast(hovered["color"], hovered["background"]) >= 4.5, hovered
+            _edge_clears(page, hovered["border"].split(" ", 2)[2], (theme, "hover"))
+            page.mouse.move(0, 0)
+        _theme(page, "light")
+        # over a plain form it sits under the overlay, as before
+        _open_dialog(page, handled, "CustomersPage.showForm()", "#modal form")
+        assert not page.evaluate(AT_POINT)
+        page.evaluate("() => closeModal()")
+        assert page.evaluate(AT_POINT)
+        # Back: nowhere to go, and the muted, borderless look is back
+        page.keyboard.press("Alt+ArrowLeft")
+        page.wait_for_function(AT, arg="#/")
+        settle(page, handled)
+        rest = page.evaluate(LOOKS)
+        assert rest["disabled"] and rest["border"].endswith(NONE)
+        assert rest["background"] == NONE and float(rest["opacity"]) < 1
+    finally:
+        page.close()
+
+
+# ── Round 3, NEW-43: the keyboard's place is visible on links and buttons ──
+
+# Where focus is, and the ring drawn there: the computed outline, and
+# whether the browser counts this focus as the keyboard's.
+RING = """() => { const a = document.activeElement, cs = getComputedStyle(a);
+    return { at: a.dataset.rowKey || a.id || a.getAttribute('href') || a.tagName.toLowerCase(),
+             tag: a.tagName.toLowerCase(), offset: cs.outlineOffset,
+             outline: [cs.outlineWidth, cs.outlineStyle, cs.outlineColor].join(' '),
+             keyboard: a.matches(':focus-visible') }; }"""
+# a button's colours fade (transition: all 0.1s): the ring is read settled
+SETTLED = "() => document.getAnimations().forEach(a => a.finish())"
+
+
+def _tab_until(page, test, cap=40, shift=False):
+    for _ in range(cap):
+        page.keyboard.press("Shift+Tab" if shift else "Tab")
+        if page.evaluate(test):
+            page.evaluate(SETTLED)
+            return page.evaluate(RING)
+    raise AssertionError(f"Tab never reached {test}")
+
+
+def test_tab_shows_where_it_is_on_a_report_row_and_a_mouse_click_draws_no_ring(
+    browser, company, books
+):
+    """style.css had no focus style for links or buttons, and WebKit draws
+    no ring on a link with the Mac's keyboard navigation off: the owner
+    tabbed through A/R Aging and never saw the customer names take focus
+    (macOS gate, round 2). Now every link and button draws the skip link's
+    ring, 2px of gold with an offset (a deeper gold than the brand's in
+    light: 3:1 against its ground), in both themes — on keyboard focus
+    only."""
+    page, handled = _open_at(
+        browser, company, "#/reports/ar-aging?as_of_date=2026-09-30"
+    )
+    try:
+        page.wait_for_function(MODAL_SHOWN)
+        page.wait_for_selector('#modal a[data-row-key^="customer:"]')
+        settle(page, handled)
+        page.evaluate(FIRST)
+        row = _tab_until(
+            page,
+            "() => (document.activeElement.dataset.rowKey || '').startsWith('customer:')",
+        )
+        assert row["tag"] == "a" and row["keyboard"], row
+        for theme in ("light", "dark"):
+            _theme(page, theme)
+            on = page.evaluate(RING)
+            assert on["outline"] == f"2px solid {GOLD[theme]}", (theme, on)
+            assert on["offset"] == "2px", (theme, on)
+            # the ring against what it sits on: the row's ground, and white
+            # (the page's) in light — 3:1 (WCAG 1.4.11)
+            ground = page.evaluate(GROUND)
+            assert contrast(GOLD[theme], ground) >= 3.0, (theme, ground)
+            if theme == "light":
+                assert contrast(GOLD[theme], "rgb(255, 255, 255)") >= 3.0
+        # a button before the table the same: Apply Late Fees, Email All
+        # Overdue, Send Collection Letters
+        button = _tab_until(
+            page, "() => document.activeElement.tagName === 'BUTTON'", shift=True
+        )
+        assert button["keyboard"] and button["outline"] == f"2px solid {GOLD['dark']}"
+        _theme(page, "light")
+        page.evaluate(SETTLED)
+        assert page.evaluate(RING)["outline"] == f"2px solid {GOLD['light']}"
+        # the dialog closed from the keyboard; a mouse click on a button:
+        # focus, and no ring
+        page.keyboard.press("Escape")
+        page.wait_for_function(f"!({MODAL_SHOWN})()")
+        page.click("#theme-toggle")
+        page.evaluate(SETTLED)
+        clicked = page.evaluate(RING)
+        assert clicked["at"] == "theme-toggle" and not clicked["keyboard"], clicked
+        assert "none" in clicked["outline"], clicked
+        page.click("#theme-toggle")  # light again
+        # a link clicked: the same; the next Tab from it draws the ring
+        page.click('#sidebar a[href="#/customers"]')
+        page.wait_for_function(AT, arg="#/customers")
+        settle(page, handled)
+        page.evaluate(SETTLED)
+        link = page.evaluate(RING)
+        assert link["at"] == "#/customers" and not link["keyboard"], link
+        assert "none" in link["outline"], link
+        page.keyboard.press("Tab")
+        page.evaluate(SETTLED)
+        after = page.evaluate(RING)
+        assert after["keyboard"] and after["outline"] == f"2px solid {GOLD['light']}"
+    finally:
+        page.close()
+
+
+# ── Round 3, NEW-44: leaving a page's Notes box as it was writes nothing ─
+
+
+@pytest.mark.parametrize(
+    ("kind", "box"), [("customers", "cust-notes"), ("vendors", "vend-notes")]
+)
+def test_a_tab_through_a_page_writes_no_note_and_a_change_saves_once(
+    browser, company, books, kind, box
+):
+    """The customer page's Notes box saved on every blur, changed or not,
+    and so did the vendor page's: now that Tab walks every control in a
+    dialog, a Tab through the page wrote the company file and an audit
+    entry each time, and turned a note never written (null) into ""
+    (macOS gate, round 2). Only a change is saved, empty and none alike."""
+    rid = books["customer" if kind == "customers" else "vendor"]
+    api = f"/api/{kind}/{rid}"
+    audit = f"/api/audit?table_name={kind}&record_id={rid}"
+    status = f"#{box.replace('notes', 'note-status')}-{rid}"
+    assert company.get(api).json()["notes"] is None  # never written
+    before = len(company.get(audit).json())
+    page, handled = _open_at(browser, company, f"#/{kind}/{rid}")
+    puts = []
+    page.on("request", lambda r: puts.append(r.url) if r.method == "PUT" else None)
+    try:
+        page.wait_for_function(MODAL_SHOWN)
+        page.wait_for_selector(f"#{box}-{rid}")
+        settle(page, handled)
+        # Tab through the whole page, the box included, and in and out of
+        # the box itself
+        stops = page.evaluate(
+            "() => _tabStops(document.getElementById('modal-body'), null).length"
+        )
+        page.evaluate(FIRST)
+        for _ in range(stops + 1):
+            page.keyboard.press("Tab")
+        page.focus(f"#{box}-{rid}")
+        for keys in ("Tab", "Shift+Tab", "Tab"):
+            page.keyboard.press(keys)
+        settle(page, handled)
+        assert puts == []
+        assert page.inner_text(status).strip() == ""
+        assert company.get(api).json()["notes"] is None  # not turned into ""
+        assert len(company.get(audit).json()) == before
+        # a change saves, once, and says so
+        page.fill(f"#{box}-{rid}", "Prefers email.")
+        page.keyboard.press("Tab")
+        page.wait_for_function(
+            "(s) => document.querySelector(s).textContent === '✓ saved'", arg=status
+        )
+        settle(page, handled)
+        assert len(puts) == 1 and puts[0].endswith(api), puts
+        assert company.get(api).json()["notes"] == "Prefers email."
+        assert len(company.get(audit).json()) == before + 1
+        # left as saved: nothing more
+        page.focus(f"#{box}-{rid}")
+        page.keyboard.press("Tab")
+        settle(page, handled)
+        assert len(puts) == 1
+        # cleared: a change again, saved as empty; then nothing more
+        page.fill(f"#{box}-{rid}", "")
+        page.keyboard.press("Tab")
+        settle(page, handled)
+        assert len(puts) == 2
+        assert (company.get(api).json()["notes"] or "") == ""
+        page.focus(f"#{box}-{rid}")
+        page.keyboard.press("Tab")
+        settle(page, handled)
+        assert len(puts) == 2
+    finally:
+        page.close()
+
+
+# ── Round 3, W-7: Back refocuses the chart's account and the drill-down's line ──
+
+ROW_KEY = (
+    "() => (document.activeElement && document.activeElement.dataset.rowKey) || null"
+)
+WORDS = "() => document.activeElement.textContent.trim()"
+
+
+def test_back_from_a_register_or_a_drill_down_refocuses_the_charts_account(
+    browser, company, books
+):
+    """Chart of Accounts → a register (or a drill-down) → Back landed on
+    the page body (Windows gate W-7). The chart's account links carry a
+    key, noted on the way out as a report's rows are, and the page's
+    render on return puts the keyboard back on it — by Alt+←, by the
+    toolbar's button, and after a mouse click on the name too."""
+    page, handled = _open(browser, company)
+    try:
+        _no_splash(page)
+        _sidebar(page, handled, "#/accounts")
+        links = page.evaluate(
+            """() => [...document.querySelectorAll('#page-content a[data-row-key^="account:"]')]
+                .map(a => [a.dataset.rowKey, a.getAttribute('href'), a.textContent.trim()])"""
+        )
+        bank = next(x for x in links if x[1].startswith("#/banking/"))
+        drill = next(
+            x for x in links if x[1].startswith("#/reports/account-transactions?")
+        )
+
+        def leave(key, where, click=False):
+            sel = f'#page-content a[data-row-key="{key}"]'
+            if click:
+                page.click(sel)
+            else:
+                page.focus(sel)
+                page.keyboard.press("Enter")
+            page.wait_for_function("(s) => location.hash.startsWith(s)", arg=where)
+            settle(page, handled)
+            assert page.evaluate(ROW_KEY) != key  # left
+
+        def back(key, words, button=False):
+            if button:
+                page.click("#back-btn")
+            else:
+                page.keyboard.press("Alt+ArrowLeft")
+            page.wait_for_function(AT, arg="#/accounts")
+            settle(page, handled)
+            assert page.evaluate(ROW_KEY) == key
+            assert page.evaluate(WORDS) == words
+
+        # a bank account's name opens its register, a page of its own
+        leave(bank[0], "#/banking/")
+        back(bank[0], bank[2])
+        # an expense account's name opens its drill-down, a dialog over
+        # the Report Center; the toolbar's button returns the same
+        leave(drill[0], "#/reports/account-transactions?")
+        page.wait_for_selector("#drilldown-body table")
+        settle(page, handled)
+        back(drill[0], drill[2], button=True)
+        # by mouse: the click puts focus on the name, and that is noted
+        leave(bank[0], "#/banking/", click=True)
+        back(bank[0], bank[2])
+    finally:
+        page.close()
+
+
+def test_back_from_a_drill_downs_document_refocuses_the_line(browser, company, books):
+    """A drill-down's line → its document → Back landed on the period
+    select (Windows gate W-7). Each line's link carries its own key, noted
+    on the way out, and the drill-down's render on return focuses it."""
+    checking = _account(company, "1000")
+    url = (
+        f"#/reports/account-transactions?account_id={checking['id']}"
+        "&start_date=2026-01-01&end_date=2026-12-31&from=trial-balance"
+    )
+    page, handled = _open_at(browser, company, url)
+    try:
+        page.wait_for_selector("#drilldown-body table")
+        settle(page, handled)
+        here = page.evaluate("location.hash")
+        lines = page.evaluate(
+            """() => [...document.querySelectorAll('#drilldown-body a[data-row-key^="line:"]')]
+                .map(a => [a.dataset.rowKey, a.getAttribute('href'), a.textContent.trim()])"""
+        )
+        assert len(lines) >= 3, lines
+        assert len({k for k, _, _ in lines}) == len(lines)  # each line its own
+        for key, href, words in (lines[1], lines[-1]):
+            doc = "#" + href.split("#", 1)[1]
+            page.focus(f'#drilldown-body a[data-row-key="{key}"]')
+            page.keyboard.press("Enter")
+            page.wait_for_function(AT, arg=doc)
+            page.wait_for_function("() => !document.getElementById('drilldown-body')")
+            page.wait_for_function(MODAL_SHOWN)
+            settle(page, handled)
+            page.keyboard.press("Alt+ArrowLeft")
+            page.wait_for_function(AT, arg=here)
+            page.wait_for_selector("#drilldown-body table")
+            settle(page, handled)
+            assert page.evaluate(ROW_KEY) == key, (key, words)
+            assert page.evaluate(WORDS) == words
+            assert page.evaluate("() => document.activeElement.id") != (
+                "report-period-select"
+            )
+    finally:
+        page.close()
+
+
+def test_the_dialog_itself_and_a_field_take_focus_without_the_ring(
+    browser, company, books
+):
+    """The ring is a control's. The dialog itself (tabindex −1), which
+    takes focus when its first control is Void (NEW-32), is a place and
+    draws none, whether the keyboard or a script put focus there; the next
+    Tab lands on a control with the ring. A field keeps its own focus
+    style, the blue border and pale ground, with no ring by keyboard and
+    none on a click into a box (review of NEW-43)."""
+    page, handled = _open(browser, company)
+    try:
+        _no_splash(page)
+        _visit(page, handled, "#/journal")
+        _open_dialog(
+            page, handled, f"JournalPage.view({books['journal']})", "#modal-body button"
+        )
+        assert page.evaluate(FOCUSED)["id"] == "modal"
+        opened = page.evaluate(RING)
+        assert opened["at"] == "modal" and "none" in opened["outline"], opened
+        control = _tab_until(
+            page, "() => ['A', 'BUTTON'].includes(document.activeElement.tagName)"
+        )
+        assert control["keyboard"], control
+        assert control["outline"] == f"2px solid {GOLD['light']}", control
+        # back on the dialog by script, after the keyboard: still none
+        page.evaluate("() => document.getElementById('modal').focus()")
+        again = page.evaluate(RING)
+        assert again["at"] == "modal" and "none" in again["outline"], again
+        page.evaluate("() => closeModal()")
+        # a field: the period select, by keyboard and then by mouse
+        _visit(page, handled, "#/reports/ar-aging?as_of_date=2026-09-30")
+        page.wait_for_function(MODAL_SHOWN)
+        settle(page, handled)
+        page.evaluate(FIRST)
+        page.keyboard.press("Shift+Tab")
+        page.keyboard.press("Tab")
+        field = page.evaluate(RING)
+        assert field["at"] == "report-period-select" and field["keyboard"], field
+        assert "none" in field["outline"], field
+        page.click("#report-period-select")
+        page.evaluate(SETTLED)
+        box = page.evaluate(RING)
+        assert box["at"] == "report-period-select" and "none" in box["outline"], box
+    finally:
+        page.close()
+
+
+# ── Round 3 review: the ring as painted, on every ground it meets ───────
+#
+# Read off the screen, as the macOS gate reads it: the pixels the browser
+# painted around the focused control, not the stylesheet's colours.
+
+# The focused control's border box and its outline, as computed
+PAINT_BOX = """() => { const el = document.activeElement, cs = getComputedStyle(el),
+        r = el.getBoundingClientRect();
+    return { x: r.left, y: r.top, w: r.width, h: r.height, dpr: devicePixelRatio,
+             off: parseFloat(cs.outlineOffset) || 0, wid: parseFloat(cs.outlineWidth) || 0,
+             color: cs.outlineColor, shadow: cs.boxShadow, vw: innerWidth, vh: innerHeight }; }"""
+SIDES = ("top", "right", "bottom", "left")
+# the keyboard's halo, each theme's own ground (style.css --focus-halo)
+HALO = {"light": "rgb(255, 255, 255)", "dark": "rgb(20, 22, 28)"}
+
+
+def _rgb(c):
+    return "rgb(%d, %d, %d)" % tuple(int(round(v)) for v in c[:3])
+
+
+def _far(a, b):
+    return max(abs(a[k] - b[k]) for k in range(3))
+
+
+def _between(a, b, c, slack=8):
+    """b lies between a and c, and is neither: an anti-aliased edge."""
+    inside = all(
+        min(a[k], c[k]) - slack <= b[k] <= max(a[k], c[k]) + slack for k in range(3)
+    )
+    return inside and _far(a, b) > 12 and _far(b, c) > 12
+
+
+def _painted(page):
+    """The ring around the focused control as painted. Per side: the ring's
+    colour (the pixels of the outline's computed colour where the outline
+    lies, outline-offset to offset + width from the border box, and on
+    while that colour goes on), its width in pixels, the colour painted
+    against it on its inner and its outer side (an anti-aliased pixel
+    between the two skipped): medians over the middle of the side, clear
+    of the corners; and the ground as the macOS gate reads it, the pixels
+    1 to 5 past the ring, the median on each line across the side and the
+    line where it stands least against the ring. A side with no ring
+    painted is None; the outer colour and the ground are None where the
+    ring meets the window's edge (`edge`)."""
+    import io
+    import math
+    import re
+    import statistics
+
+    from PIL import Image
+
+    b = page.evaluate(PAINT_BOX)
+    s, off, wid = b["dpr"], b["off"], b["wid"] or 2
+    pad = max(off, 0) + wid + 12
+    # the clip on whole pixels, so a pixel of the shot is a pixel of the page
+    x0, y0 = max(math.floor(b["x"] - pad), 0), max(math.floor(b["y"] - pad), 0)
+    x1 = min(math.ceil(b["x"] + b["w"] + pad), b["vw"])
+    y1 = min(math.ceil(b["y"] + b["h"] + pad), b["vh"])
+    shot = page.screenshot(clip={"x": x0, "y": y0, "width": x1 - x0, "height": y1 - y0})
+    img = Image.open(io.BytesIO(shot)).convert("RGB")
+    px, w, h = img.load(), img.width, img.height
+    want = [float(v) for v in re.findall(r"[\d.]+", b["color"])[:3]]
+
+    def dev(v):  # CSS px, in device pixels
+        return int(round(v * s))
+
+    # the border box's edges as painted (snapped to the pixel grid)
+    left, top = dev(b["x"]) - dev(x0), dev(b["y"]) - dev(y0)
+    right = dev(b["x"] + b["w"]) - dev(x0)
+    bottom = dev(b["y"] + b["h"]) - dev(y0)
+    at = {  # the pixel `d` out from the border box on a side, at `p` along it
+        "top": lambda d, p: (p, top - 1 - d),
+        "right": lambda d, p: (right + d, p),
+        "bottom": lambda d, p: (p, bottom + d),
+        "left": lambda d, p: (left - 1 - d, p),
+    }
+    edge = {
+        "top": y0 <= 0,
+        "left": x0 <= 0,
+        "right": x1 >= b["vw"],
+        "bottom": y1 >= b["vh"],
+    }
+
+    def middle(a, z):
+        n = z - a
+        return (
+            [a + n // 2]
+            if n <= 8 * s
+            else sorted({a + n * f // 20 for f in range(6, 15)})
+        )
+
+    sides = {}
+    for side in SIDES:
+        along = (
+            middle(top, bottom) if side in ("left", "right") else middle(left, right)
+        )
+        prof, lines = {}, {p: {} for p in along}
+        for d in range(dev(off - 6), dev(off + wid + 10)):
+            got = []
+            for p in along:
+                x, y = at[side](d, p)
+                if 0 <= x < w and 0 <= y < h:
+                    got.append(px[x, y])
+                    lines[p][d] = px[x, y]
+            if got:
+                prof[d] = [statistics.median(g[k] for g in got) for k in range(3)]
+        hits = [
+            d
+            for d in range(dev(off) - 1, dev(off + wid) + 1)
+            if d in prof and _far(prof[d], want) <= 40
+        ]
+        if not hits:
+            sides[side] = None
+            continue
+        r0, r1 = min(hits), max(hits)
+        while r0 - 1 in prof and _far(prof[r0 - 1], want) <= 40:
+            r0 -= 1
+        while r1 + 1 in prof and _far(prof[r1 + 1], want) <= 40:
+            r1 += 1
+        ring = [
+            statistics.median(prof[d][k] for d in range(r0, r1 + 1)) for k in range(3)
+        ]
+
+        def against(d, step, ring=ring, prof=prof):
+            for _ in range(2):
+                nxt = prof.get(d + step)
+                if d in prof and nxt is not None and _between(ring, prof[d], nxt):
+                    d += step
+                else:
+                    break
+            return prof.get(d)
+
+        # the gate's ground: the 1st to 5th pixel past the ring, on each
+        # line across the side; the line where it is nearest the ring
+        grounds = []
+        for line in lines.values():
+            band = [line[d] for d in range(r1 + 1, r1 + 6) if d in line]
+            if band:
+                grounds.append(
+                    [statistics.median(c[k] for c in band) for k in range(3)]
+                )
+        sides[side] = {
+            "ring": ring,
+            "px": r1 - r0 + 1,
+            "inner": against(r0 - 1, -1),
+            "outer": against(r1 + 1, 1),
+            "ground": (
+                min(grounds, key=lambda g, ring=ring: contrast(_rgb(ring), _rgb(g)))
+                if grounds
+                else None
+            ),
+            "edge": edge[side],
+        }
+    return sides
+
+
+def _ring_clears(page, what, ring, need=3.0):
+    """The ring painted on all four sides in its colour (`ring`, computed),
+    and 3:1 against what is painted right against it on each side of it —
+    the halo where there is one, the ground where not (WCAG 1.4.11): the
+    side of a control on a bad ground still has a 3:1 edge on both sides of
+    its line; and 3:1 against the ground the macOS gate reads, 1 to 5px
+    beyond the ring. Returns the painted figures, for a caller's message."""
+    page.evaluate(SETTLED)
+    sides = _painted(page)
+    report = {}
+    for side in SIDES:
+        got = sides[side]
+        assert got, (what, side, "no ring painted", sides)
+        assert contrast(_rgb(got["ring"]), ring) <= 1.1, (
+            what,
+            side,
+            _rgb(got["ring"]),
+            ring,
+        )
+        report[side] = {"ring": _rgb(got["ring"])}
+        for k in ("inner", "outer"):
+            if got[k] is None:
+                assert k == "outer" and got["edge"], (what, side, k, got)
+                continue
+            ratio = contrast(_rgb(got["ring"]), _rgb(got[k]))
+            report[side][k] = (_rgb(got[k]), ratio)
+            assert ratio >= need, (what, side, k, report)
+        if got["ground"] is not None:
+            ratio = contrast(_rgb(got["ring"]), _rgb(got["ground"]))
+            report[side]["ground"] = (_rgb(got["ground"]), ratio)
+            assert ratio >= need, (what, side, "the gate's ground", report)
+    return report
+
+
+# the sidebar's halo is its own navy (style.css #sidebar --focus-halo)
+NAV_HALO = {"light": "rgb(0, 34, 68)", "dark": "rgb(8, 12, 20)"}
+
+
+def _both_themes(page, what, ring_for, halo=HALO, bar=False):
+    """The ring at the focused control, in light and then dark, and light
+    again; and, unless `halo` is None, the halo painted against the gold
+    on its outer side, in each theme's colour; with `bar`, the gold against
+    the toolbar's own ground too (_bar_clears)."""
+    seen = {}
+    for theme in ("light", "dark"):
+        _theme(page, theme)
+        page.evaluate(SETTLED)
+        on = page.evaluate(RING)
+        assert on["keyboard"], (what, theme, on)
+        seen[theme] = _ring_clears(page, (what, theme), ring_for[theme])
+        if bar:
+            _bar_clears(page, (what, theme), ring_for[theme])
+        if halo:
+            outer = [v["outer"] for v in seen[theme].values() if "outer" in v]
+            assert outer and all(contrast(c, halo[theme]) <= 1.1 for c, _ in outer), (
+                what,
+                theme,
+                seen[theme],
+            )
+    _theme(page, "light")
+    return seen
+
+
+TOOLBAR_GROUND = "() => !!document.activeElement.closest('#topbar') && document.activeElement.tagName === 'BUTTON'"
+# The toolbar's ring: the Back border's deeper gold in light, so the gold
+# clears the bar itself; the theme's own in dark
+TOOLBAR_GOLD = {"light": "rgb(143, 106, 30)", "dark": "rgb(224, 168, 64)"}
+# A column of the bar with no control on it, between the search box and
+# the right-hand group, and the rows the focused control's ring runs on
+BAR_COLUMN = """() => { const s = document.getElementById('global-search').getBoundingClientRect(),
+        r = document.querySelector('#topbar .topbar-right').getBoundingClientRect(),
+        bar = document.getElementById('topbar').getBoundingClientRect(),
+        a = document.activeElement.getBoundingClientRect();
+    return { x: Math.round((s.right + r.left) / 2), gap: r.left - s.right,
+             top: bar.top, bottom: bar.bottom, y0: a.top - 4, y1: a.bottom + 4 }; }"""
+
+
+def _bar_clears(page, what, ring):
+    """The gold against the bar's own ground as painted, behind its halo:
+    the bar's gradient runs top to bottom, so a column of it with no
+    control on it gives the ground on every row the ring runs on; the gold
+    is 3:1 against each (the stricter reading of a two-colour ring: the
+    gold clears the ground beyond the halo too, not only the halo)."""
+    import io
+    import math
+
+    from PIL import Image
+
+    c = page.evaluate(BAR_COLUMN)
+    assert c["gap"] > 20, c
+    y0 = max(math.floor(c["y0"]), math.ceil(c["top"]))
+    y1 = min(math.ceil(c["y1"]), math.floor(c["bottom"]) - 1)
+    shot = page.screenshot(clip={"x": c["x"], "y": y0, "width": 1, "height": y1 - y0})
+    img = Image.open(io.BytesIO(shot)).convert("RGB")
+    rows = [img.getpixel((0, i)) for i in range(img.height)]
+    ratios = [contrast(ring, _rgb(p)) for p in rows]
+    assert min(ratios) >= 3.0, (
+        what,
+        min(ratios),
+        _rgb(rows[ratios.index(min(ratios))]),
+    )
+    return min(ratios)
+
+
+def test_the_ring_clears_3_to_1_on_every_ground_it_meets_as_painted(
+    browser, company, books, divisions
+):
+    """The light theme's gold ring alone painted under 3:1 on the toolbar's
+    gradient (2.54:1 against its darker stop below every button) and on a
+    dialog's blue title bar (1.73 to 1.97 beside the ×), and under 3 against
+    a table's header row above a report's first row (review of NEW-43). The
+    gold now meets a halo of the theme's own ground on both its sides,
+    whatever lies beyond, and the halo is also what the macOS gate reads as
+    the ground, 1 to 5px beyond the ring: measured as painted at every
+    toolbar button (the lit Back too), the × on a dialog, a report's row
+    link and a dialog's button, the grid region (its own ring) and a
+    summary, in both themes. On the toolbar the light theme's gold is the
+    Back border's deeper one, and clears the bar itself as well as its
+    halo, on every row the ring runs on."""
+    page, handled = _open(browser, company)
+    try:
+        _no_splash(page)
+        _sidebar(page, handled, "#/customers")  # an app page behind: Back is lit
+        assert not page.evaluate(BACK)["disabled"]
+        page.focus(".skip-link")  # the first stop: Tab from there
+        buttons = []
+        for _ in range(30):
+            page.keyboard.press("Tab")
+            if page.evaluate("() => !!document.activeElement.closest('#sidebar')"):
+                break
+            if page.evaluate(TOOLBAR_GROUND):
+                page.evaluate(SETTLED)
+                buttons.append(page.evaluate(RING)["at"])
+                _both_themes(page, ("toolbar", buttons[-1]), TOOLBAR_GOLD, bar=True)
+        # every button on the bar, the lit Back first among them
+        on_bar = page.evaluate(
+            "() => [...document.querySelectorAll('#topbar button.tb-btn')].filter(b => !b.disabled && b.offsetParent).length"
+        )
+        assert buttons[0] == "back-btn" and len(buttons) == on_bar, buttons
+        # A/R Aging: a customer's row link, a button, the dialog's ×
+        _visit(page, handled, "#/reports/ar-aging?as_of_date=2026-09-30")
+        page.wait_for_function(MODAL_SHOWN)
+        page.wait_for_selector('#modal a[data-row-key^="customer:"]')
+        settle(page, handled)
+        page.evaluate(FIRST)
+        _tab_until(
+            page,
+            "() => (document.activeElement.dataset.rowKey || '').startsWith('customer:')",
+        )
+        _both_themes(page, "row link", GOLD)
+        _tab_until(
+            page,
+            "() => document.activeElement.tagName === 'BUTTON' && !!document.activeElement.closest('#modal-body')",
+            shift=True,
+        )
+        _both_themes(page, "dialog button", GOLD)
+        _tab_until(
+            page, "() => document.activeElement.id === 'modal-close-btn'", cap=60
+        )
+        _both_themes(page, "the dialog's ×", GOLD)
+        page.keyboard.press("Escape")
+        page.wait_for_function(f"!({MODAL_SHOWN})()")
+        # the grid region: its own ring, inside its edge, no halo
+        _visit(page, handled, BY_CLASS_URL)
+        page.wait_for_selector("#grid-scroll")
+        settle(page, handled)
+        page.evaluate(FIRST)
+        _tab_until(page, "() => document.activeElement.id === 'grid-scroll'", cap=60)
+        _both_themes(page, "grid", OWN["grid"], halo=None)
+        page.keyboard.press("Escape")
+        page.wait_for_function(f"!({MODAL_SHOWN})()")
+        # a summary: the invoice email's preview
+        _open_dialog(
+            page,
+            handled,
+            f"InvoicesPage.emailInvoice({books['sent']})",
+            "#modal summary",
+        )
+        page.evaluate(FIRST)
+        _tab_until(page, "() => document.activeElement.tagName === 'SUMMARY'")
+        _both_themes(page, "summary", GOLD)
+    finally:
+        page.close()
+
+
+def test_a_sidebar_link_draws_the_ring_on_all_four_sides_as_painted(
+    browser, company, books
+):
+    """#sidebar scrolls (overflow-y), which cut the ring at +2px to its top
+    and bottom lines: a link spans the sidebar, and its sides fell outside
+    (review of NEW-43). The ring and its halo are drawn inside the link's
+    edge, the halo the sidebar's own navy: all four sides painted, the gold
+    3:1 against what meets it and against the ground beyond, in both themes
+    — on a link, on the open page's (its lighter ground; its gold marker
+    takes the halo's colour while it is focused), and on the link below it,
+    which meets that lighter ground (2.35:1 with the ring at -2px)."""
+    page, handled = _open(browser, company)
+    try:
+        _no_splash(page)
+        _sidebar(page, handled, "#/customers")
+        page.focus('#sidebar a[href="#/customers"]')
+        page.keyboard.press("Shift+Tab")
+        for href in ("#/", "#/customers", "#/jobs"):
+            at = page.evaluate("() => document.activeElement.getAttribute('href')")
+            assert at == href, (at, href)
+            assert page.evaluate(
+                "() => document.activeElement.closest('#sidebar') !== null"
+            )
+            _both_themes(page, ("sidebar", href), GOLD, NAV_HALO)
+            page.keyboard.press("Tab")
+    finally:
+        page.close()
+
+
+# The controls' own rings: a search result's blue, inside its edge; the
+# grid's navy (light) or blue (dark), on its edge
+OWN = {
+    "search": {"light": "rgb(51, 102, 153)", "dark": "rgb(107, 179, 232)"},
+    "grid": {"light": "rgb(0, 51, 102)", "dark": "rgb(107, 179, 232)"},
+}
+# What the browser computed for the focused control's ring
+OWN_RING = """() => { const a = document.activeElement, cs = getComputedStyle(a);
+    return { cls: String(a.className), id: a.id, offset: cs.outlineOffset, shadow: cs.boxShadow,
+             outline: [cs.outlineWidth, cs.outlineStyle, cs.outlineColor].join(' '),
+             keyboard: a.matches(':focus-visible') }; }"""
+
+
+def test_a_controls_own_ring_wins_over_the_keyboards(
+    browser, company, books, divisions
+):
+    """The generic ring's selector, [tabindex]:not([tabindex="-1"]):focus-
+    visible, is (0,3,0) and beat the search results' and the grid's own
+    rings, (0,2,0): a result drew the gold at +2px, cut by the list to its
+    top line, and the grid the gold in light and blue in dark. Inside
+    :where() it counts for nothing, and each draws its own, as before the
+    gold came: the blue ring inside a search result, the navy (light) or
+    blue (dark) ring on the grid's edge (inside it, the frozen header and
+    Account column painted over half of it), with no halo."""
+    page, handled = _open(browser, company)
+    try:
+        _no_splash(page)
+        page.click("#global-search")
+        page.keyboard.type("Harbor")
+        page.wait_for_selector("#search-results:not(.hidden) .search-item[tabindex]")
+        settle(page, handled)
+        page.keyboard.press("ArrowDown")
+        for theme in ("light", "dark"):
+            _theme(page, theme)
+            page.evaluate(SETTLED)
+            item = page.evaluate(OWN_RING)
+            assert "search-item" in item["cls"] and item["keyboard"], item
+            assert item["outline"] == f"2px solid {OWN['search'][theme]}", (theme, item)
+            assert item["offset"] == "-2px" and item["shadow"] == "none", (theme, item)
+            # its own ring, painted on all four sides (not cut to a line), and
+            # clear of what meets it: 3.5:1 in dark, where the theme's blue
+            # was 3.0 against the border below a result
+            _ring_clears(
+                page,
+                ("search result", theme),
+                OWN["search"][theme],
+                need={"light": 3.0, "dark": 3.5}[theme],
+            )
+        _theme(page, "light")
+        page.keyboard.press("Escape")
+        _visit(page, handled, BY_CLASS_URL)
+        page.wait_for_selector("#grid-scroll")
+        settle(page, handled)
+        page.evaluate(FIRST)
+        _tab_until(page, "() => document.activeElement.id === 'grid-scroll'", cap=60)
+        for theme in ("light", "dark"):
+            _theme(page, theme)
+            page.evaluate(SETTLED)
+            grid = page.evaluate(OWN_RING)
+            assert grid["id"] == "grid-scroll" and grid["keyboard"], grid
+            assert grid["outline"] == f"2px solid {OWN['grid'][theme]}", (theme, grid)
+            assert grid["offset"] == "0px" and grid["shadow"] == "none", (theme, grid)
+    finally:
+        page.close()
+
+
+def test_a_checkbox_draws_the_ring_by_keyboard_and_none_by_mouse(
+    browser, company, books, divisions
+):
+    """`.form-group input:focus { outline: none }` took the outline off a
+    checkbox as off a text box, and a checkbox shows neither the field's
+    border nor its ground: on the P&L by Class chooser's classes and "Show
+    classes with no activity" the keyboard's place could not be seen. A
+    checkbox draws the ring and its halo by keyboard, 3:1 as painted on all
+    four sides in both themes, and none on a mouse click."""
+    page, handled = _open_at(browser, company, BY_CLASS_URL)
+    try:
+        page.wait_for_selector("#grid-scroll")
+        settle(page, handled)
+        page.evaluate(FIRST)
+        _tab_until(page, "() => document.activeElement.id === 'grid-empty'", cap=60)
+        assert page.evaluate("() => !!document.activeElement.closest('.form-group')")
+        _both_themes(page, "Show classes with no activity", GOLD)
+        on = page.evaluate(OWN_RING)
+        assert on["outline"] == f"2px solid {GOLD['light']}" and on["offset"] == "2px"
+        assert on["shadow"] == f"{HALO['light']} 0px 0px 0px 8px", on
+        # the chooser: Enter on its button puts focus on its first class
+        _tab_until(page, "() => document.activeElement.id === 'grid-choose-btn'")
+        page.keyboard.press("Enter")
+        page.wait_for_function(
+            "() => document.activeElement.matches('#grid-chooser input[type=checkbox]')"
+        )
+        _both_themes(page, "the chooser's first class", GOLD)
+        page.keyboard.press("Tab")
+        assert page.evaluate(
+            "() => document.activeElement.matches('#grid-chooser input[type=checkbox]')"
+        )
+        _both_themes(page, "the chooser's second class", GOLD)
+        # by mouse: focus, and no ring
+        page.click("#grid-chooser input[type=checkbox] >> nth=2")
+        page.evaluate(SETTLED)
+        clicked = page.evaluate(OWN_RING)
+        assert not clicked["keyboard"] and "none" in clicked["outline"], clicked
+        assert clicked["shadow"] != f"{HALO['light']} 0px 0px 0px 8px", clicked
+    finally:
+        page.close()
+
+
+# The last row's last button of the page's table, and its container's overflow
+LAST_ROW_BUTTON = """() => [...document.querySelectorAll(
+    '#page-content .table-container tbody tr:last-child button')].pop()"""
+CONTAINER_OVERFLOW = """() => getComputedStyle(document.querySelector(
+    '#page-content .table-container')).overflow"""
+
+
+def test_a_tables_last_row_draws_its_whole_halo(browser, company, books):
+    """.table-container clips what overflows it, which cut the keyboard's
+    halo below the last row's buttons: the gate's ground there was the
+    container's edge and the page, 2.2:1 (review). The container has room
+    for it inside, below its table, and clips up and down as it always did
+    (sideways it scrolls a table wider than itself): the last row's Void
+    draws its ring and halo whole, 3:1 as painted on all four sides, in
+    both themes — at 1280, 1024, 900 and 390px wide, where at 390 the
+    container is scrolled to it."""
+    page, handled = _open(browser, company)
+    try:
+        _no_splash(page)
+        for width in (1280, 1024, 900, 390):
+            page.set_viewport_size({"width": width, "height": 800})
+            _visit(page, handled, "#/journal")
+            page.evaluate(f"() => ({LAST_ROW_BUTTON})().focus()")
+            page.keyboard.press("Shift+Tab")
+            page.keyboard.press("Tab")
+            last = page.evaluate("""() => [document.activeElement.textContent.trim(),
+                    document.activeElement === (""" + LAST_ROW_BUTTON + """)()]""")
+            assert last[1], (width, last)
+            assert page.evaluate(CONTAINER_OVERFLOW) == "auto hidden"
+            inside = page.evaluate(
+                """() => { const a = document.activeElement.getBoundingClientRect(),
+                    c = document.activeElement.closest('.table-container').getBoundingClientRect();
+                    return a.left >= c.left && a.right <= c.right && a.bottom <= c.bottom; }"""
+            )
+            assert inside, width  # shown, not clipped, even at 390
+            if width == 1280:
+                _both_themes(page, ("the last row's " + last[0], width), GOLD)
+            else:
+                _theme(page, "light")
+                page.evaluate(SETTLED)
+                _ring_clears(page, ("the last row's " + last[0], width), GOLD["light"])
+    finally:
+        page.close()
+
+
+# Where the content and the first plain table container stand
+SPILL = """() => { const c = [...document.querySelectorAll('#page-content .table-container')]
+        .find(c => c.offsetParent && !c.classList.contains('table-container--scroll')),
+        content = document.getElementById('content'), r = c.getBoundingClientRect();
+    return { content: [content.scrollWidth, content.clientWidth], box: [Math.round(r.left), Math.round(r.right)],
+             overflow: getComputedStyle(c).overflow }; }"""
+FIRST_IN_TABLE = """() => [...document.querySelectorAll('#page-content .table-container')]
+    .find(c => c.offsetParent && !c.classList.contains('table-container--scroll'))
+    .querySelector('tbody button, tbody a[href]')"""
+
+
+def test_focus_in_a_wide_table_spills_nothing(browser, company, books):
+    """Letting a table's overflow out while focus was inside it spilled a
+    wide table past its container (Jobs, Settings, Fixed Assets at 1024; at
+    900, the desktop window's least; at 390), by a mouse's focus too. The
+    container keeps its box (sideways it scrolls a table wider than
+    itself): at 1280, 1024, 900 and 390px wide, a control in the table
+    focused by the mouse or by the keyboard leaves the page's width and the
+    container's box as they were."""
+    page, handled = _open(browser, company)
+    try:
+        _no_splash(page)
+        for width in (1280, 1024, 900, 390):
+            page.set_viewport_size({"width": width, "height": 800})
+            for route in ("#/jobs", "#/settings", "#/fixed-assets"):
+                _visit(page, handled, route)
+                rest = page.evaluate(SPILL)
+                assert rest["overflow"] == "auto hidden", (width, route, rest)
+                # a mouse's focus: the button pressed, not released
+                box = page.evaluate(
+                    f"""() => {{ const r = ({FIRST_IN_TABLE})().getBoundingClientRect();
+                        return {{ x: r.left + Math.min(r.width / 2, 4), y: r.top + r.height / 2 }}; }}"""
+                )
+                page.mouse.move(box["x"], box["y"])
+                page.mouse.down()
+                pressed = page.evaluate(SPILL)
+                page.mouse.up()
+                page.keyboard.press("Escape")
+                # the keyboard's focus
+                page.evaluate(f"() => ({FIRST_IN_TABLE})().focus()")
+                keyed = page.evaluate(SPILL)
+                for what, now in (("mouse", pressed), ("keyboard", keyed)):
+                    assert now["content"] == rest["content"], (
+                        width,
+                        route,
+                        what,
+                        rest,
+                        now,
+                    )
+                    assert now["box"] == rest["box"], (width, route, what, rest, now)
+                    assert now["overflow"] == "auto hidden", (width, route, what, now)
+                page.evaluate("() => document.activeElement.blur()")
+    finally:
+        page.set_viewport_size({"width": 1500, "height": 980})
+        page.close()
+
+
+# The focused stop in the grid: whether the browser finds it at its left,
+# middle and right (not the frozen Account column or header row painted
+# over it), and how far inside what the grid shows its ring and halo (8px
+# out) end on each side: right of the Account column, below the header row
+# (a heading: below the grid's top), inside the grid's edges
+GRID_STOP = """() => { const a = document.activeElement, g = document.getElementById('grid-scroll');
+    if (!g || a === g || !g.contains(a)) return null;
+    const r = a.getBoundingClientRect(), port = g.getBoundingClientRect(),
+        frozen = g.querySelector('thead th:first-child').getBoundingClientRect().right,
+        head = a.closest('thead') ? port.top + g.clientTop : g.querySelector('thead').getBoundingClientRect().bottom,
+        y = r.top + r.height / 2, cell = a.closest('td, th');
+    return { at: `${cell.parentElement.rowIndex}:${cell.cellIndex} ${a.textContent.trim()}`,
+             scroll: [Math.round(g.scrollLeft), Math.round(g.scrollTop)],
+             found: [r.left + 1, r.left + r.width / 2, r.right - 1].map(x => {
+                 const h = document.elementFromPoint(x, y); return !!h && (h === a || a.contains(h)); }),
+             left: r.left - 8 - frozen, top: r.top - 8 - head,
+             right: port.left + g.clientLeft + g.clientWidth - (r.right + 8),
+             bottom: port.top + g.clientTop + g.clientHeight - (r.bottom + 8) }; }"""
+GRID_FIT = """() => { const g = document.getElementById('grid-scroll'), cs = getComputedStyle(g);
+    return { padding: [cs.scrollPaddingTop, cs.scrollPaddingLeft],
+             frozen: [g.querySelector('thead').offsetHeight + 'px',
+                      g.querySelector('thead th:first-child').offsetWidth + 'px'],
+             scrolls: [g.scrollWidth > g.clientWidth, g.scrollHeight > g.clientHeight] }; }"""
+LAST_IN_GRID = (
+    "() => [...document.querySelectorAll('#grid-scroll a[href]')].pop().focus()"
+)
+
+
+def _grid_walk(page, start, key, paint_all):
+    """Every stop of the grid from `start`, by `key`, until focus leaves
+    it, and what is wrong at each: not found where it is, its ring and halo
+    not inside what the grid shows, or (read from the pixels, at every stop
+    with `paint_all`, else where it is within 4px of an edge) its ring not
+    painted on all four sides."""
+    page.evaluate(start)
+    stops, bad = [], []
+    for _ in range(400):
+        page.keyboard.press(key)
+        page.evaluate(SETTLED)
+        at = page.evaluate(GRID_STOP)
+        if at is None:
+            break
+        stops.append(at["at"])
+        reach = {s: round(at[s], 1) for s in ("left", "top", "right", "bottom")}
+        if not all(at["found"]) or min(reach.values()) < -0.5:
+            bad.append((at["at"], at["scroll"], at["found"], reach))
+        elif paint_all or min(reach.values()) < 4:
+            sides = _painted(page)
+            cut = [s for s in SIDES if not sides[s] or sides[s]["px"] < 2]
+            if cut:
+                bad.append((at["at"], at["scroll"], "ring not painted", cut))
+    return stops, bad
+
+
+def test_tab_brings_every_grid_stop_out_from_under_the_frozen_parts(
+    browser, company, books, divisions
+):
+    """The P&L by Class grid scrolls under its frozen header row and
+    Account column, and a cell Tab moved to was scrolled only into the
+    grid: 13 of 85 stops forward sat under the Account column, and the
+    Roofing heading's ring was cut at the grid's right edge, Chromium
+    taking a link a pixel past it for one in view (review). The grid's
+    scroll padding is the header row's height and the column's width
+    (measured, and again when the window changes), a keyboard stop is
+    brought in whole with its scroll-margin, and the headings and the last
+    row have the ring and halo's room inside the grid's edges. Walked by
+    Tab and by Shift+Tab at 1440 x 900, at 1024 x 360 (where the grid
+    scrolls both ways) and at 390 x 800 (a phone's narrower Account
+    column): every stop is what the browser finds at its left, middle and
+    right, its ring and halo end inside what the grid shows on every side,
+    and its ring is painted on all four (every stop at 1440; elsewhere
+    those within 4px of an edge). A mouse's press on a heading the grid's
+    edge cuts scrolls nothing: the link stays under the pointer."""
+    page, handled = _open_at(browser, company, BY_CLASS_URL)
+    try:
+        page.wait_for_selector("#report-content .pivot-grid")
+        for width, height in ((1440, 900), (1024, 360), (390, 800)):
+            page.set_viewport_size({"width": width, "height": height})
+            page.wait_for_timeout(100)
+            fit = page.evaluate(GRID_FIT)
+            assert fit["padding"] == fit["frozen"], (width, fit)
+            assert fit["scrolls"] == [True, height == 360], (width, fit)
+            forward, bad = _grid_walk(
+                page,
+                "() => document.getElementById('grid-scroll').focus()",
+                "Tab",
+                paint_all=width == 1440,
+            )
+            assert len(forward) > 80 and not bad, (width, len(forward), bad)
+            back, bad = _grid_walk(
+                page, LAST_IN_GRID, "Shift+Tab", paint_all=width == 1440
+            )
+            # from the last link back: every stop but the last
+            assert back == forward[-2::-1] and not bad, (width, len(back), bad)
+        # a mouse's focus stays where the pointer pressed: the grid at its
+        # left, a heading cut by its right edge pressed, nothing scrolls
+        page.set_viewport_size({"width": 1440, "height": 900})
+        page.wait_for_timeout(100)
+        cut = page.evaluate(
+            """() => { const g = document.getElementById('grid-scroll');
+                g.scrollLeft = 0; g.scrollTop = 0; document.activeElement.blur();
+                const edge = g.getBoundingClientRect().left + g.clientLeft + g.clientWidth;
+                const a = [...g.querySelectorAll('thead a')].find(a => {
+                    const r = a.getBoundingClientRect(); return r.left < edge - 20 && r.right + 8 > edge; });
+                const r = a.getBoundingClientRect();
+                return { name: a.textContent.trim(), x: r.left + 10, y: r.top + r.height / 2 }; }"""
+        )
+        page.mouse.move(cut["x"], cut["y"])
+        page.mouse.down()
+        pressed = page.evaluate("""() => [document.activeElement.textContent.trim(),
+                document.activeElement.matches(':focus-visible'),
+                document.getElementById('grid-scroll').scrollLeft]""")
+        page.mouse.move(cut["x"], cut["y"] + 200)
+        page.mouse.up()
+        assert pressed == [cut["name"], False, 0], (cut, pressed)
+    finally:
+        page.close()
+
+
+def _keyed(page, element):
+    """Focus on `element` (a script expression) as the keyboard puts it
+    there: placed, then Shift+Tab and Tab back."""
+    page.evaluate(f"() => ({element}).focus()")
+    page.keyboard.press("Shift+Tab")
+    page.keyboard.press("Tab")
+    assert page.evaluate(f"() => document.activeElement === ({element})"), element
+
+
+GL_URL = "#/reports/general-ledger?start_date=2025-01-01&end_date=2026-12-31"
+GL_NAMES = "[...document.querySelectorAll('#report-content h3 a')]"
+LOOKUPS = """[...document.querySelectorAll('#modal-body a')]
+    .filter(a => /^Open .+ lookup$/.test(a.textContent.trim()))"""
+
+
+def test_a_link_in_running_text_has_the_halo_where_the_gate_reads_its_ground(
+    browser, company, books
+):
+    """A link in running text kept 2px of halo past its ring, and the
+    macOS gate's ground, 1 to 5px past the ring, was the line or the table
+    header beyond it: the General Ledger's account names (2.24:1, 1.02 in
+    dark), Banking's bridge.simplefin.org (2.94), Settings'
+    developer.intuit.com (1.44), a customer's permit lookup links (1.36)
+    (review). Every control's halo reaches 4px past the ring now, a
+    button's as before: at each of those links, the keyboard's focus on
+    it, the ring is painted on all four sides in each theme, 3:1 against
+    the halo on both its sides and against the gate's ground."""
+    page, handled = _open_at(browser, company, GL_URL)
+    try:
+        page.wait_for_selector("#report-content h3 a")
+        settle(page, handled)
+        names = page.evaluate(f"() => {GL_NAMES}.map(a => a.textContent.trim())")
+        assert len(names) > 3, names
+        for i, name in enumerate(names):
+            _keyed(page, f"{GL_NAMES}[{i}]")
+            _both_themes(page, ("General Ledger account", name), GOLD)
+    finally:
+        page.close()
+    page, handled = _open(browser, company)
+    try:
+        _no_splash(page)
+        for route, link in (
+            ("#/banking", 'a[href="https://bridge.simplefin.org"]'),
+            ("#/settings", 'a[href="https://developer.intuit.com"]'),
+        ):
+            _visit(page, handled, route)
+            _keyed(page, f"document.querySelector('#page-content {link}')")
+            _both_themes(page, (route, link), GOLD)
+    finally:
+        page.close()
+    page, handled = _open_at(browser, company, f"#/customers/{books['customer']}")
+    try:
+        page.wait_for_function(MODAL_SHOWN)
+        page.wait_for_function(f"() => {LOOKUPS}.length > 0")
+        settle(page, handled)
+        lookups = page.evaluate(f"() => {LOOKUPS}.length")
+        for i in range(lookups):
+            _keyed(page, f"{LOOKUPS}[{i}]")
+            _both_themes(page, ("the permit lookup", i), GOLD)
+    finally:
+        page.close()
+
+
+# A field's own focus style, each theme's (style.css / dark.css .form-group
+# and .field): the blue border, the pale ground, no outline
+FIELD_FOCUS = {
+    "light": {"border": "rgb(51, 102, 204)", "ground": "rgb(255, 255, 248)"},
+    "dark": {"border": "rgb(91, 155, 213)", "ground": "rgb(26, 30, 40)"},
+}
+FIELD_LOOK = """() => { const a = document.activeElement, cs = getComputedStyle(a), r = a.getBoundingClientRect();
+    return { id: a.id, outline: cs.outlineStyle, border: cs.borderTopColor, ground: cs.backgroundColor,
+             x: r.left, y: r.top, w: r.width, h: r.height }; }"""
+
+
+def _field_focus_painted(page, what, theme):
+    """The focused field in its own focus style, as computed and as
+    painted: its border the theme's focus blue on every side, at the middle
+    of the side, and nothing drawn just outside it — the 1st to 3rd pixel
+    out are what they are with the field at rest: no ring of the browser's
+    or the keyboard's."""
+    import io
+    import math
+
+    from PIL import Image
+
+    look = page.evaluate(FIELD_LOOK)
+    want = FIELD_FOCUS[theme]
+    assert look["outline"] == "none", (what, theme, look)
+    assert look["border"] == want["border"], (what, theme, look)
+    assert look["ground"] == want["ground"], (what, theme, look)
+    x0, y0 = math.floor(look["x"]) - 8, math.floor(look["y"]) - 8
+    x1 = math.ceil(look["x"] + look["w"]) + 8
+    y1 = math.ceil(look["y"] + look["h"]) + 8
+    clip = {"x": x0, "y": y0, "width": x1 - x0, "height": y1 - y0}
+
+    def grab():
+        return Image.open(io.BytesIO(page.screenshot(clip=clip))).convert("RGB")
+
+    img = grab()
+    # the same pixels with the field at rest, then focus back on it
+    page.evaluate(
+        "() => { window.__field = document.activeElement; window.__field.blur(); }"
+    )
+    page.evaluate(SETTLED)
+    rest = grab()
+    page.evaluate("() => window.__field.focus({ preventScroll: true })")
+    page.evaluate(SETTLED)
+    left, top = round(look["x"]) - x0, round(look["y"]) - y0
+    right = round(look["x"] + look["w"]) - x0 - 1
+    bottom = round(look["y"] + look["h"]) - y0 - 1
+    mx, my = (left + right) // 2, (top + bottom) // 2
+    blue = [int(v) for v in re.findall(r"\d+", want["border"])]
+    for side, at in (
+        ("top", lambda d: (mx, top - d)),
+        ("bottom", lambda d: (mx, bottom + d)),
+        ("left", lambda d: (left - d, my)),
+        ("right", lambda d: (right + d, my)),
+    ):
+        edge = img.getpixel(at(0))
+        assert _far(edge, blue) <= 40, (what, theme, side, edge)
+        out = [img.getpixel(at(d)) for d in (1, 2, 3)]
+        was = [rest.getpixel(at(d)) for d in (1, 2, 3)]
+        assert all(_far(o, w) <= 12 for o, w in zip(out, was)), (
+            what,
+            theme,
+            side,
+            out,
+            was,
+        )
+
+
+def test_a_field_outside_a_form_group_keeps_a_fields_own_focus_style(
+    browser, company, books
+):
+    """A customer's and a vendor's Notes box and a report's From and To are
+    not in a form group, and drew the browser's own ring on focus, where
+    every other field shows its own style (review). They take a field's
+    look and its focus style (every field's now): by the keyboard and by a
+    click, in each theme, the blue border on every side, the pale ground
+    and no ring around them, as computed and as painted."""
+    pl = f"#/reports/profit-loss?start_date={SEPT[0]}&end_date={SEPT[1]}"
+    for where, fields in (
+        (f"#/customers/{books['customer']}", [f"#cust-notes-{books['customer']}"]),
+        (f"#/vendors/{books['vendor']}", [f"#vend-notes-{books['vendor']}"]),
+        (pl, ["#report-custom-start", "#report-custom-end"]),
+    ):
+        page, handled = _open_at(browser, company, where)
+        try:
+            page.wait_for_function(MODAL_SHOWN)
+            for sel in fields:
+                page.wait_for_selector(sel)
+            settle(page, handled)
+            for sel in fields:
+                for theme in ("light", "dark"):
+                    _theme(page, theme)
+                    # by the keyboard: from the control before it
+                    page.focus(sel)
+                    page.keyboard.press("Shift+Tab")
+                    page.keyboard.press("Tab")
+                    assert page.evaluate("() => '#' + document.activeElement.id") == sel
+                    page.evaluate(SETTLED)
+                    _field_focus_painted(page, (sel, "keyboard"), theme)
+                    page.evaluate("() => document.activeElement.blur()")
+                    # by a click
+                    page.click(sel, position={"x": 4, "y": 4})
+                    assert page.evaluate("() => '#' + document.activeElement.id") == sel
+                    page.evaluate(SETTLED)
+                    _field_focus_painted(page, (sel, "click"), theme)
+                    page.evaluate("() => document.activeElement.blur()")
+                _theme(page, "light")
+        finally:
+            page.close()
+
+
+# The focused control on Settings against the save bar held to the window's
+# bottom: its ring and halo (8px) end above the bar, and it is what the
+# browser finds at its middle; the bar's own controls apart
+SAVEBAR_STOP = """() => { const a = document.activeElement, bar = document.getElementById('settings-savebar');
+    if (!a || !a.closest('#page-content')) return null;
+    const r = a.getBoundingClientRect(), b = bar.getBoundingClientRect();
+    const h = document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2);
+    return { at: a.id || a.name || (a.textContent || '').trim().slice(0, 30) || a.tagName,
+             own: bar.contains(a), size: r.width * r.height,
+             over: r.bottom + 8 - b.top, found: !!h && (h === a || a.contains(h)) }; }"""
+
+
+def test_tab_through_settings_never_lands_under_its_save_bar(browser, company, books):
+    """Settings' save bar is held to the window's bottom over what scrolls
+    under it, and Tab moved to 22 controls there, out of sight (review).
+    A control the keyboard puts under it is scrolled up clear of it: walked
+    by Tab from the page's first control to its last, at 1440 x 900, 1280 x
+    600 and 1024 x 640, no stop's ring and halo reach the bar (the invoice
+    notes box too, which the browser brings only its caret line into view
+    for) and every stop is what the browser finds at its middle; Tab still
+    reaches the bar's Save; and a mouse's press on a control the bar half
+    covers scrolls nothing — a button, and at 1440 x 900 a click into the
+    invoice notes box (a text box takes :focus-visible on a click too, and
+    the page moved under the click: final review), which Tab then still
+    brings clear."""
+    page, handled = _open(browser, company)
+    try:
+        _no_splash(page)
+        for width, height in ((1440, 900), (1280, 600), (1024, 640)):
+            page.set_viewport_size({"width": width, "height": height})
+            _visit(page, handled, "#/settings")
+            page.wait_for_selector("#settings-savebar")
+            settle(page, handled)
+            page.evaluate(
+                "() => _tabStops(document.getElementById('page-content'), null)[0].focus()"
+            )
+            stops, bad, saved = 0, [], False
+            for _ in range(400):
+                page.keyboard.press("Tab")
+                at = page.evaluate(SAVEBAR_STOP)
+                if at is None:
+                    break
+                stops += 1
+                if at["own"]:
+                    saved = saved or at["at"] == "settings-save-btn"
+                    continue
+                if at["size"] and (at["over"] > 0.5 or not at["found"]):
+                    bad.append((at["at"], round(at["over"], 1), at["found"]))
+            assert stops > 100 and saved, (width, stops, saved)
+            assert not bad, (width, len(bad), bad)
+        # a mouse's press on a button the bar half covers: no scroll, so
+        # the release lands on the button pressed
+        half = page.evaluate(
+            """() => { const bar = document.getElementById('settings-savebar'),
+                    content = document.getElementById('content');
+                const b = [...document.querySelectorAll('#settings-form button')]
+                    .find(el => !bar.contains(el) && !el.disabled && el.offsetHeight > 14);
+                content.scrollTop += b.getBoundingClientRect().top - (bar.getBoundingClientRect().top - 8);
+                const r = b.getBoundingClientRect();
+                b.dataset.half = '1';
+                return { x: r.left + r.width / 2, y: r.top + 4, top: content.scrollTop,
+                         covered: r.bottom > bar.getBoundingClientRect().top }; }"""
+        )
+        assert half["covered"], half
+        page.mouse.move(half["x"], half["y"])
+        page.mouse.down()
+        pressed = page.evaluate("""() => [document.activeElement.dataset.half === '1',
+                document.activeElement.matches(':focus-visible'),
+                document.getElementById('content').scrollTop]""")
+        page.mouse.move(half["x"], half["y"] - 300)
+        page.mouse.up()
+        assert pressed == [True, False, half["top"]], (half, pressed)
+        # a click into a text box the bar half covers: a text box takes
+        # :focus-visible on a click too, and the page moved under it
+        # (review); now nothing moves, and Tab to it still brings it clear
+        page.set_viewport_size({"width": 1440, "height": 900})
+        _visit(page, handled, "#/settings")
+        page.wait_for_selector("#settings-savebar")
+        settle(page, handled)
+        box = page.evaluate(
+            """() => { const bar = document.getElementById('settings-savebar'),
+                    content = document.getElementById('content'),
+                    t = document.querySelector('#settings-form [name="invoice_notes"]');
+                content.scrollTop += t.getBoundingClientRect().top - (bar.getBoundingClientRect().top - 12);
+                const r = t.getBoundingClientRect();
+                return { x: r.left + 20, y: r.top + 5, top: content.scrollTop,
+                         covered: r.bottom > bar.getBoundingClientRect().top }; }"""
+        )
+        assert box["covered"], box
+        page.mouse.click(box["x"], box["y"])
+        clicked = page.evaluate(
+            """() => [document.activeElement.name, document.getElementById('content').scrollTop]"""
+        )
+        assert clicked == ["invoice_notes", box["top"]], (box, clicked)
+        page.keyboard.press("Shift+Tab")
+        page.keyboard.press("Tab")
+        keyed = page.evaluate(SAVEBAR_STOP)
+        assert page.evaluate("() => document.activeElement.name") == "invoice_notes"
+        assert keyed["over"] <= 0.5 and keyed["found"], keyed
+    finally:
+        page.set_viewport_size({"width": 1500, "height": 980})
+        page.close()
+
+
+def test_the_skip_link_draws_the_ring_and_enter_goes_to_the_content_in_place(
+    browser, company, books
+):
+    """The skip link, Tab's first stop, kept the brand's pale gold (1.95:1
+    on the toolbar) at the window's very corner, where its top and left
+    lines fell off; and Enter on it set the address to #page-content, which
+    the router showed as "Page not found". It draws the ring and halo on
+    all four sides, in the toolbar's gold, which clears the toolbar it
+    lands on as well as its halo (the theme's #a37a29, which it had in
+    light, is 2.51:1 against the bar's darker stop: re-review); and Enter
+    puts focus on the page's content, which takes it as a place (no ring),
+    with the address and history as they were; the next Tab is the
+    content's first control."""
+    page, handled = _open_at(browser, company, "#/customers")
+    try:
+        page.keyboard.press("Tab")
+        skip = page.evaluate(OWN_RING)
+        assert "skip-link" in skip["cls"] and skip["keyboard"], skip
+        _both_themes(page, "skip link", TOOLBAR_GOLD, bar=True)
+        here, length = page.evaluate("location.hash"), page.evaluate("history.length")
+        words = page.inner_text("#page-content")
+        page.keyboard.press("Enter")
+        page.wait_for_function("() => document.activeElement.id === 'page-content'")
+        settle(page, handled)
+        assert page.evaluate("location.hash") == here == "#/customers"
+        assert page.evaluate("history.length") == length
+        assert "Page not found" not in page.inner_text("#page-content")
+        assert page.inner_text("#page-content") == words
+        place = page.evaluate(OWN_RING)
+        assert "none" in place["outline"] and place["shadow"] == "none", place
+        assert page.get_attribute("#page-content", "tabindex") == "-1"
+        page.keyboard.press("Tab")
+        assert page.evaluate(
+            "() => document.activeElement !== document.getElementById('page-content')"
+            " && !!document.activeElement.closest('#page-content')"
+        )
+        # a place only while the skip link puts focus there
+        assert page.get_attribute("#page-content", "tabindex") is None
+    finally:
+        page.close()
+
+
+# A row of the chart, by its index: its cells and where the content is
+CHART_ROW = """(i) => { const row = document.querySelectorAll('#page-content tbody tr[data-account-row]')[i];
+    const td = row.children[2], r = td.getBoundingClientRect();
+    return { x: r.left + r.width / 2, y: r.top + r.height / 2,
+             scroll: document.getElementById('content').scrollTop }; }"""
+
+
+def test_a_click_on_blank_content_then_tab_goes_on_from_there(browser, company, books):
+    """With a standing tabindex on #page-content, a mouse click on any blank
+    part of a page focused the content, so the next Tab went to the page's
+    first control and scrolled back to the top (2.22.0 review). The content
+    is a place only while the skip link puts focus there: a click on a row's
+    plain cell, then Tab, goes to the next control after that point, with
+    the page where it was, as before the skip link's change."""
+    page, handled = _open_at(browser, company, "#/accounts")
+    try:
+        page.wait_for_selector("#page-content tbody tr[data-account-row]")
+        settle(page, handled)
+        rows = page.evaluate(
+            "() => document.querySelectorAll('#page-content tbody tr[data-account-row]').length"
+        )
+        i = rows * 2 // 3
+        page.evaluate(
+            """(i) => document.querySelectorAll('#page-content tbody tr[data-account-row]')[i]
+                .scrollIntoView({ block: 'center' })""",
+            i,
+        )
+        settle(page, handled)
+        at = page.evaluate(CHART_ROW, i)
+        assert at["scroll"] > 100, at  # mid-page
+        page.mouse.click(at["x"], at["y"])
+        assert page.evaluate("() => document.activeElement === document.body")
+        page.keyboard.press("Tab")
+        settle(page, handled)
+        landed = page.evaluate(
+            """(i) => { const row = document.querySelectorAll('#page-content tbody tr[data-account-row]')[i];
+                const a = document.activeElement;
+                return { inRow: row.contains(a), tag: a.tagName, text: a.textContent.trim(),
+                         scroll: document.getElementById('content').scrollTop }; }""",
+            i,
+        )
+        assert landed["inRow"] and landed["tag"] == "BUTTON", landed
+        assert abs(landed["scroll"] - at["scroll"]) < 2, (at, landed)
+    finally:
+        page.close()
+
+
+# The saves of a page's Notes box, held until let go: what the page asks
+# for and when, without a race against the server.
+HOLD_PUTS = """() => { window.__puts = []; const put = API.put.bind(API);
+    API.put = (path, body) => new Promise((ok, no) => window.__puts.push(
+        { path, body, go: () => put(path, body).then(ok, no) })); }"""
+PUTS = "() => window.__puts.map(p => p.body.notes)"
+LET_GO = "() => { const p = window.__puts.find(x => !x.sent); p.sent = true; p.go(); }"
+
+
+@pytest.mark.parametrize(
+    ("kind", "box"), [("customers", "cust-notes"), ("vendors", "vend-notes")]
+)
+def test_the_notes_box_saves_a_change_once_trimmed_and_in_order(
+    browser, company, books, kind, box
+):
+    """Leaving the box again before its save came back sent a second one
+    (it compared with what the box was loaded with until the first was
+    back), and a space alone counted as a change (review of NEW-44). Now
+    what is on file is the save on its way, words are compared trimmed — a
+    space at the end is no change, a note of spaces is no note, and is
+    saved empty — and a note is saved as typed; a change made while a save
+    is on its way goes after it."""
+    rid = books["customer" if kind == "customers" else "vendor"]
+    api = f"/api/{kind}/{rid}"
+    sel = f"#{box}-{rid}"
+    status = f"#{box.replace('notes', 'note-status')}-{rid}"
+    assert company.get(api).json()["notes"] is None
+    page, handled = _open_at(browser, company, f"#/{kind}/{rid}")
+    sent = []
+    page.on(
+        "request",
+        lambda r: sent.append(r.post_data_json["notes"]) if r.method == "PUT" else None,
+    )
+
+    def leave(words=None):
+        page.focus(sel)
+        if words is not None:
+            page.fill(sel, words)
+        page.keyboard.press("Tab")
+        page.wait_for_timeout(30)
+
+    def saved(n):
+        page.evaluate(LET_GO)
+        page.wait_for_function(
+            "(n) => window.__puts.filter(p => p.sent).length === n", arg=n
+        )
+        page.wait_for_function(
+            "(s) => document.querySelector(s).textContent === '✓ saved'", arg=status
+        )
+        settle(page, handled)
+
+    try:
+        page.wait_for_function(MODAL_SHOWN)
+        page.wait_for_selector(sel)
+        settle(page, handled)
+        page.evaluate(HOLD_PUTS)
+        # spaces where there was no note: no note, nothing to save
+        leave("   ")
+        assert page.evaluate(PUTS) == [] and company.get(api).json()["notes"] is None
+        # a note; left again before its save is back: once
+        leave("Prefers email.")
+        leave()
+        leave()
+        assert page.evaluate(PUTS) == ["Prefers email."]
+        saved(1)
+        assert sent == ["Prefers email."]
+        assert company.get(api).json()["notes"] == "Prefers email."
+        # a space added at the end alone: no change
+        leave("Prefers email. ")
+        assert page.evaluate(PUTS) == ["Prefers email."]
+        # a real change with spaces at its end: saved as typed
+        leave("Prefers email; calls on Fridays.  ")
+        assert page.evaluate(PUTS)[-1] == "Prefers email; calls on Fridays.  "
+        saved(2)
+        assert company.get(api).json()["notes"] == "Prefers email; calls on Fridays.  "
+        # a change while one is on its way goes after it, not beside it
+        leave("First.")
+        leave("Second.")
+        assert page.evaluate(PUTS)[2:] == ["First."]  # the second waits
+        saved(3)
+        page.wait_for_function("() => window.__puts.length === 4")
+        assert page.evaluate(PUTS)[2:] == ["First.", "Second."]
+        saved(4)
+        assert sent[2:] == ["First.", "Second."]
+        assert company.get(api).json()["notes"] == "Second."
+        # a note of spaces in place of a note: cleared, saved empty, once
+        leave("    ")
+        assert page.evaluate(PUTS)[-1] == ""
+        saved(5)
+        assert (company.get(api).json()["notes"] or "") == ""
+        leave("  ")
+        leave()
+        assert len(page.evaluate(PUTS)) == 5 and len(sent) == 5
+    finally:
+        page.close()
+
+
+@pytest.mark.parametrize(
+    ("kind", "box"), [("customers", "cust-notes"), ("vendors", "vend-notes")]
+)
+def test_a_failed_save_says_so_after_a_saved_one(browser, company, books, kind, box):
+    """A "✓ saved" was cleared 1.5s later whatever the box said by then,
+    so a "⚠ save failed" shown within those 1.5s was wiped too, and the
+    failure went unsaid (review). A save that fails just after one that
+    went through says so, and still does once the 1.5s are long past; a
+    "✓ saved" alone clears as before."""
+    rid = books["customer" if kind == "customers" else "vendor"]
+    api = f"/api/{kind}/{rid}"
+    sel = f"#{box}-{rid}"
+    status = f"#{box.replace('notes', 'note-status')}-{rid}"
+    page, handled = _open_at(browser, company, f"#/{kind}/{rid}")
+
+    def leave(words):
+        page.focus(sel)
+        page.fill(sel, words)
+        page.keyboard.press("Tab")
+
+    def says():
+        return page.evaluate("(s) => document.querySelector(s).textContent", status)
+
+    try:
+        page.wait_for_function(MODAL_SHOWN)
+        page.wait_for_selector(sel)
+        settle(page, handled)
+        leave("Ships on Tuesdays.")
+        page.wait_for_function(
+            "(s) => document.querySelector(s).textContent === '✓ saved'", arg=status
+        )
+        # the next save fails, within the first one's 1.5s
+        page.evaluate(
+            """() => { window.__put = API.put;
+                API.put = () => Promise.reject(new Error('The server did not answer')); }"""
+        )
+        leave("Ships on Tuesdays and Fridays.")
+        page.wait_for_function(
+            "(s) => document.querySelector(s).textContent === '⚠ save failed'",
+            arg=status,
+        )
+        page.wait_for_timeout(2000)
+        assert says() == "⚠ save failed"
+        assert company.get(api).json()["notes"] == "Ships on Tuesdays."
+        # a save that goes through clears its "✓ saved" as before
+        page.evaluate("() => { API.put = window.__put; }")
+        leave("Ships on Fridays.")
+        page.wait_for_function(
+            "(s) => document.querySelector(s).textContent === '✓ saved'", arg=status
+        )
+        page.wait_for_timeout(2000)
+        assert says() == ""
+        assert company.get(api).json()["notes"] == "Ships on Fridays."
+    finally:
+        page.close()
+        company.put(api, json={"notes": ""})
+
+
+# A click that, as in WebKit, does not put focus on the link clicked:
+# the mouse goes down without moving focus; where focus was is noted.
+WEBKIT_CLICKS = """() => {
+    document.addEventListener('mousedown', e => e.preventDefault(), true);
+    document.addEventListener('click', () => { window.__focusAtClick =
+        document.activeElement && document.activeElement.dataset.rowKey; }, true); }"""
+
+
+def test_back_after_a_mouse_click_keys_on_the_link_not_on_focus(
+    browser, company, books
+):
+    """WebKit does not focus a link a mouse clicks, so the chart's account
+    links and the drill-down's lines, noting document.activeElement, noted
+    whatever had focus before: Back then went there (review of W-7). The
+    link passes itself (ReportsPage._leaveFrom(this)): with focus left on
+    another link, a click on an account name and on a line comes back to
+    the one clicked."""
+    page, handled = _open(browser, company)
+    try:
+        _no_splash(page)
+        _sidebar(page, handled, "#/accounts")
+        links = page.evaluate(
+            """() => [...document.querySelectorAll('#page-content a[data-row-key^="account:"]')]
+                .map(a => [a.dataset.rowKey, a.getAttribute('href'), a.textContent.trim()])"""
+        )
+        bank = next(x for x in links if x[1].startswith("#/banking/"))
+        other = next(x for x in links if x[0] != bank[0])
+        page.focus(f'#page-content a[data-row-key="{other[0]}"]')
+        page.evaluate(WEBKIT_CLICKS)
+        page.click(f'#page-content a[data-row-key="{bank[0]}"]')
+        page.wait_for_function("() => location.hash.startsWith('#/banking/')")
+        settle(page, handled)
+        assert page.evaluate("() => window.__focusAtClick") == other[0]
+        page.keyboard.press("Alt+ArrowLeft")
+        page.wait_for_function(AT, arg="#/accounts")
+        settle(page, handled)
+        assert page.evaluate(ROW_KEY) == bank[0]
+        assert page.evaluate(WORDS) == bank[2]
+        # a drill-down's line, the same
+        checking = _account(company, "1000")
+        _visit(
+            page,
+            handled,
+            f"#/reports/account-transactions?account_id={checking['id']}"
+            "&start_date=2026-01-01&end_date=2026-12-31&from=trial-balance",
+        )
+        page.wait_for_selector("#drilldown-body table")
+        settle(page, handled)
+        here = page.evaluate("location.hash")
+        lines = page.evaluate(
+            """() => [...document.querySelectorAll('#drilldown-body a[data-row-key^="line:"]')]
+                .map(a => [a.dataset.rowKey, a.getAttribute('href'), a.textContent.trim()])"""
+        )
+        assert len(lines) >= 3, lines
+        first, clicked = lines[0], lines[2]
+        page.focus(f'#drilldown-body a[data-row-key="{first[0]}"]')
+        page.click(f'#drilldown-body a[data-row-key="{clicked[0]}"]')
+        page.wait_for_function(AT, arg="#" + clicked[1].split("#", 1)[1])
+        page.wait_for_function("() => !document.getElementById('drilldown-body')")
+        settle(page, handled)
+        assert page.evaluate("() => window.__focusAtClick") == first[0]
+        page.keyboard.press("Alt+ArrowLeft")
+        page.wait_for_function(AT, arg=here)
+        page.wait_for_selector("#drilldown-body table")
+        settle(page, handled)
+        assert page.evaluate(ROW_KEY) == clicked[0]
+        assert page.evaluate(WORDS) == clicked[2]
+    finally:
+        page.close()
+
+
+def _webkit_hop_and_back(page, handled, focus_sel, click_sel, gone, key):
+    """Focus left on one element, a WebKit click (no focus move) on another
+    that hops away; Back to the address left: focus on the one clicked, by
+    its key."""
+    here = page.evaluate("location.hash")
+    page.focus(focus_sel)
+    page.click(click_sel)
+    page.wait_for_function(gone)
+    settle(page, handled)
+    page.keyboard.press("Alt+ArrowLeft")
+    page.wait_for_function(AT, arg=here)
+    page.wait_for_function(
+        "(k) => document.activeElement && document.activeElement.dataset.rowKey === k",
+        arg=key,
+    )
+    return page.evaluate("() => window.__focusAtClick")
+
+
+def test_back_after_a_mouse_click_keys_on_the_row_clicked_on_every_hop(
+    browser, company, books
+):
+    """The other row hops noted the focused element too, so a WebKit click
+    (which focuses nothing) brought Back to whatever had focus before
+    (review of W-7): a report's row to a customer's page, a customer's
+    invoice row to the invoice, a trial balance's account to its
+    drill-down, a job's row to the job's page. Each passes the element
+    clicked (its `this`; a drill-down's link is the click's own element),
+    and Back puts focus on the row clicked."""
+    customer, customer2 = books["customer"], books["customer2"]
+    aging = "#/reports/ar-aging?as_of_date=2026-09-30"
+    page, handled = _open_at(browser, company, aging)
+    try:
+        page.wait_for_selector(f'#report-content a[data-row-key="customer:{customer}"]')
+        settle(page, handled)
+        page.evaluate(WEBKIT_CLICKS)
+        # a report's row → the customer's page → Back
+        was = _webkit_hop_and_back(
+            page,
+            handled,
+            f'#report-content a[data-row-key="customer:{customer2}"]',
+            f'#report-content a[data-row-key="customer:{customer}"]',
+            f"() => location.hash === '#/customers/{customer}'",
+            f"customer:{customer}",
+        )
+        assert was == f"customer:{customer2}"  # focus was elsewhere at the click
+        # the customer's page: an invoice row's amount → the invoice → Back
+        _visit(page, handled, f"#/customers/{customer}")
+        page.wait_for_function(MODAL_SHOWN)
+        page.wait_for_selector('#modal-body a[data-row-key^="invoice:"]')
+        settle(page, handled)
+        keys = page.evaluate(
+            """() => [...document.querySelectorAll('#modal-body a[data-row-key^="invoice:"]')]
+                .map(a => a.dataset.rowKey)"""
+        )
+        assert len(keys) >= 2, keys
+        first, row = keys[0], keys[-1]
+        was = _webkit_hop_and_back(
+            page,
+            handled,
+            f'#modal-body a[data-row-key="{first}"]',
+            f'#modal-body tr:has(a[data-row-key="{row}"]) td.amount',
+            "() => location.hash.startsWith('#/invoices/')",
+            row,
+        )
+        assert was == first
+        # a trial balance's account → its drill-down → Back
+        tb = "#/reports/trial-balance?as_of_date=2026-09-30"
+        _visit(page, handled, tb)
+        page.wait_for_selector('#report-content a[data-row-key^="drill:"]')
+        settle(page, handled)
+        drills = page.evaluate(
+            """() => [...document.querySelectorAll('#report-content a[data-row-key^="drill:"]')]
+                .map(a => a.dataset.rowKey)"""
+        )
+        assert len(drills) >= 3, drills
+        was = _webkit_hop_and_back(
+            page,
+            handled,
+            f'#report-content a[data-row-key="{drills[0]}"]',
+            f'#report-content a[data-row-key="{drills[2]}"]',
+            "() => location.hash.startsWith('#/reports/account-transactions')",
+            drills[2],
+        )
+        assert was == drills[0]
+        # a job's row (its contract amount) → the job's page → Back
+        jp = "#/reports/job-profitability?start_date=2026-01-01&end_date=2026-12-31"
+        _visit(page, handled, jp)
+        job = f"job:{books['job']}"
+        page.wait_for_selector(f'#report-content a[data-row-key="{job}"]')
+        settle(page, handled)
+        was = _webkit_hop_and_back(
+            page,
+            handled,
+            f'#report-content a[data-row-key="customer:{customer}"]',
+            f'#report-content tr:has(a[data-row-key="{job}"]) td.amount >> nth=1',
+            f"() => location.hash.startsWith('#/jobs/{books['job']}')",
+            job,
+        )
+        assert was == f"customer:{customer}"
+    finally:
+        page.close()
+
+
+# window.open, recorded instead of opened: the statement's download
+HOLD_OPEN = """() => { window.__opened = [];
+    window.open = (url, target) => { window.__opened.push([url, target]); return null; }; }"""
+
+
+def test_back_from_a_pages_report_refocuses_its_link(browser, company, books):
+    """The Reports links on a customer's and a vendor's page noted no row,
+    so Back from the report put focus where the page puts it on opening
+    (review of W-7). Each is still a real link to the report's address,
+    with a key, and notes itself on its click: Back puts focus on the link
+    left, by keyboard (Enter) and after a WebKit-style mouse click (focus
+    not moved, left on another control). The statement (PDF) is a
+    download: its click opens it and notes nothing."""
+    pages = (
+        (
+            "customers",
+            books["customer"],
+            "report:income-by-customer",
+            "report:ar-aging",
+        ),
+        ("vendors", books["vendor"], "report:ap-aging", None),
+    )
+    for kind, rid, key, other in pages:
+        page, handled = _open_at(browser, company, f"#/{kind}/{rid}")
+        try:
+            page.wait_for_function(MODAL_SHOWN)
+            link = f'#modal-body a[data-row-key="{key}"]'
+            page.wait_for_selector(link)
+            settle(page, handled)
+            here = page.evaluate("location.hash")
+            assert page.get_attribute(link, "href").startswith("#/reports/")
+            # by keyboard: Enter on the link → the report → Back
+            page.focus(link)
+            page.keyboard.press("Enter")
+            page.wait_for_function("() => location.hash.startsWith('#/reports/')")
+            page.wait_for_function(MODAL_SHOWN)
+            settle(page, handled)
+            page.keyboard.press("Alt+ArrowLeft")
+            page.wait_for_function(AT, arg=here)
+            page.wait_for_function(
+                "(k) => document.activeElement && document.activeElement.dataset.rowKey === k",
+                arg=key,
+            )
+            # by a WebKit-style mouse click, focus left on another control
+            if other is None:  # the vendor's: its first bill's link
+                other = page.evaluate(
+                    """() => document.querySelector('#modal-body a[data-row-key^="bill:"]')
+                        .dataset.rowKey"""
+                )
+            page.evaluate(WEBKIT_CLICKS)
+            was = _webkit_hop_and_back(
+                page,
+                handled,
+                f'#modal-body a[data-row-key="{other}"]',
+                link,
+                "() => location.hash.startsWith('#/reports/')",
+                key,
+            )
+            assert was == other
+            if kind == "customers":
+                # the statement: a download, opened; nothing noted, no hop
+                page.evaluate(HOLD_OPEN)
+                page.get_by_role("button", name="Statement (PDF)").click()
+                opened = page.evaluate("() => window.__opened")
+                assert len(opened) == 1 and opened[0][1] == "_blank", opened
+                assert opened[0][0].startswith(
+                    f"/api/reports/customer-statement/{rid}/pdf?as_of_date="
+                )
+                assert page.evaluate("location.hash") == here
+                assert not page.evaluate("() => history.state && history.state.focus")
+        finally:
+            page.close()
+
+
+ACTIVE_KEY = """() => { const a = document.activeElement;
+    return (a.dataset && a.dataset.rowKey) || a.id || a.tagName.toLowerCase(); }"""
+NOTED = "() => (history.state && history.state.focus) || null"
+
+
+def test_a_click_that_opens_elsewhere_notes_nothing_and_steals_nothing(
+    browser, company, books
+):
+    """A link that notes itself on its click (the chart's accounts, a
+    page's Reports links) noted itself on a Ctrl+click too, which opens it
+    in a new tab and leaves this page where it is: the page's next draw
+    put focus on the link, off wherever the user had gone on to (review).
+    Ctrl+click and Shift+click (a new tab, a new window) note nothing now,
+    and the next draw leaves focus where it is: the chart, redrawn with
+    the search box focused, and a customer's page, opened again, with
+    focus where any opening puts it. A plain click still notes."""
+    page, handled = _open(browser, company)
+    try:
+        _no_splash(page)
+        _visit(page, handled, "#/accounts")
+        link = '#page-content a[data-row-key^="account:"]'
+        key = page.get_attribute(link, "data-row-key")
+        for held in ("Control", "Shift"):
+            with page.context.expect_page() as opened:
+                page.click(link, modifiers=[held])
+            opened.value.close()
+            assert page.evaluate("location.hash") == "#/accounts", held
+            assert page.evaluate(NOTED) is None, held
+            page.focus("#global-search")
+            _visit(page, handled, "#/accounts")
+            assert page.evaluate(ACTIVE_KEY) == "global-search", held
+        # a plain click, cut short before it leaves: still noted
+        page.evaluate(
+            "() => document.addEventListener('click', e => e.preventDefault(), { once: true })"
+        )
+        page.click(link)
+        assert page.evaluate(NOTED) == key
+        page.evaluate(
+            "() => history.replaceState({ ...history.state, focus: null }, '')"
+        )
+    finally:
+        page.close()
+    page, handled = _open_at(browser, company, f"#/customers/{books['customer']}")
+    try:
+        report = '#modal-body a[data-row-key="report:ar-aging"]'
+        page.wait_for_selector(report)
+        settle(page, handled)
+        here = page.evaluate("location.hash")
+        with page.context.expect_page() as opened:
+            page.click(report, modifiers=["Control"])
+        opened.value.close()
+        assert page.evaluate("location.hash") == here
+        assert page.evaluate(NOTED) is None
+        page.focus("#modal-body textarea")
+        page.evaluate("async () => { await App.navigate(location.hash); }")
+        page.wait_for_selector(report)
+        settle(page, handled)
+        assert page.evaluate(ACTIVE_KEY) != "report:ar-aging"
+    finally:
+        page.close()
+
+
+CARDS = "[...document.querySelectorAll('#page-content a.card-link')]"
+CARD_LIST = f"""() => {CARDS}.map(a => ({{ key: a.dataset.rowKey, href: a.getAttribute('href'),
+    title: a.querySelector('.card-header').textContent.trim(),
+    text: a.querySelector('p').textContent.trim() }}))"""
+FOCUS_KEY = "() => document.activeElement && document.activeElement.dataset.rowKey"
+# A card whose report puts another view's address in place of its own: the
+# Unclassified P&L is the default class's P&L
+OPENS_AT = {"report:profit-loss-unclassified": "#/reports/profit-loss-class"}
+
+
+def _ax(page, selector):
+    """The role, name and description the browser itself gives the element
+    (Chromium's accessibility tree, over CDP)."""
+    cdp = page.context.new_cdp_session(page)
+    try:
+        doc = cdp.send("DOM.getDocument", {"depth": 1})
+        node = cdp.send(
+            "DOM.querySelector", {"nodeId": doc["root"]["nodeId"], "selector": selector}
+        )
+        obj = cdp.send("DOM.resolveNode", {"nodeId": node["nodeId"]})
+        tree = cdp.send(
+            "Accessibility.getPartialAXTree",
+            {"objectId": obj["object"]["objectId"], "fetchRelatives": False},
+        )
+        n = tree["nodes"][0]
+        return {
+            k: (n.get(k) or {}).get("value") for k in ("role", "name", "description")
+        }
+    finally:
+        cdp.detach()
+
+
+def _cards_by_keyboard(page, handled, cards, opened=None, home="#/reports"):
+    """Tab reaches every card in turn; Enter on each (those in `opened`, or
+    all) opens what it links to — a report over the Report Center at its
+    view's address (or the one it puts in place of it, OPENS_AT), or a page
+    — and Back returns to `home` with focus on the card."""
+    first = f'#page-content a[data-row-key="{cards[0]["key"]}"]'
+    page.focus(first)
+    page.keyboard.press("Shift+Tab")
+    walked = []
+    for _ in cards:
+        page.keyboard.press("Tab")
+        walked.append(page.evaluate(FOCUS_KEY))
+    assert walked == [c["key"] for c in cards], walked
+    assert page.evaluate("() => document.activeElement.matches(':focus-visible')")
+    for c in cards:
+        if opened is not None and c["key"] not in opened:
+            continue
+        sel = f'#page-content a[data-row-key="{c["key"]}"]'
+        page.focus(sel)
+        page.keyboard.press("Shift+Tab")
+        page.keyboard.press("Tab")
+        assert page.evaluate(FOCUS_KEY) == c["key"]
+        page.keyboard.press("Enter")
+        page.wait_for_function(
+            "(h) => location.hash === h || location.hash.startsWith(h + '?')",
+            arg=OPENS_AT.get(c["key"], c["href"]),
+        )
+        if c["href"].startswith("#/reports/"):
+            page.wait_for_function(MODAL_SHOWN)
+        else:
+            page.wait_for_function(
+                '(k) => !document.querySelector(`#page-content a[data-row-key="${k}"]`)',
+                arg=c["key"],
+            )
+        settle(page, handled)
+        page.keyboard.press("Alt+ArrowLeft")
+        page.wait_for_function(AT, arg=home)
+        page.wait_for_function(f"!({MODAL_SHOWN})()")
+        page.wait_for_function(f"(k) => ({FOCUS_KEY})() === k", arg=c["key"])
+        settle(page, handled)
+
+
+def test_every_report_center_card_is_reached_and_opened_by_the_keyboard(
+    browser, company, books
+):
+    """The Report Center's cards were a <div> with a click alone: the
+    keyboard could not reach a report from there, nor a screen reader
+    name one (review). Each is a link to its report's own address, named
+    by its title and described by the line under it: Tab reaches every
+    card in turn; Enter on each opens that report over the Report Center
+    at its view's address, and Back returns with focus on the card; Space
+    opens one too. It looks as the card did, and draws the ring and halo,
+    as painted, in both themes."""
+    page, handled = _open(browser, company)
+    try:
+        _no_splash(page)
+        _visit(page, handled, "#/reports")
+        cards = page.evaluate(CARD_LIST)
+        assert len(cards) == 19, cards
+        for c in cards:
+            view = c["key"].split(":", 1)[1]
+            assert c["href"] == f"#/reports/{view}", c
+            ax = _ax(page, f'#page-content a[data-row-key="{c["key"]}"]')
+            assert ax == {
+                "role": "link",
+                "name": c["title"],
+                "description": c["text"],
+            }, (
+                c,
+                ax,
+            )
+        # the look: as a <div class="card"> with the same words beside it
+        look = page.evaluate(
+            f"""() => {{ const a = {CARDS}[0], d = document.createElement('div');
+                d.className = 'card'; d.innerHTML = a.innerHTML.replace(/ id="[^"]*"/g, '');
+                a.after(d);
+                const style = (el) => {{ const cs = getComputedStyle(el);
+                    return [cs.color, cs.backgroundColor, cs.borderTopColor, cs.borderTopWidth,
+                            cs.paddingTop, cs.paddingLeft, cs.textDecorationLine, cs.fontSize,
+                            cs.boxShadow, el.getBoundingClientRect().height].join(' | '); }};
+                const parts = (el) => [el, el.querySelector('.card-header'), el.querySelector('p')].map(style);
+                const out = [parts(a), parts(d), getComputedStyle(a).cursor];
+                d.remove();
+                return out; }}"""
+        )
+        assert look[0] == look[1] and look[2] == "pointer", look
+        _cards_by_keyboard(page, handled, cards)
+        # Space opens a card too
+        sel = '#page-content a[data-row-key="report:general-ledger"]'
+        page.focus(sel)
+        page.keyboard.press("Shift+Tab")
+        page.keyboard.press("Tab")
+        page.keyboard.press(" ")
+        page.wait_for_function(MODAL_SHOWN)
+        page.wait_for_function(
+            "() => location.hash.startsWith('#/reports/general-ledger')"
+        )
+        settle(page, handled)
+        page.keyboard.press("Alt+ArrowLeft")
+        page.wait_for_function(
+            f"(k) => ({FOCUS_KEY})() === k", arg="report:general-ledger"
+        )
+        settle(page, handled)
+        # the ring and halo
+        page.keyboard.press("Shift+Tab")
+        page.keyboard.press("Tab")
+        _both_themes(page, "a Report Center card", GOLD)
+    finally:
+        page.close()
+
+
+def test_a_nonprofits_report_center_cards_are_reached_and_opened_by_the_keyboard(
+    browser, client, nonprofit  # noqa: F811  (the fixture, imported above)
+):
+    """A nonprofit's Report Center leads with its own statements: their
+    cards are links too, reached by Tab in turn, and Enter on the
+    Statement of Activities opens it, Back returning to its card."""
+    page, handled = _open(browser, client)
+    try:
+        _no_splash(page)
+        _visit(page, handled, "#/reports")
+        cards = page.evaluate(CARD_LIST)
+        keys = [c["key"] for c in cards]
+        assert keys[:6] == [
+            "report:statement-of-activities",
+            "report:statement-of-financial-position",
+            "report:fund-balances",
+            "report:functional-expenses",
+            "report:pledges",
+            "report:giving-statements",
+        ], keys
+        assert "report:profit-loss" not in keys and "report:balance-sheet" not in keys
+        _cards_by_keyboard(
+            page, handled, cards, opened={"report:statement-of-activities"}
+        )
+    finally:
+        page.close()
+
+
+# Every field under `root` (the page, or the open dialog) that Tab can reach,
+# each focused in turn without a scroll and read: how it looks focused, and
+# its ground at rest. Not a checkbox, a radio, a file or a button: those are
+# controls, with the keyboard's ring.
+FIELD_LOOKS = """(root) => { const r = document.querySelector(root);
+    if (!r) return [];
+    const skip = ['checkbox', 'radio', 'file', 'range', 'color', 'hidden', 'submit', 'button', 'reset', 'image'];
+    const fields = [...r.querySelectorAll('input, select, textarea')].filter(el =>
+        !skip.includes(el.type) && !el.disabled && el.tabIndex >= 0 && el.offsetWidth > 2
+        && el.getClientRects().length && getComputedStyle(el).visibility !== 'hidden');
+    return fields.map(el => {
+        const rest = getComputedStyle(el);
+        const ground = [rest.backgroundColor, rest.backgroundImage];
+        el.focus({ preventScroll: true });
+        const cs = getComputedStyle(el);
+        const out = { at: el.id || el.name || el.getAttribute('aria-label') || (el.className || '').toString().slice(0, 30) || el.tagName.toLowerCase(),
+            tag: el.tagName.toLowerCase(), type: el.type || '', focused: document.activeElement === el,
+            readonly: el.readOnly === true, outline: cs.outlineStyle,
+            border: [cs.borderTopStyle, cs.borderTopColor, cs.borderRightColor, cs.borderBottomColor, cs.borderLeftColor],
+            ground: cs.backgroundColor, image: cs.backgroundImage, shadow: cs.boxShadow, rest: ground };
+        el.blur();
+        return out;
+    }); }"""
+# The quick-add boxes inside a form, shown as choosing "+ New …" shows them
+QUICK_ADDS = [
+    "(async () => {{ await InvoicesPage.showForm();"
+    " document.getElementById('inv-new-customer-form').style.display = 'block'; }})()",
+    "(async () => {{ await EstimatesPage.showForm();"
+    " document.getElementById('est-new-customer-form').style.display = 'block'; }})()",
+    "(async () => {{ await SalesReceiptsPage.showForm();"
+    " document.getElementById('sr-new-customer-form').style.display = 'block'; }})()",
+    "(async () => {{ await BillsPage.showForm();"
+    " document.getElementById('bill-vendor-new').style.display = 'block'; }})()",
+    "(async () => {{ await ExpensesPage.showForm();"
+    " document.getElementById('expense-vendor-new').style.display = 'block'; }})()",
+]
+
+
+def _dark_ground(rest):
+    """The ground a field shows at rest: its colour, or the colours of its
+    gradient over a transparent one; dark (luminance under 0.05) or not."""
+    colour, image = rest
+    found = re.findall(r"rgba?\(([^)]*)\)", image or "")
+    if not found or "gradient" not in (image or ""):
+        found = re.findall(r"rgba?\(([^)]*)\)", colour)
+    out = []
+    for f in found:
+        parts = [float(v) for v in f.split(",")[:4]]
+        if len(parts) == 4 and parts[3] == 0:
+            continue
+        rgb = [v / 255 for v in parts[:3]]
+        lin = [v / 12.92 if v <= 0.04045 else ((v + 0.055) / 1.055) ** 2.4 for v in rgb]
+        out.append(0.2126 * lin[0] + 0.7152 * lin[1] + 0.0722 * lin[2])
+    return bool(out) and max(out) < 0.05
+
+
+def _fields_wrong(page, root, where, theme):
+    """What is wrong with each field under `root` in `theme`: focused, it
+    draws the field's focus style — no outline (no browser ring, no gold),
+    the theme's blue on every side of its border, the pale ground (a
+    read-only field keeps its grey), no halo — and at rest in the dark
+    theme its ground is dark."""
+    want = FIELD_FOCUS[theme]
+    wrong, seen = [], 0
+    for f in page.evaluate(FIELD_LOOKS, root):
+        seen += 1
+        bad = []
+        if not f["focused"]:
+            bad.append("no focus")
+        if f["outline"] != "none":
+            bad.append(f"outline {f['outline']}")
+        if f["border"][0] == "none" or any(
+            c != want["border"] for c in f["border"][1:]
+        ):
+            bad.append(f"border {f['border']}")
+        if f["ground"] != want["ground"] and not f["readonly"]:
+            bad.append(f"ground {f['ground']} {f['image'][:40]}")
+        if "8px" in f["shadow"] and "inset" not in f["shadow"]:
+            bad.append(f"halo {f['shadow']}")
+        if theme == "dark" and not _dark_ground(f["rest"]):
+            bad.append(f"rest {f['rest'][0]} {f['rest'][1][:40]}")
+        if bad:
+            wrong.append((where, theme, f["tag"], f["type"], f["at"], bad))
+    return wrong, seen
+
+
+def _sweep_fields(page, handled, books, pages, dialog_groups):
+    """Every field of every page in `pages` and every dialog in
+    `dialog_groups` ([(route, openers)]), in both themes."""
+    wrong, seen, unopened = [], 0, []
+    for route in pages:
+        _visit(page, handled, route.format(**books))
+        for theme in ("light", "dark"):
+            _theme(page, theme)
+            w, n = _fields_wrong(page, "#page-content", route, theme)
+            wrong += w
+            seen += n
+        _theme(page, "light")
+    for route, openers in dialog_groups:
+        _visit(page, handled, route.format(**books))
+        for opener in openers:
+            call = opener.format(**books)
+            page.evaluate("() => closeModal()")
+            try:
+                page.evaluate(f"async () => {{ await {call}; }}")
+                page.wait_for_function(MODAL_SHOWN, timeout=5000)
+            except Exception as exc:  # the call failed, or opened nothing
+                unopened.append(f"{call}: {str(exc).splitlines()[0]}")
+                continue
+            settle(page, handled)
+            for theme in ("light", "dark"):
+                _theme(page, theme)
+                w, n = _fields_wrong(page, "#modal", call, theme)
+                wrong += w
+                seen += n
+            _theme(page, "light")
+        page.evaluate("() => closeModal()")
+    return wrong, seen, unopened
+
+
+# One field of each kind that kept the browser's look, where it is: by the
+# keyboard, as painted, in both themes; and with the system's high-contrast
+# colours, the system's highlight as its ring
+FIELD_KINDS = [
+    ("#/customers", "#customer-search"),  # a list's search box
+    ("#/invoices", "#inv-status-filter"),  # a list's filter
+    ("#/jobs", "#job-filter-customer-box"),  # a type-ahead box
+    ("#/budgets", "#page-content .budget-cell"),  # a budget's cell
+    ("#/accounts", "#accounts-filter"),  # the chart's filter
+    ("#/settings", "#new-class-name"),  # a Settings list's box
+    ("#/settings", "#ai-settings-provider"),  # an AI panel's own box
+    ("#/quick-entry", "#page-content .line-desc"),  # a line item
+    ("#/deposits", "#deposit-date"),  # a toolbar's date
+]
+
+
+def test_every_field_keeps_a_fields_focus_style_on_every_page_and_dialog(
+    browser, company, books
+):
+    """A field outside a form group — a list's search box and filters, a
+    line item, a type-ahead box, Budgets' cells, Settings' lists, the
+    chart's filter, a report's pickers and dates, a quick-add box — took
+    the browser's own look, white in the dark theme, and its ring on focus
+    (review); and since round 3 a form's own fields drew the light pale
+    ground when focused in the dark theme (the light rule outranked the
+    dark one). Every field of every page of the app and of every dialog
+    the contrast sweeps open, and the quick-add boxes, in both themes:
+    focused, it draws a field's own focus style (no outline: neither the
+    browser's ring nor the keyboard's gold; the theme's focus blue on
+    every side of its border; the pale ground, a read-only field's own
+    grey kept; no halo), and at rest in the dark theme its ground is dark.
+    One field of each kind, by the keyboard, as painted in both themes:
+    the blue border on every side and nothing drawn outside it; and with
+    the system's high-contrast colours, the system's highlight as its
+    ring."""
+    page, handled = _open(browser, company)
+    try:
+        _no_splash(page)
+        paths = page.evaluate(
+            "() => Object.keys(App.routes).filter(k => !k.includes('/:'))"
+        )
+        pages = [f"#{p}" for p in paths if p not in REDIRECTS]
+        pages += ["#/jobs/{job}", "#/banking/{checking}"]
+        wrong, seen, unopened = _sweep_fields(
+            page,
+            handled,
+            books,
+            pages,
+            [
+                ("#/invoices", SALES + QUICK_ADDS),
+                ("#/bills", PURCHASES),
+                ("#/banking/{checking}", BANKING),
+                ("#/reports", REPORTS),
+                ("#/employees", PEOPLE),
+                ("#/settings", SETTINGS),
+            ],
+        )
+        assert unopened == []
+        assert seen > 2000, seen
+        assert wrong == [], (len(wrong), wrong)
+        for route, sel in FIELD_KINDS:
+            _visit(page, handled, route)
+            page.wait_for_selector(sel)
+            settle(page, handled)
+            _keyed(page, f"document.querySelector({sel!r})")
+            for theme in ("light", "dark"):
+                _theme(page, theme)
+                page.evaluate(SETTLED)
+                _field_focus_painted(page, (route, sel), theme)
+            _theme(page, "light")
+            page.emulate_media(forced_colors="active")
+            ring = page.evaluate(
+                "() => { const cs = getComputedStyle(document.activeElement);"
+                " return [cs.outlineStyle, cs.outlineWidth]; }"
+            )
+            page.emulate_media(forced_colors="none")
+            assert ring == ["solid", "2px"], (route, sel, ring)
+            page.evaluate("() => document.activeElement.blur()")
+    finally:
+        page.emulate_media(forced_colors="none")
+        page.close()
+
+
+def test_a_nonprofits_fields_keep_a_fields_focus_style_too(
+    browser, client, nonprofit  # noqa: F811  (the fixture, imported above)
+):
+    """A nonprofit's own pages and dialogs: every field, in both themes,
+    focused draws a field's own focus style, and at rest in the dark theme
+    its ground is dark."""
+    page, handled = _open(browser, client)
+    try:
+        _no_splash(page)
+        wrong, seen, unopened = _sweep_fields(
+            page,
+            handled,
+            nonprofit,
+            NONPROFIT_PAGES,
+            [("#/invoices", NONPROFIT_DIALOGS)],
+        )
+    finally:
+        page.close()
+    assert unopened == []
+    assert seen > 100, seen
+    assert wrong == [], (len(wrong), wrong)
+
+
+# A page's card links: key, address, name (aria-label) and the words of its
+# description (what aria-describedby names), as the page has them
+CARD_LINKS = """(sel) => [...document.querySelectorAll(sel)].map(a => ({ key: a.dataset.rowKey,
+    href: a.getAttribute('href'), title: a.getAttribute('aria-label'),
+    text: (a.getAttribute('aria-describedby') || '').split(/\\s+/)
+        .map(id => document.getElementById(id)).filter(Boolean)
+        .map(el => el.textContent.replace(/\\s+/g, ' ').trim()).join(' ') }))"""
+# The first card link beside a <div class="card"> with the same words: the
+# computed look of the card and of each element in it, and its height
+CARD_LOOK = """(sel) => { const a = document.querySelector(sel), d = document.createElement('div');
+    d.className = 'card'; d.innerHTML = a.innerHTML.replace(/ id="[^"]*"/g, '');
+    a.after(d);
+    const style = (el) => { const cs = getComputedStyle(el);
+        return [cs.color, cs.backgroundColor, cs.borderTopColor, cs.borderTopWidth,
+                cs.paddingTop, cs.paddingLeft, cs.textDecorationLine, cs.fontSize,
+                cs.boxShadow, el.getBoundingClientRect().height].join(' | '); };
+    const parts = (el) => [el, ...el.querySelectorAll('*')].map(style);
+    const out = [parts(a), parts(d), getComputedStyle(a).cursor];
+    d.remove();
+    return out; }"""
+
+
+def _norm(text):
+    return re.sub(r"\s+", " ", text or "").strip().lower()
+
+
+def _bank_cards(page, handled, route, sel):
+    """The bank cards on `route`: links to their registers, named by the
+    account and described by the rest of the card, as the browser computes
+    it; looking as the card did; reached, opened and come back to by the
+    keyboard (Enter, and Space on the first); the ring and halo painted in
+    both themes."""
+    _visit(page, handled, route)
+    page.wait_for_selector(sel)
+    settle(page, handled)
+    cards = page.evaluate(CARD_LINKS, sel)
+    assert len(cards) >= 2, (route, cards)
+    for c in cards:
+        account = c["key"].split(":", 1)[1]
+        assert c["key"] == f"bank:{account}" and c["href"] == f"#/banking/{account}", c
+        ax = _ax(page, f'#page-content a[data-row-key="{c["key"]}"]')
+        assert ax["role"] == "link" and ax["name"] == c["title"], (c, ax)
+        assert _norm(ax["description"]) == _norm(c["text"]) and c["text"], (c, ax)
+    look = page.evaluate(CARD_LOOK, sel)
+    assert look[0] == look[1] and look[2] == "pointer", look
+    _cards_by_keyboard(page, handled, cards, home=route)
+    # Space opens one too
+    first = f'#page-content a[data-row-key="{cards[0]["key"]}"]'
+    page.focus(first)
+    page.keyboard.press("Shift+Tab")
+    page.keyboard.press("Tab")
+    page.keyboard.press(" ")
+    page.wait_for_function("(h) => location.hash === h", arg=cards[0]["href"])
+    settle(page, handled)
+    page.keyboard.press("Alt+ArrowLeft")
+    page.wait_for_function(f"(k) => ({FOCUS_KEY})() === k", arg=cards[0]["key"])
+    settle(page, handled)
+    # the ring and halo
+    page.keyboard.press("Shift+Tab")
+    page.keyboard.press("Tab")
+    assert page.evaluate(FOCUS_KEY) == cards[0]["key"]
+    _both_themes(page, ("a bank card", route), GOLD)
+
+
+def test_banking_and_the_dashboards_bank_cards_are_links_the_keyboard_opens(
+    browser, company, books
+):
+    """Banking's account cards and the dashboard's bank cards were a <div>
+    with a click alone, as the Report Center's were (review). Each is a
+    link to its account's register, named by the account and described by
+    the rest of the card: on Banking and on the dashboard, the browser
+    computes that name and description; the card looks as a <div
+    class="card"> with the same words (the computed look of it and of
+    everything in it, and its height); Tab reaches every card in turn,
+    Enter on each opens its register, and Back returns with focus on the
+    card; Space opens one; and the focused card draws the ring and halo,
+    as painted, in light and dark."""
+    page, handled = _open(browser, company)
+    try:
+        _no_splash(page)
+        _bank_cards(page, handled, "#/banking", "#page-content a.card-link")
+        _bank_cards(
+            page,
+            handled,
+            "#/",
+            '#page-content [data-widget="bank_balances"] a.card-link',
+        )
+    finally:
+        page.close()
+
+
+# The far end of a field, where the browser draws its own part (a date's
+# calendar icon, a select's arrow), inside the border: its ground (the
+# median pixel), the part (the dozen pixels furthest from the ground), and
+# the field's color-scheme
+FIELD_END = """(sel) => { const e = document.querySelector(sel), r = e.getBoundingClientRect();
+    return { x: r.left + r.width - 26, y: r.top + 3, w: 22, h: r.height - 6,
+             scheme: getComputedStyle(e).colorScheme }; }"""
+
+
+def _part_contrast(page, sel):
+    """The browser's own part at the field's far end, as painted: its
+    contrast against the field's ground there, and the field's
+    color-scheme."""
+    import io
+    import math
+    import statistics
+
+    from PIL import Image
+
+    b = page.evaluate(FIELD_END, sel)
+    clip = {
+        "x": math.floor(b["x"]),
+        "y": math.floor(b["y"]),
+        "width": math.ceil(b["w"]),
+        "height": math.ceil(b["h"]),
+    }
+    img = Image.open(io.BytesIO(page.screenshot(clip=clip))).convert("RGB")
+    px = list(img.getdata())
+    ground = [statistics.median(c[k] for c in px) for k in range(3)]
+    far = sorted(px, key=lambda c: -_far(c, ground))[:12]
+    part = [sum(c[k] for c in far) / len(far) for k in range(3)]
+    return contrast(_rgb(part), _rgb(ground)), b["scheme"]
+
+
+# Each kind of date field and select, where it is: (route or opener, field)
+FIELD_PARTS = [
+    ("() => InvoicesPage.showForm()", "#modal .form-group input[type=date]"),
+    (
+        f"#/reports/profit-loss?start_date={SEPT[0]}&end_date={SEPT[1]}",
+        "#report-custom-start",
+    ),
+    (
+        f"#/reports/profit-loss?start_date={SEPT[0]}&end_date={SEPT[1]}",
+        "#report-period-select",
+    ),
+    ("#/iif", "#page-content .iif-date-range input[type=date]"),
+    ("#/invoices", "#inv-status-filter"),
+    (
+        "#/reports/general-ledger?start_date=2025-01-01&end_date=2026-12-31",
+        "#gl-account",
+    ),
+]
+
+
+def test_a_dark_fields_own_parts_are_drawn_for_a_dark_field(browser, company, books):
+    """The browser draws a field's own parts — a date's calendar icon, a
+    select's arrow — for a light page unless the field says it is dark:
+    black on the dark field, 1.15:1 (review), on a form's dates, a
+    report's From and To, IIF export's dates and the selects. In the dark
+    theme the fields say so (color-scheme: dark): each kind's icon or arrow
+    stands 3:1 against its field as painted; in light the field is as it
+    was (color-scheme normal) and its icon or arrow 3:1 too."""
+    page, handled = _open(browser, company)
+    try:
+        _no_splash(page)
+        seen = {}
+        for where, sel in FIELD_PARTS:
+            if where.startswith("#/"):
+                _visit(page, handled, where)
+            else:
+                page.evaluate("() => closeModal()")
+                page.evaluate(f"async () => {{ await ({where})(); }}")
+                page.wait_for_function(MODAL_SHOWN)
+            page.wait_for_selector(sel)
+            settle(page, handled)
+            page.evaluate(
+                f"() => document.querySelector({sel!r}).scrollIntoView({{block: 'center'}})"
+            )
+            for theme in ("light", "dark"):
+                _theme(page, theme)
+                page.evaluate(SETTLED)
+                seen[(sel, theme)] = _part_contrast(page, sel)
+            _theme(page, "light")
+            page.evaluate("() => closeModal()")
+    finally:
+        page.close()
+    for (sel, theme), (ratio, scheme) in seen.items():
+        assert scheme == ("dark" if theme == "dark" else "normal"), (sel, theme, scheme)
+        assert ratio >= 3.0, (sel, theme, ratio, seen)
+
+
+# Each plain table container on the page with rows: its padding below the
+# table, its last row's cells' padding, top and bottom, and how far the
+# words of that row's first cell sit from the middle of their row
+LAST_ROWS = """() => [...document.querySelectorAll('#page-content .table-container')]
+    .filter(c => c.offsetParent && !c.classList.contains('table-container--scroll')
+                 && c.querySelector(':scope > table > tbody > tr'))
+    .map(c => { const rows = c.querySelectorAll(':scope > table > tbody > tr'),
+            last = rows[rows.length - 1], cell = last.querySelector('td, th'),
+            cs = getComputedStyle(cell), range = document.createRange();
+        range.selectNodeContents(cell);
+        const words = range.getBoundingClientRect(), box = last.getBoundingClientRect();
+        return { rows: rows.length, below: getComputedStyle(c).paddingBottom,
+                 pad: [cs.paddingTop, cs.paddingBottom],
+                 off: words.height ? (words.top + words.bottom) / 2 - (box.top + box.bottom) / 2 : 0,
+                 text: cell.textContent.trim().slice(0, 30) }; })"""
+
+
+def test_a_one_row_tables_words_sit_in_the_middle_of_their_row(browser, company, books):
+    """The room for the last row's halo was 8px of padding on the last
+    row's cells, which set a one-row table's words high in their row (Time
+    Off's: final review). It is the container's, below its table: on Time
+    Off, the Journal and Items, every plain table container has 8px below
+    its table, its last row's cells as much padding above as below, and
+    that row's words in the middle of the row (within a pixel); the last
+    row's Void still draws its ring and halo whole (the test above)."""
+    page, handled = _open(browser, company)
+    try:
+        _no_splash(page)
+        seen = []
+        for route in ("#/hr/pto", "#/journal", "#/items"):
+            _visit(page, handled, route)
+            for t in page.evaluate(LAST_ROWS):
+                seen.append((route, t))
+                assert t["below"] == "8px", (route, t)
+                assert t["pad"][0] == t["pad"][1], (route, t)
+                assert abs(t["off"]) <= 1, (route, t)
+        assert any(t["rows"] == 1 for _, t in seen), seen
+    finally:
+        page.close()
+
+
+# Every plain table container on the page: how far its table overflows it
+# sideways, and whether it scrolls
+WIDE = """() => [...document.querySelectorAll('#page-content .table-container')]
+    .filter(c => c.offsetParent && !c.classList.contains('table-container--scroll'))
+    .map((c, i) => { c.dataset.wideProbe = String(i);
+        const was = c.scrollLeft;
+        c.scrollLeft = c.scrollWidth;
+        const moves = c.scrollLeft > 0;
+        c.scrollLeft = was;
+        return { i, over: c.scrollWidth - c.clientWidth, scroll: getComputedStyle(c).overflowX, moves }; })"""
+# The last row's stops of container `i`, numbered
+LAST_STOPS = """(i) => { const c = document.querySelector(`[data-wide-probe="${i}"]`),
+        rows = c.querySelectorAll(':scope > table > tbody > tr'), last = rows[rows.length - 1];
+    return [...last.querySelectorAll('a[href], button, input, select, textarea')]
+        .filter(e => !e.disabled && e.tabIndex >= 0 && e.getClientRects().length && e.type !== 'hidden')
+        .map((e, k) => { e.dataset.lastStop = `${i}-${k}`; return `${i}-${k}`; }); }"""
+# The focused stop against what its container shows: how far its ring and
+# halo (8px; a field's own border, 0) end inside on each side
+STOP_INSIDE = """() => { const a = document.activeElement, c = a.closest('.table-container'),
+        r = a.getBoundingClientRect(), cr = c.getBoundingClientRect(),
+        out = a.matches('input, select, textarea') ? 0 : 8,
+        left = cr.left + c.clientLeft, top = cr.top + c.clientTop;
+    return { tag: a.tagName.toLowerCase(), text: (a.textContent || a.value || a.name || '').trim().slice(0, 20),
+             field: out === 0, scrollLeft: c.scrollLeft,
+             reach: [r.left - out - left, r.top - out - top,
+                     left + c.clientWidth - (r.right + out), top + c.clientHeight - (r.bottom + out)] }; }"""
+# A table too wide for its container at a width, where the test books
+# make it so (the Journal's and the customers' at 390 too)
+WIDE_TABLES = [
+    (1440, "#/budgets"),
+    (1024, "#/fixed-assets"),
+    (1024, "#/jobs"),
+    (900, "#/items"),
+    (900, "#/hr/time-entries"),
+    (900, "#/hr/pto"),
+    (900, "#/fixed-assets"),
+    (390, "#/journal"),
+    (390, "#/customers"),
+]
+
+
+def test_a_table_wider_than_its_container_scrolls_and_tab_shows_its_stops_whole(
+    browser, company, books
+):
+    """A table wider than its container was clipped, its last column cut
+    off even at 900px, the desktop app's least (Items' History, Benefits'
+    Retire, Fixed Assets' Dispose at 1024): out of reach for a mouse, and
+    Tab left a stop partly in view, its ring cut (final review). The
+    container scrolls it sideways now, and Tab brings a stop in whole. At
+    1440 and 1280, on every page, no container that fits shows a scrollbar
+    or overflows by a pixel of rounding; where a table is wider (Budgets at
+    1440; Fixed Assets and Jobs at 1024; Items, Time Entries, Time Off and
+    Fixed Assets at 900; the Journal and the customers at 390) its
+    container scrolls sideways, and each of its last row's stops, reached
+    by Tab, ends with its ring and halo (a field, its border) inside what
+    the container shows, the ring painted on all four sides."""
+    page, handled = _open(browser, company)
+    try:
+        _no_splash(page)
+        paths = page.evaluate(
+            "() => Object.keys(App.routes).filter(k => !k.includes('/:'))"
+        )
+        pages = [f"#{p}" for p in paths if p not in REDIRECTS]
+        for width in (1440, 1280):
+            page.set_viewport_size({"width": width, "height": 800})
+            for route in pages:
+                _visit(page, handled, route)
+                for c in page.evaluate(WIDE):
+                    assert c["scroll"] == "auto", (width, route, c)
+                    # fits, so no scrollbar (none shows unless the table is
+                    # wider), or plainly wider: never a pixel of rounding
+                    assert c["over"] <= 0 or c["over"] >= 8, (width, route, c)
+                    assert c["moves"] == (c["over"] > 0), (width, route, c)
+        for width, route in WIDE_TABLES:
+            page.set_viewport_size({"width": width, "height": 800})
+            _visit(page, handled, route)
+            wide = [c for c in page.evaluate(WIDE) if c["over"] > 0]
+            assert wide, (width, route)
+            c = wide[0]
+            assert c["moves"], (width, route, c)  # it scrolls, for a mouse too
+            stops = page.evaluate(LAST_STOPS, c["i"])
+            assert stops, (width, route)
+            for stop in stops:
+                _keyed(page, f"document.querySelector('[data-last-stop=\"{stop}\"]')")
+                page.evaluate(SETTLED)
+                at = page.evaluate(STOP_INSIDE)
+                assert min(at["reach"]) >= -0.5, (width, route, at)
+                if not at["field"]:
+                    sides = _painted(page)
+                    cut = [s for s in SIDES if not sides[s] or sides[s]["px"] < 2]
+                    assert not cut, (width, route, at, cut)
+    finally:
+        page.set_viewport_size({"width": 1500, "height": 980})
+        page.close()
+
+
+# _opensElsewhere on a click on the chart's first account link, with the
+# keys held and the button pressed given, on the platform given; the click
+# itself goes nowhere
+OPENS_ELSEWHERE = """([platform, init]) => {
+    Object.defineProperty(Navigator.prototype, 'platform', { get: () => platform, configurable: true });
+    const a = document.querySelector('#page-content a[data-row-key^="account:"]');
+    let got = null;
+    const look = (e) => { got = ReportsPage._opensElsewhere(e); e.preventDefault(); };
+    a.addEventListener('click', look);
+    a.addEventListener('auxclick', look);
+    a.dispatchEvent(new MouseEvent(init.button ? 'auxclick' : 'click',
+        Object.assign({ bubbles: true, cancelable: true }, init)));
+    a.removeEventListener('click', look);
+    a.removeEventListener('auxclick', look);
+    return got; }"""
+
+
+def test_the_new_tab_modifier_is_the_platforms_own(browser, company, books):
+    """A new tab is ⌘-click on a Mac and Ctrl-click elsewhere, where a
+    Windows or Super key click follows the link in place, and on a Mac a
+    Ctrl-click is the context menu's (final review: Meta counted as "opens
+    elsewhere" everywhere). On a Mac, ⌘, Shift, Option or the middle button
+    open the link elsewhere and Ctrl does not; on Windows and Linux, Ctrl,
+    Shift, Alt or the middle button do and the Windows key does not; a
+    plain click never does. In this browser (Linux), a Super-click on a
+    chart account follows the link in place, is noted, and Back puts focus
+    back on it."""
+    page, handled = _open(browser, company)
+    try:
+        _no_splash(page)
+        _visit(page, handled, "#/accounts")
+        for platform, opens in (
+            (
+                "MacIntel",
+                {"metaKey": True, "shiftKey": True, "altKey": True, "button": True},
+            ),
+            (
+                "Win32",
+                {"ctrlKey": True, "shiftKey": True, "altKey": True, "button": True},
+            ),
+            (
+                "Linux x86_64",
+                {"ctrlKey": True, "shiftKey": True, "altKey": True, "button": True},
+            ),
+        ):
+            for held in ("metaKey", "ctrlKey", "shiftKey", "altKey", "button", None):
+                init = (
+                    {"button": 1}
+                    if held == "button"
+                    else ({held: True} if held else {})
+                )
+                got = page.evaluate(OPENS_ELSEWHERE, [platform, init])
+                assert got is bool(opens.get(held)), (platform, held, got)
+        page.evaluate("""() => Object.defineProperty(Navigator.prototype, 'platform',
+                { get: () => 'Linux x86_64', configurable: true })""")
+        # a Super-click on Linux: the link is followed here, and noted
+        link = '#page-content a[data-row-key^="account:"]'
+        key = page.get_attribute(link, "data-row-key")
+        href = page.get_attribute(link, "href")
+        pages = len(page.context.pages)
+        page.click(link, modifiers=["Meta"])
+        page.wait_for_function("(h) => location.hash === h", arg=href)
+        settle(page, handled)
+        assert len(page.context.pages) == pages
+        page.keyboard.press("Alt+ArrowLeft")
+        page.wait_for_function(AT, arg="#/accounts")
+        page.wait_for_function(f"(k) => ({FOCUS_KEY})() === k", arg=key)
+    finally:
+        page.close()
+
+
+def test_a_file_picker_draws_the_keyboards_ring(browser, company, books):
+    """A file's picker — QuickBooks Interop's report CSV, an invoice's
+    attachment, the chart's import — drew the browser's own ring on Tab,
+    where a button draws the keyboard's gold (final review). Reached by
+    Tab, each draws the gold ring and its halo on all four sides, 3:1 as
+    painted against the halo on both sides and against the gate's ground,
+    in light and dark."""
+    page, handled = _open(browser, company)
+    try:
+        _no_splash(page)
+        _visit(page, handled, "#/iif")
+        page.wait_for_selector("#qbcsv-file-input")
+        _keyed(page, "document.getElementById('qbcsv-file-input')")
+        _both_themes(page, "QuickBooks report CSV", GOLD)
+        for opener, sel in (
+            (f"() => InvoicesPage.view({books['sent']})", "#inv-attach-file"),
+            ("() => App.showChartImport()", "#modal input[type=file]"),
+        ):
+            page.evaluate("() => closeModal()")
+            page.evaluate(f"async () => {{ await ({opener})(); }}")
+            page.wait_for_function(MODAL_SHOWN)
+            page.wait_for_selector(sel)
+            settle(page, handled)
+            _keyed(page, f"document.querySelector({sel!r})")
+            _both_themes(page, sel, GOLD)
+        page.evaluate("() => closeModal()")
     finally:
         page.close()

@@ -185,8 +185,12 @@ const DashboardPage = {
         },
         bank_balances(d) {
             if (!d.accounts.length) return '<div style="color:var(--gray-500);font-size:12px">No bank accounts yet. <a href="#/banking">Add one</a>.</div>';
-            return `<div class="card-grid" style="margin:0">${d.accounts.map(b => `<div class="card" style="cursor:pointer" onclick="BankingPage.go('#/banking/${b.id}')">
-                <div class="card-header">${escapeHtml(b.name)}${b.kind === 'credit_card' ? ' <span style="font-size:10px;color:var(--gray-400)">owed</span>' : ''}</div><div class="card-value">${formatCurrency(b.balance)}</div></div>`).join('')}</div>`;
+            // each a link to the account's register, named by the account,
+            // its balance its description (as Banking's cards)
+            return `<div class="card-grid" style="margin:0">${d.accounts.map(b => `<a class="card card-link" href="#/banking/${b.id}" data-row-key="bank:${b.id}"
+                aria-label="${escapeHtml(b.name)}" aria-describedby="dash-bank-${b.id}-value${b.kind === 'credit_card' ? ` dash-bank-${b.id}-owed` : ''}"
+                onclick="ReportsPage._leaveFrom(this)" onkeydown="ReportsPage._cardKey(event)">
+                <div class="card-header">${escapeHtml(b.name)}${b.kind === 'credit_card' ? ` <span id="dash-bank-${b.id}-owed" style="font-size:10px;color:var(--gray-400)">owed</span>` : ''}</div><div class="card-value" id="dash-bank-${b.id}-value">${formatCurrency(b.balance)}</div></a>`).join('')}</div>`;
         },
         ar_aging(d) {
             // The A/R Aging report's own figures: the buckets, the credits

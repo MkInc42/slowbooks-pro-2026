@@ -122,9 +122,10 @@ def test_the_match_dialog_shows_it(client, db_session, seed_accounts, paid_bill)
 
 
 def test_a_register_is_a_route_of_its_own():
-    # the overview's cards (and the dashboard's) move the address bar
-    assert "onclick=\"BankingPage.go('#/banking/${a.account_id}')\"" in BANKING_JS
-    assert "onclick=\"BankingPage.go('#/banking/${b.id}')\"" in DASHBOARD_JS
+    # the overview's cards (and the dashboard's) are links to the register's
+    # address: following one moves the address bar
+    assert '<a class="card card-link" href="#/banking/${a.account_id}"' in BANKING_JS
+    assert '<a class="card card-link" href="#/banking/${b.id}"' in DASHBOARD_JS
     go = re.search(r"\n    go\(hash\) \{.*?\n    \},\n", BANKING_JS, re.S)
     assert go and "location.hash = hash" in go.group(0)
     # nothing in the banking pages renders a register without its address
