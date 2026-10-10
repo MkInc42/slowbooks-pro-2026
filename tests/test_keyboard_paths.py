@@ -483,6 +483,12 @@ def test_the_generic_ring_counts_for_nothing_against_a_controls_own():
         '[data-theme="dark"] .grid-scroll:focus-visible { outline-color: var(--text-link); }'
         in dark
     )
+    # the search results' in dark: the link blue (3.5:1 and more on every
+    # side), --qb-blue's 3.0 against the border below was too thin
+    assert (
+        '[data-theme="dark"] .search-item:focus-visible { outline-color: var(--text-link); }'
+        in dark
+    )
 
 
 def test_the_ring_has_a_halo_of_the_themes_own_ground():

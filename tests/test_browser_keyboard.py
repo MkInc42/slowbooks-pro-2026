@@ -1771,7 +1771,7 @@ def _painted(page):
     return sides
 
 
-def _ring_clears(page, what, ring):
+def _ring_clears(page, what, ring, need=3.0):
     """The ring painted on all four sides in its colour (`ring`, computed),
     and 3:1 against what is painted right against it on each side of it —
     the halo where there is one, the ground where not (WCAG 1.4.11): the
@@ -1797,11 +1797,11 @@ def _ring_clears(page, what, ring):
                 continue
             ratio = contrast(_rgb(got["ring"]), _rgb(got[k]))
             report[side][k] = (_rgb(got[k]), ratio)
-            assert ratio >= 3.0, (what, side, k, report)
+            assert ratio >= need, (what, side, k, report)
         if got["ground"] is not None:
             ratio = contrast(_rgb(got["ring"]), _rgb(got["ground"]))
             report[side]["ground"] = (_rgb(got["ground"]), ratio)
-            assert ratio >= 3.0, (what, side, "the gate's ground", report)
+            assert ratio >= need, (what, side, "the gate's ground", report)
     return report
 
 
@@ -1988,7 +1988,7 @@ def test_a_sidebar_link_draws_the_ring_on_all_four_sides_as_painted(
 # The controls' own rings: a search result's blue, inside its edge; the
 # grid's navy (light) or blue (dark), on its edge
 OWN = {
-    "search": {"light": "rgb(51, 102, 153)", "dark": "rgb(74, 127, 181)"},
+    "search": {"light": "rgb(51, 102, 153)", "dark": "rgb(107, 179, 232)"},
     "grid": {"light": "rgb(0, 51, 102)", "dark": "rgb(107, 179, 232)"},
 }
 # What the browser computed for the focused control's ring
@@ -2024,9 +2024,15 @@ def test_a_controls_own_ring_wins_over_the_keyboards(
             assert "search-item" in item["cls"] and item["keyboard"], item
             assert item["outline"] == f"2px solid {OWN['search'][theme]}", (theme, item)
             assert item["offset"] == "-2px" and item["shadow"] == "none", (theme, item)
-            # its own ring, painted on all four sides: not cut to a line
-            sides = _painted(page)
-            assert all(sides[side] for side in SIDES), (theme, sides)
+            # its own ring, painted on all four sides (not cut to a line), and
+            # clear of what meets it: 3.5:1 in dark, where the theme's blue
+            # was 3.0 against the border below a result
+            _ring_clears(
+                page,
+                ("search result", theme),
+                OWN["search"][theme],
+                need={"light": 3.0, "dark": 3.5}[theme],
+            )
         _theme(page, "light")
         page.keyboard.press("Escape")
         _visit(page, handled, BY_CLASS_URL)

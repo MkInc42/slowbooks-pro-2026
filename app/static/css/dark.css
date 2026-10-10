@@ -322,6 +322,10 @@
 [data-theme="dark"] .search-item { color: var(--text-primary); }
 [data-theme="dark"] .search-item:hover,
 [data-theme="dark"] .search-item:focus-visible { background: #222838; }
+/* its own ring, the dark theme's link blue: --qb-blue was 3.0:1 against
+   the border below a result, 3.5 against its own ground; this is 5.7 and
+   6.5 (review of NEW-43) */
+[data-theme="dark"] .search-item:focus-visible { outline-color: var(--text-link); }
 
 /* Scrollbar */
 [data-theme="dark"] ::-webkit-scrollbar-track { background: #14161c; }
