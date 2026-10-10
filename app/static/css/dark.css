@@ -224,6 +224,11 @@
     background: #1a1e28;
     border-color: var(--input-focus);
 }
+/* a checkbox or a radio keeps the keyboard's ring and its halo over the
+   sunken shadow above (style.css) */
+[data-theme="dark"] input:is([type="checkbox"], [type="radio"]):focus-visible {
+    box-shadow: 0 0 0 8px var(--focus-halo);
+}
 
 [data-theme="dark"] .form-group select {
     background: linear-gradient(180deg, #1a1c24 0%, #14161c 100%);

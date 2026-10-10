@@ -27,11 +27,11 @@
    WebKit, with the Mac's keyboard navigation off as it ships, draws
    faintly on buttons and not at all on links: Tab walked A/R Aging's
    customers with nothing to show where it was (macOS gate NEW-43, 2.22.0).
-   Links, buttons and whatever else the keyboard reaches draw the skip
-   link's ring, in gold (--focus-ring, each theme's own), on :focus-visible
-   only, so a mouse click on a button or a link draws none. A field keeps
-   its own focus style (the blue border and pale ground, below), so a
-   dense form gets no ring on a click into a box.
+   Links, buttons, checkboxes, radios and whatever else the keyboard
+   reaches draw the skip link's ring, in gold (--focus-ring, each theme's
+   own), on :focus-visible only, so a mouse click on a button or a link
+   draws none. A field keeps its own focus style (the blue border and pale
+   ground, below), so a dense form gets no ring on a click into a box.
    The ring is two colours (WCAG 1.4.11: 3:1 against what it meets). The
    gold alone fell under 3:1 wherever the ground is neither light nor dark:
    the toolbar's grey gradient (2.54:1), a dialog's blue title bar (1.73),
@@ -50,7 +50,9 @@
 :where(a:focus-visible,
        button:focus-visible,
        summary:focus-visible,
-       [tabindex]:not([tabindex="-1"]):focus-visible) {
+       [tabindex]:not([tabindex="-1"]):focus-visible,
+       input[type="checkbox"]:focus-visible,
+       input[type="radio"]:focus-visible) {
     outline: 2px solid var(--focus-ring);
     outline-offset: 2px;
     box-shadow: 0 0 0 6px var(--focus-halo);
@@ -60,8 +62,9 @@
    8px, 4px of it outside the ring, so it is also what lies 4-7px out,
    where the macOS gate reads a ring's ground. These are the controls on
    the toolbars, in a dialog's title bar, beside fields and under a table's
-   header row. A link in running text keeps 2px outside the ring: more
-   would cover the lines above and below it. */
+   header row (a checkbox and a radio too: below). A link in running text
+   keeps 2px outside the ring: more would cover the lines above and below
+   it. */
 :where(button:focus-visible,
        summary:focus-visible,
        [tabindex]:not([tabindex="-1"]):focus-visible,
@@ -867,13 +870,24 @@ td.amount, th.amount {
     box-shadow: inset 1px 1px 2px rgba(0,0,0,0.12);
 }
 
-.form-group input:focus,
+/* A checkbox and a radio are not fields: the border and ground here do not
+   show on one, so with the outline gone it showed nothing at all (the P&L
+   by Class chooser's classes, "Show classes with no activity"). They keep
+   the keyboard's ring (top of the sheet). */
+.form-group input:not([type="checkbox"]):not([type="radio"]):focus,
 .form-group select:focus,
 .form-group textarea:focus {
     outline: none;   /* a field's own focus style, not the keyboard's ring */
     border-color: var(--input-focus);
     background: #fffff8;
     box-shadow: inset 1px 1px 2px rgba(0,0,0,0.08);
+}
+/* and the ring's halo, out to 8px as a button's, over the sunken shadow
+   every input is given above (and in the line-item tables and the
+   toolbars): a white box below, in the dark theme, would otherwise be the
+   ground 4-7px out */
+input:is([type="checkbox"], [type="radio"]):focus-visible {
+    box-shadow: 0 0 0 8px var(--focus-halo);
 }
 
 .form-group textarea {
@@ -1122,9 +1136,15 @@ a:hover { text-decoration: underline; }
     max-height: 160px;
     overflow: auto;
     margin: 4px 0 8px;
+    /* the list scrolls: room inside it for a checkbox's ring and halo
+       (8px), which its edge cut off on the first row and column */
+    padding: 8px;
     font-size: 11px;
 }
 .grid-chooser__list label { display: flex; gap: 6px; align-items: center; font-weight: normal; }
+/* "Show classes with no activity": 6px between the box and its words, as
+   the chooser's classes have: the ring and its halo end before the words */
+#grid-empty { margin-right: 5px; }
 .grid-chooser__actions { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
 /* On a phone the wide dialog is the screen's width, the grid swipes
    sideways with the Account column frozen, and Prev / Next lead. */

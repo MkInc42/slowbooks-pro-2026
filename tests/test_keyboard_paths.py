@@ -421,7 +421,14 @@ def _rule(css, head, last=False):
 def test_focus_is_visible_on_every_control_by_keyboard_only():
     css = (ROOT / "app/static/css/style.css").read_text(encoding="utf-8")
     ring = _rule(css, ":where(a:focus-visible,")
-    for sel in ("a", "button", "summary", '[tabindex]:not([tabindex="-1"])'):
+    for sel in (
+        "a",
+        "button",
+        "summary",
+        '[tabindex]:not([tabindex="-1"])',
+        'input[type="checkbox"]',
+        'input[type="radio"]',
+    ):
         assert f"{sel}:focus-visible" in ring, sel
     assert "outline: 2px solid var(--focus-ring);" in ring
     assert "outline-offset: 2px;" in ring
@@ -513,6 +520,32 @@ def test_the_ring_has_a_halo_of_the_themes_own_ground():
     grid = _rule(css, ".grid-scroll:focus-visible {")
     assert "outline-offset: 0; box-shadow: none;" in grid
     assert "box-shadow: none;" in _rule(css, ".search-item:focus-visible {", last=True)
+
+
+def test_a_checkbox_or_a_radio_takes_the_ring_and_a_field_does_not():
+    """`.form-group input:focus { outline: none }` took the outline off a
+    checkbox too, whose border and ground do not show: the P&L by Class
+    chooser's classes and "Show classes with no activity" showed nothing
+    on focus. The field rule leaves checkboxes and radios out; their halo
+    is set over the sunken shadow every input is given."""
+    css = (ROOT / "app/static/css/style.css").read_text(encoding="utf-8")
+    dark = (ROOT / "app/static/css/dark.css").read_text(encoding="utf-8")
+    assert (
+        '.form-group input:not([type="checkbox"]):not([type="radio"]):focus,\n'
+        ".form-group select:focus,\n"
+        ".form-group textarea:focus {\n"
+        "    outline: none;" in css
+    )
+    assert ".form-group input:focus" not in css
+    halo = 'input:is([type="checkbox"], [type="radio"]):focus-visible {\n    box-shadow: 0 0 0 8px var(--focus-halo);\n}'
+    assert halo in css
+    # (0,2,1) beats .form-group input and the line-item and toolbar inputs,
+    # (0,1,1); in dark, [data-theme] .form-group input is (0,2,1) and later
+    assert f'[data-theme="dark"] {halo}' in dark
+    # the chooser scrolls: room in it for the first row's ring and halo; and
+    # room between "Show classes with no activity" and its words
+    assert "padding: 8px;" in _rule(css, ".grid-chooser__list {")
+    assert "#grid-empty { margin-right: 5px; }" in css
 
 
 # ── Round 3, NEW-44: a page's Notes box saves only a change ──────────────

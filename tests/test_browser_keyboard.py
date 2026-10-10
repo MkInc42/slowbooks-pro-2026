@@ -1967,3 +1967,45 @@ def test_a_controls_own_ring_wins_over_the_keyboards(
             assert grid["offset"] == "0px" and grid["shadow"] == "none", (theme, grid)
     finally:
         page.close()
+
+
+def test_a_checkbox_draws_the_ring_by_keyboard_and_none_by_mouse(
+    browser, company, books, divisions
+):
+    """`.form-group input:focus { outline: none }` took the outline off a
+    checkbox as off a text box, and a checkbox shows neither the field's
+    border nor its ground: on the P&L by Class chooser's classes and "Show
+    classes with no activity" the keyboard's place could not be seen. A
+    checkbox draws the ring and its halo by keyboard, 3:1 as painted on all
+    four sides in both themes, and none on a mouse click."""
+    page, handled = _open_at(browser, company, BY_CLASS_URL)
+    try:
+        page.wait_for_selector("#grid-scroll")
+        settle(page, handled)
+        page.evaluate(FIRST)
+        _tab_until(page, "() => document.activeElement.id === 'grid-empty'", cap=60)
+        assert page.evaluate("() => !!document.activeElement.closest('.form-group')")
+        _both_themes(page, "Show classes with no activity", GOLD)
+        on = page.evaluate(OWN_RING)
+        assert on["outline"] == f"2px solid {GOLD['light']}" and on["offset"] == "2px"
+        assert on["shadow"] == f"{HALO['light']} 0px 0px 0px 8px", on
+        # the chooser: Enter on its button puts focus on its first class
+        _tab_until(page, "() => document.activeElement.id === 'grid-choose-btn'")
+        page.keyboard.press("Enter")
+        page.wait_for_function(
+            "() => document.activeElement.matches('#grid-chooser input[type=checkbox]')"
+        )
+        _both_themes(page, "the chooser's first class", GOLD)
+        page.keyboard.press("Tab")
+        assert page.evaluate(
+            "() => document.activeElement.matches('#grid-chooser input[type=checkbox]')"
+        )
+        _both_themes(page, "the chooser's second class", GOLD)
+        # by mouse: focus, and no ring
+        page.click("#grid-chooser input[type=checkbox] >> nth=2")
+        page.evaluate(SETTLED)
+        clicked = page.evaluate(OWN_RING)
+        assert not clicked["keyboard"] and "none" in clicked["outline"], clicked
+        assert clicked["shadow"] != f"{HALO['light']} 0px 0px 0px 8px", clicked
+    finally:
+        page.close()

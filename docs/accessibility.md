@@ -58,14 +58,14 @@ or Alt+D.*
   Escape closes the dialog, so an unsaved form is not lost to one key
   (v2.22.0). No dialog opens with focus on Void or Delete: one whose first
   control is destructive takes focus itself, and reads its title (v2.22.0).
-- **The keyboard's place is visible** (v2.22.0): every link and button,
-  and whatever else the keyboard reaches, draws a gold ring when it takes
-  focus from the keyboard, in both themes, so Tab can be followed through a
-  report's rows as well as its buttons. The gold has a halo of the theme's
-  own ground on both its sides (white in the light theme, the page's dark
-  in the dark), so it stands 3:1 against what it meets wherever it is —
-  the toolbar's grey, a dialog's blue title bar — measured as the browser
-  paints it (`tests/test_browser_keyboard.py`).
+- **The keyboard's place is visible** (v2.22.0): every link, button,
+  checkbox and radio, and whatever else the keyboard reaches, draws a gold
+  ring when it takes focus from the keyboard, in both themes, so Tab can be
+  followed through a report's rows as well as its buttons. The gold has a
+  halo of the theme's own ground on both its sides (white in the light
+  theme, the page's dark in the dark), so it stands 3:1 against what it
+  meets wherever it is — the toolbar's grey, a dialog's blue title bar —
+  measured as the browser paints it (`tests/test_browser_keyboard.py`).
   A mouse click on a button or a link draws none.
   A field keeps its own focus style (the blue border and pale ground), and
   a dialog that takes focus itself is not outlined.
