@@ -131,7 +131,11 @@ const API = {
             const finish = value => {
                 document.removeEventListener('keydown', onKey, true);
                 overlay.remove();
-                if (opener && document.contains(opener)) { try { opener.focus(); } catch (e) { /* gone */ } }
+                if (opener && document.contains(opener)) {
+                    // the ring by keyboard, also on WebKit (utils.js focusFor, NEW-43)
+                    if (typeof focusFor === 'function' && typeof _byKeyboard === 'function') focusFor(opener, _byKeyboard());
+                    else { try { opener.focus(); } catch (e) { /* gone */ } }
+                }
                 resolve(value);
             };
             // Capture phase, so Escape closes this dialog and not the form

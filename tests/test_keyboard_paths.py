@@ -1157,3 +1157,45 @@ def test_a_wide_table_with_no_control_takes_tab_itself():
         in init
     )
     assert "window.addEventListener('resize', mark);" in init
+
+
+# ── The gate's third round (macOS) ──────────────────────────────────────────
+
+
+def test_focus_the_app_moves_for_the_keyboard_says_so_outright():
+    """NEW-43, round 3: WebKit counts focus moved in script as the
+    keyboard's — and draws the ring — only when the focus before it was the
+    keyboard's, so in a dialog opened with a click Tab moved focus with no
+    ring. focusFor says it outright where the keyboard moved it."""
+    utils = _src("utils.js")
+    helper = utils[utils.index("function focusFor(el, keyboard) {") :]
+    helper = helper[: helper.index("\n}\n")]
+    assert "el.focus(keyboard ? { focusVisible: true } : undefined)" in helper
+    tab = utils[utils.index("function _tabTo(el) {") :]
+    tab = tab[: tab.index("\n}\n")]
+    assert "if (!focusFor(el, true)) return;" in tab and "el.focus()" not in tab
+    assert "focusFor(target, _byKeyboard());" in utils  # a dialog's first control
+    assert "focusFor(opener, _byKeyboard());" in utils  # the opener, on close
+    reports = _src("reports.js")
+    for line in (
+        "focusFor(el, _byKeyboard());  // the ring by keyboard",  # Back's row
+        "if (takeFocus) focusFor(el, _byKeyboard());",  # a page's spotlit row
+        "focusFor(prev, _byKeyboard());",  # Next at the last account
+        "focusFor(next, _byKeyboard());",
+        "focusFor(panel.querySelector('input'), _byKeyboard());",  # the chooser
+        "focusFor(btn, _byKeyboard());",
+    ):
+        assert line in reports, line
+    app = _src("app.js")
+    assert "return focusFor(first, true);" in app  # the search's hits
+    assert "focusFor(items[i + 1], true);" in app
+
+
+def test_the_search_shortcut_is_inert_over_a_dialog():
+    """NEW-45: ⌘K over an open dialog moved focus to the search box under
+    its overlay, and the hits opened behind the dialog."""
+    app = _src("app.js")
+    block = app[app.index("macOS gate NEW-45") :]
+    block = block[: block.index("search.focus()")]
+    assert "if (overlay && !overlay.classList.contains('hidden'))" in block
+    assert "return; }" in block

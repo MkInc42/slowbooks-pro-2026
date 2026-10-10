@@ -257,11 +257,29 @@ function escapeLeavesPicker(e) {
     return true;
 }
 
+// Focus the app moves itself because of the keyboard — Tab inside a
+// dialog, Back's return to the row left, a disabled button handing over —
+// says so outright. WebKit counts focus moved in script as the keyboard's,
+// and draws :focus-visible (the ring), only when the focus before it was
+// the keyboard's, so in a dialog opened with a click Tab moved focus with
+// no ring to see (macOS gate NEW-43, round 3). After a pointer, plain
+// focus leaves the browser's own rule: no ring for a click.
+function focusFor(el, keyboard) {
+    if (!el) return false;
+    try { el.focus(keyboard ? { focusVisible: true } : undefined); return true; } catch (e) { return false; }
+}
+
+// Whether the last input was the keyboard (App.keyboardFocus), for focus
+// the app moves after either.
+function _byKeyboard() {
+    return !!(window.App && typeof window.App.keyboardFocus === 'function' && window.App.keyboardFocus());
+}
+
 // Focus as Tab gives it: a text box's words selected, as the browser
 // does; a textarea keeps its caret (the browser selects nothing there,
 // and a note being edited must not vanish under the next keystroke).
 function _tabTo(el) {
-    try { el.focus(); } catch (e) { return; }
+    if (!focusFor(el, true)) return;
     if (el.tagName === 'INPUT' && /^(text|search|url|tel|password|email|number)$/.test(el.type)) {
         try { el.select(); } catch (e) { /* not selectable */ }
     }
@@ -302,7 +320,7 @@ function openModal(title, html, opts) {
     setTimeout(() => {
         const first = _tabStops($('#modal-body'), null)[0];
         const target = first && !first.matches('[data-destructive]') ? first : modal;
-        try { target.focus(); } catch (e) { /* nothing focusable */ }
+        focusFor(target, _byKeyboard());
     }, 0);
 }
 
@@ -321,7 +339,7 @@ function closeModal(opts) {
     if (window.App && typeof window.App.syncBack === 'function') window.App.syncBack();
     const opener = _modalOpener;
     _modalOpener = null;
-    if (opener && document.contains(opener)) { try { opener.focus(); } catch (e) { /* gone */ } }
+    if (opener && document.contains(opener)) focusFor(opener, _byKeyboard());
     if (wasOpen && !(opts && opts.keepAddress) && window.App && typeof App.dialogClosed === 'function') App.dialogClosed();
 }
 

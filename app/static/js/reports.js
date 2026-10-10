@@ -152,7 +152,7 @@ const ReportsPage = {
             : root.querySelector(`[data-row-key="${CSS.escape(key)}"]`);
         if (!el) return false;
         history.replaceState({ ...history.state, focus: null }, '', location.hash || '#/');
-        try { el.focus(); } catch (e) { /* not focusable after all */ }
+        focusFor(el, _byKeyboard());  // the ring by keyboard, also on WebKit (NEW-43, round 3)
         return true;
     },
 
@@ -174,7 +174,7 @@ const ReportsPage = {
         row.setAttribute('aria-current', 'true');
         row.style.background = 'var(--primary-light)';
         row.scrollIntoView({ block: 'center' });
-        if (takeFocus) { try { el.focus(); } catch (e) { /* nothing */ } }
+        if (takeFocus) focusFor(el, _byKeyboard());
     },
 
     // A change inside the open period report that is not its dates — a
@@ -719,8 +719,8 @@ const ReportsPage = {
         if (next) next.disabled = i < 0 || i >= list.length - 1;
         // A button disabled under the keyboard (Next at the last account)
         // drops focus to the page; the other one takes it instead.
-        if (focused === next && next.disabled && prev && !prev.disabled) prev.focus();
-        else if (focused === prev && prev.disabled && next && !next.disabled) next.focus();
+        if (focused === next && next.disabled && prev && !prev.disabled) focusFor(prev, _byKeyboard());
+        else if (focused === prev && prev.disabled && next && !next.disabled) focusFor(next, _byKeyboard());
         if (pos) pos.textContent = list.length > 1 && i >= 0 ? `${i + 1} of ${list.length}: ${list[i].label}` : '';
         if (!ReportsPage._classList) {
             try { ReportsPage._classList = await API.get('/classes?include_archived=true'); } catch (e) { ReportsPage._classList = []; }
@@ -1780,7 +1780,7 @@ ReportsPage.toggleChooser = function () {
     if (!panel || !btn) return;
     panel.hidden = !panel.hidden;
     btn.setAttribute('aria-expanded', panel.hidden ? 'false' : 'true');
-    if (!panel.hidden) { const first = panel.querySelector('input'); if (first) first.focus(); }
+    if (!panel.hidden) focusFor(panel.querySelector('input'), _byKeyboard());
 };
 
 ReportsPage.checkAll = function (on) {
@@ -1800,7 +1800,7 @@ ReportsPage.applyChooser = function (key) {
     const panel = $('#grid-chooser');
     const btn = $('#grid-choose-btn');
     if (panel) panel.hidden = true;
-    if (btn) { btn.setAttribute('aria-expanded', 'false'); btn.focus(); }
+    if (btn) { btn.setAttribute('aria-expanded', 'false'); focusFor(btn, _byKeyboard()); }
     ReportsPage.setParam(key, ids.join(','));
 };
 

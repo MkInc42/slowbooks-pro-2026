@@ -1083,15 +1083,14 @@ const App = {
     // class page or an account register, so it cannot be mouse-only.
     searchFocusFirst() {
         const first = document.querySelector('#search-results:not(.hidden) .search-item[tabindex]');
-        if (first) first.focus();
-        return !!first;
+        return focusFor(first, true);  // ArrowDown from the box: the keyboard's
     },
     searchItemKey(e) {
         const items = $$('#search-results .search-item[tabindex]');
         const i = items.indexOf(e.currentTarget);
         if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); e.currentTarget.click(); }
-        else if (e.key === 'ArrowDown' && items[i + 1]) { e.preventDefault(); items[i + 1].focus(); }
-        else if (e.key === 'ArrowUp') { e.preventDefault(); (i > 0 ? items[i - 1] : $('#global-search')).focus(); }
+        else if (e.key === 'ArrowDown' && items[i + 1]) { e.preventDefault(); focusFor(items[i + 1], true); }
+        else if (e.key === 'ArrowUp') { e.preventDefault(); focusFor(i > 0 ? items[i - 1] : $('#global-search'), true); }
         else if (e.key === 'Escape') { e.preventDefault(); closeSearchDropdown(); $('#global-search')?.focus(); }
     },
     async globalSearch(query) {
@@ -1525,8 +1524,13 @@ const App = {
             // field's calendar: utils.js escapeLeavesPicker, NEW-33)
             if (e.key === 'Escape' && !escapeLeavesPicker(e)) { closeModal(); }
             // Ctrl+K (⌘K on a Mac, which did nothing: NEW-41) or /: focus
-            // search (when not in an input)
+            // search (when not in an input). Not while a dialog is open: it
+            // is modal, the search lies under its overlay, and its hits
+            // opened behind the dialog where they could be neither read nor
+            // clicked (macOS gate NEW-45). Close the dialog, then search.
             if (((e.ctrlKey || e.metaKey) && !e.altKey && e.key === 'k') || (e.key === '/' && !e.target.closest('input,textarea,select'))) {
+                const overlay = $('#modal-overlay');
+                if (overlay && !overlay.classList.contains('hidden')) { if (e.key === 'k') e.preventDefault(); return; }
                 const search = $('#global-search');
                 if (search) { search.focus(); e.preventDefault(); }
             }

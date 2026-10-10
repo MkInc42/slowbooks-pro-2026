@@ -867,10 +867,11 @@ def test_inside_a_field_no_alt_letter_is_a_shortcut_on_any_platform(
         assert page.input_value("#modal textarea") == "a note being typed"
         assert page.evaluate("location.hash") == "#/invoices"
         assert page.evaluate(THEME) == was
-        # Ctrl+K from the field finds, and Escape in the field still leaves
-        # the form standing (the next Escape closes it)
+        # Ctrl+K over the open form does nothing (NEW-45: the dialog is
+        # modal; the search lies under its overlay): focus stays in the field
         page.keyboard.press("Control+KeyK")
-        assert page.evaluate("() => document.activeElement.id") == "global-search"
+        assert page.evaluate("() => document.activeElement.id") != "global-search"
+        assert page.input_value("#inv-lines .line-desc") == "half a line"
         assert page.evaluate(MODAL_SHOWN)
         page.evaluate("() => closeModal()")
         # the search box: Alt+N opens nothing, Ctrl+K keeps it
@@ -4282,4 +4283,108 @@ def test_a_wide_table_with_no_control_is_a_region_the_keyboard_scrolls(
                 assert any(m[0] for m in marks), marks  # it does overflow
     finally:
         page.set_viewport_size({"width": 1500, "height": 980})
+        page.close()
+
+
+# ── The gate's third round (macOS) ──────────────────────────────────────────
+
+FOCUS_SPY = """() => { window.__focusCalls = [];
+  if (window.__focusSpied) return; window.__focusSpied = true;
+  const orig = HTMLElement.prototype.focus;
+  HTMLElement.prototype.focus = function (opts) {
+    window.__focusCalls.push({ key: (this.dataset && this.dataset.rowKey) || this.id || this.tagName,
+                               visible: !!(opts && opts.focusVisible) });
+    return orig.call(this, opts);
+  }; }"""
+CALLS = "() => window.__focusCalls.splice(0)"
+
+
+def test_focus_moved_for_the_keyboard_says_so_and_a_clicks_does_not(
+    browser, company, books
+):
+    """NEW-43, round 3: in a dialog opened with a click, Tab's ring didn't
+    show on WebKit — script-moved focus counts as the keyboard's there only
+    after keyboard focus. Every focus the app moves because of the keyboard
+    now asks for the ring outright (focus({ focusVisible: true })); after a
+    pointer it leaves the browser's own rule. Chromium draws the ring either
+    way, so this records what the app asks for, which is what WebKit obeys."""
+    page, handled = _open_at(browser, company, "#/reports")
+    try:
+        _no_splash(page)
+        page.evaluate(FOCUS_SPY)
+        # A/R Aging opened with a mouse click on its card
+        page.locator("#page-content a.card-link", has_text="A/R Aging").first.click()
+        page.wait_for_function(MODAL_SHOWN)
+        page.wait_for_selector('#modal a[data-row-key^="customer:"]')
+        settle(page, handled)
+        opened = page.evaluate(CALLS)
+        assert opened and not any(c["visible"] for c in opened), opened
+        # Tab inside it: every move asks for the ring
+        for _ in range(3):
+            page.keyboard.press("Tab")
+        tabbed = page.evaluate(CALLS)
+        assert len(tabbed) >= 3 and all(c["visible"] for c in tabbed), tabbed
+        # Enter on a customer's row, then the Back chord: the row comes back
+        # with the ring asked for
+        row = '#modal a[data-row-key^="customer:"]'
+        page.focus(row)
+        key = page.get_attribute(row, "data-row-key")
+        page.keyboard.press("Enter")
+        page.wait_for_function("() => /^#\\/customers\\/\\d+$/.test(location.hash)")
+        settle(page, handled)
+        page.evaluate(CALLS)
+        page.keyboard.press("Alt+ArrowLeft")
+        page.wait_for_function(
+            "(k) => document.activeElement && document.activeElement.dataset.rowKey === k",
+            arg=key,
+        )
+        back = [c for c in page.evaluate(CALLS) if c["key"] == key]
+        assert back and back[-1]["visible"], back
+        # the same hop by mouse, and the toolbar's Back clicked: no ring asked
+        page.click(row)
+        page.wait_for_function("() => /^#\\/customers\\/\\d+$/.test(location.hash)")
+        settle(page, handled)
+        page.evaluate(CALLS)
+        page.click("#back-btn")
+        page.wait_for_function(
+            "(k) => document.activeElement && document.activeElement.dataset.rowKey === k",
+            arg=key,
+        )
+        clicked = [c for c in page.evaluate(CALLS) if c["key"] == key]
+        assert clicked and not clicked[-1]["visible"], clicked
+    finally:
+        page.close()
+
+
+def test_the_search_shortcut_does_nothing_over_a_dialog(browser, company, books):
+    """NEW-45: ⌘K over an open dialog moved focus to the search box under
+    the dimmed overlay, and typing opened its hits behind the dialog. Over a
+    dialog the shortcut now does nothing; on a page it finds as before."""
+    page, handled = _open_at(browser, company, "#/invoices")
+    try:
+        _no_splash(page)
+        _open_dialog(page, handled, "InvoicesPage.showForm()", "#invoice-form")
+        page.fill("#inv-lines .line-desc", "kept")
+        page.focus("#inv-lines .line-desc")
+        for keys, mac in (("Control+KeyK", False), ("Meta+KeyK", True)):
+            page.evaluate(MAC, mac)
+            page.keyboard.press(keys)
+            assert (
+                page.evaluate("() => document.activeElement.id") != "global-search"
+            ), keys
+            assert page.evaluate(
+                "() => document.getElementById('modal').contains(document.activeElement)"
+            ), keys
+            assert page.evaluate(MODAL_SHOWN)
+            assert page.input_value("#inv-lines .line-desc") == "kept"
+        page.evaluate(MAC, False)
+        # "/" from a button in the dialog: nothing either
+        page.focus("#modal-body button")
+        page.keyboard.press("Slash")
+        assert page.evaluate("() => document.activeElement.id") != "global-search"
+        # closed, the shortcut finds again
+        page.evaluate("() => closeModal()")
+        page.keyboard.press("Control+KeyK")
+        assert page.evaluate("() => document.activeElement.id") == "global-search"
+    finally:
         page.close()
