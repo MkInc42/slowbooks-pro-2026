@@ -473,6 +473,9 @@
 /* The skip link's --qb-blue is a light blue here: white on it was 4.20:1.
    The primary button's blue, 7.17. */
 [data-theme="dark"] .skip-link { background: #2a5a8a; }
+/* and its ring is the theme's own gold, as the toolbar's (style.css sets
+   the light toolbar's deeper one on it) */
+[data-theme="dark"] .skip-link:focus { --focus-ring: var(--qb-gold); }
 
 /* "Click to browse" on the IIF drop zone: --qb-blue as text, 4.30:1 */
 [data-theme="dark"] .iif-dropzone-text strong { color: var(--qb-blue-light); }

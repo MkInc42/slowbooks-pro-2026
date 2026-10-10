@@ -19,10 +19,14 @@
 /* Shown, it draws the keyboard's ring and halo (below), 8px in from the
    corner: at the corner itself the ring's top and left lines fell off the
    window, and it kept the brand's paler gold, 1.95:1 against the toolbar
-   it lands on (review of NEW-43, 2.22.0). */
+   it lands on (review of NEW-43, 2.22.0). It lands on the toolbar but is
+   not inside it, so it takes the toolbar's own deeper gold (#topbar,
+   below): the theme's #a37a29 is 2.51:1 against the bar's darker stop.
+   Light only: dark.css puts the dark theme's gold back. */
 .skip-link:focus {
     top: 8px;
     left: 8px;
+    --focus-ring: #8f6a1e;
     outline: 2px solid var(--focus-ring);
     outline-offset: 2px;
     box-shadow: 0 0 0 8px var(--focus-halo);

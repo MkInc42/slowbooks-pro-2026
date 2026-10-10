@@ -569,20 +569,28 @@ def test_the_skip_link_draws_the_ring_and_goes_to_the_content_in_place():
     """The skip link kept the brand's pale gold, 1.95:1 on the toolbar, at
     the window's corner, where its top and left lines fell outside; and
     Enter on it set the address to #page-content, which the router showed
-    as "Page not found". It draws the ring and halo 6px in from the corner,
-    and it moves focus to the content, which takes it as a place, with the
+    as "Page not found". It draws the ring and halo 8px in from the corner,
+    in the toolbar's gold (it lands on the toolbar, outside it: the light
+    theme's own gold was 2.51:1 against the bar's darker stop), and it
+    moves focus to the content, which takes it as a place, with the
     address unchanged."""
     css = (ROOT / "app/static/css/style.css").read_text(encoding="utf-8")
+    dark = (ROOT / "app/static/css/dark.css").read_text(encoding="utf-8")
     skip = _rule(css, ".skip-link:focus {")
     for line in (
         "top: 8px;",
         "left: 8px;",
+        "--focus-ring: #8f6a1e;",
         "outline: 2px solid var(--focus-ring);",
         "outline-offset: 2px;",
         "box-shadow: 0 0 0 8px var(--focus-halo);",
     ):
         assert line in skip, line
     assert "--qb-gold" not in skip
+    assert "--focus-ring: #8f6a1e;" in _rule(css, "#topbar {")
+    assert "--focus-ring: var(--qb-gold);" in _rule(
+        dark, '[data-theme="dark"] .skip-link:focus {'
+    )
     html = (ROOT / "index.html").read_text(encoding="utf-8")
     assert '<a href="#page-content" class="skip-link">Skip to main content</a>' in html
     # the content takes focus only while the skip link puts it there: a

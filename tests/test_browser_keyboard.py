@@ -2390,15 +2390,18 @@ def test_the_skip_link_draws_the_ring_and_enter_goes_to_the_content_in_place(
     on the toolbar) at the window's very corner, where its top and left
     lines fell off; and Enter on it set the address to #page-content, which
     the router showed as "Page not found". It draws the ring and halo on
-    all four sides, and Enter puts focus on the page's content, which takes
-    it as a place (no ring), with the address and history as they were;
-    the next Tab is the content's first control."""
+    all four sides, in the toolbar's gold, which clears the toolbar it
+    lands on as well as its halo (the theme's #a37a29, which it had in
+    light, is 2.51:1 against the bar's darker stop: re-review); and Enter
+    puts focus on the page's content, which takes it as a place (no ring),
+    with the address and history as they were; the next Tab is the
+    content's first control."""
     page, handled = _open_at(browser, company, "#/customers")
     try:
         page.keyboard.press("Tab")
         skip = page.evaluate(OWN_RING)
         assert "skip-link" in skip["cls"] and skip["keyboard"], skip
-        _both_themes(page, "skip link", GOLD)
+        _both_themes(page, "skip link", TOOLBAR_GOLD, bar=True)
         here, length = page.evaluate("location.hash"), page.evaluate("history.length")
         words = page.inner_text("#page-content")
         page.keyboard.press("Enter")
