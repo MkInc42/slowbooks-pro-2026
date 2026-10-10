@@ -103,9 +103,14 @@ const ReportsPage = {
     // itself (`from`, its `this`); a hop reached from a click without it
     // (openDrillDown's links) is the element whose click is being handled,
     // the same `this`; anything else (a key, a script) the focused one. A
-    // row passed is left from by its keyed link.
+    // row passed is left from by its keyed link. A click that has the
+    // browser open its link somewhere else (Ctrl, ⌘, Shift or Alt held, or
+    // not the main button: a new tab or window, a download) leaves nothing
+    // here: this page stays, and the note would have pulled focus onto
+    // the link at the page's next draw (review).
     _leaveFrom(from) {
         const ev = window.event;
+        if (ReportsPage._opensElsewhere(ev)) return;
         let el = (from && from.nodeType === 1) ? from
             : (ev && ev.type === 'click' && ev.currentTarget && ev.currentTarget.nodeType === 1) ? ev.currentTarget
             : document.activeElement;
@@ -116,6 +121,18 @@ const ReportsPage = {
         const key = el.getAttribute('data-row-key') || (n >= 0 ? `n:${n}` : null);
         if (!key) return;  // a select, a date, a page's unkeyed control: not a row left from
         history.replaceState({ ...(history.state || {}), focus: key }, '', location.hash || '#/');
+    },
+
+    // The click's link is followed by the browser, not here: a modifier
+    // or a button other than the main one, on a real link (not the
+    // javascript: links whose own click does the hop) whose following no
+    // click handler has stopped (the customer page's row links stop it and
+    // hop from the row).
+    _opensElsewhere(ev) {
+        if (!ev || (ev.type !== 'click' && ev.type !== 'auxclick')) return false;
+        if (!(ev.ctrlKey || ev.metaKey || ev.shiftKey || ev.altKey || ev.button !== 0)) return false;
+        const a = ev.target && ev.target.closest ? ev.target.closest('a[href]') : null;
+        return !!a && !/^\s*javascript:/i.test(a.getAttribute('href')) && !ev.defaultPrevented;
     },
 
     // Focus back on the row the view was left from, once; a later render

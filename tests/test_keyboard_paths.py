@@ -794,3 +794,27 @@ def test_tab_brings_a_grid_stop_out_from_under_the_frozen_parts():
         "if (g && a !== g && a.matches(':focus-visible')) "
         "a.scrollIntoView({ block: 'nearest', inline: 'nearest' });" in reveal
     )
+
+
+def test_a_click_that_opens_elsewhere_notes_nothing():
+    """A Ctrl, ⌘, Shift or Alt click, or another button, on a real link
+    whose following no handler stopped opens it somewhere else and leaves
+    the page: _leaveFrom notes nothing then, before anything else."""
+    src = _src("reports.js")
+    leave = src[src.index("    _leaveFrom(from) {") :]
+    leave = leave[: leave.index("\n    },")]
+    first = leave.split("\n")[1:3]
+    assert first == [
+        "        const ev = window.event;",
+        "        if (ReportsPage._opensElsewhere(ev)) return;",
+    ], first
+    away = src[src.index("    _opensElsewhere(ev) {") :]
+    away = away[: away.index("\n    },")]
+    assert "ev.type !== 'click' && ev.type !== 'auxclick'" in away
+    assert (
+        "ev.ctrlKey || ev.metaKey || ev.shiftKey || ev.altKey || ev.button !== 0"
+        in away
+    )
+    assert "ev.target.closest('a[href]')" in away
+    assert "!/^\\s*javascript:/i.test(a.getAttribute('href'))" in away
+    assert "!ev.defaultPrevented" in away

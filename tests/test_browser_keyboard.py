@@ -2812,3 +2812,65 @@ def test_back_from_a_pages_report_refocuses_its_link(browser, company, books):
                 assert not page.evaluate("() => history.state && history.state.focus")
         finally:
             page.close()
+
+
+ACTIVE_KEY = """() => { const a = document.activeElement;
+    return (a.dataset && a.dataset.rowKey) || a.id || a.tagName.toLowerCase(); }"""
+NOTED = "() => (history.state && history.state.focus) || null"
+
+
+def test_a_click_that_opens_elsewhere_notes_nothing_and_steals_nothing(
+    browser, company, books
+):
+    """A link that notes itself on its click (the chart's accounts, a
+    page's Reports links) noted itself on a Ctrl+click too, which opens it
+    in a new tab and leaves this page where it is: the page's next draw
+    put focus on the link, off wherever the user had gone on to (review).
+    Ctrl+click and Shift+click (a new tab, a new window) note nothing now,
+    and the next draw leaves focus where it is: the chart, redrawn with
+    the search box focused, and a customer's page, opened again, with
+    focus where any opening puts it. A plain click still notes."""
+    page, handled = _open(browser, company)
+    try:
+        _no_splash(page)
+        _visit(page, handled, "#/accounts")
+        link = '#page-content a[data-row-key^="account:"]'
+        key = page.get_attribute(link, "data-row-key")
+        for held in ("Control", "Shift"):
+            with page.context.expect_page() as opened:
+                page.click(link, modifiers=[held])
+            opened.value.close()
+            assert page.evaluate("location.hash") == "#/accounts", held
+            assert page.evaluate(NOTED) is None, held
+            page.focus("#global-search")
+            _visit(page, handled, "#/accounts")
+            assert page.evaluate(ACTIVE_KEY) == "global-search", held
+        # a plain click, cut short before it leaves: still noted
+        page.evaluate(
+            "() => document.addEventListener('click', e => e.preventDefault(), { once: true })"
+        )
+        page.click(link)
+        assert page.evaluate(NOTED) == key
+        page.evaluate(
+            "() => history.replaceState({ ...history.state, focus: null }, '')"
+        )
+    finally:
+        page.close()
+    page, handled = _open_at(browser, company, f"#/customers/{books['customer']}")
+    try:
+        report = '#modal-body a[data-row-key="report:ar-aging"]'
+        page.wait_for_selector(report)
+        settle(page, handled)
+        here = page.evaluate("location.hash")
+        with page.context.expect_page() as opened:
+            page.click(report, modifiers=["Control"])
+        opened.value.close()
+        assert page.evaluate("location.hash") == here
+        assert page.evaluate(NOTED) is None
+        page.focus("#modal-body textarea")
+        page.evaluate("async () => { await App.navigate(location.hash); }")
+        page.wait_for_selector(report)
+        settle(page, handled)
+        assert page.evaluate(ACTIVE_KEY) != "report:ar-aging"
+    finally:
+        page.close()
